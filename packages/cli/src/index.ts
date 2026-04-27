@@ -139,6 +139,26 @@ usage
     await close();
   });
 
+usage
+  .command("codex-turn")
+  .description("Record an estimated Codex conversation turn")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--task <key>", "task key", "codex-current-conversation")
+  .option("--model <model>", "model label", "codex-chat")
+  .option("--input-tokens <count>", "estimated input token count")
+  .option("--output-tokens <count>", "estimated output token count")
+  .option("--input-chars <count>", "input character count to estimate tokens")
+  .option("--output-chars <count>", "output character count to estimate tokens")
+  .option("--idempotency-key <key>", "idempotency key")
+  .action(async (options: CodexTurnOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const message = buildCodexTurnMessage(options);
+    const event = await service.recordUsage(message);
+    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    await close();
+  });
+
 const report = program.command("report").description("Report commands");
 
 report
@@ -183,6 +203,17 @@ interface UsageAddOptions {
   observedCost?: string;
   estimatedCost?: string;
   currency?: string;
+  idempotencyKey?: string;
+}
+
+interface CodexTurnOptions {
+  workspace: string;
+  task: string;
+  model: string;
+  inputTokens?: string;
+  outputTokens?: string;
+  inputChars?: string;
+  outputChars?: string;
   idempotencyKey?: string;
 }
 
@@ -255,6 +286,39 @@ function buildUsageMessage(options: UsageAddOptions): AiUsageObserved {
   });
 }
 
+function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
+  const inputTokens = parseEstimatedTokens(options.inputTokens, options.inputChars);
+  const outputTokens = parseEstimatedTokens(options.outputTokens, options.outputChars);
+  return AiUsageObservedSchema.parse({
+    schema_version: "1.0",
+    message_id: `msg_codex_${Date.now()}`,
+    kind: "ingest_message",
+    type: "ai.usage.observed",
+    occurred_at: new Date().toISOString(),
+    source: { system: "codex-chat", actor: "assistant:auto-log" },
+    workspace: { key: options.workspace },
+    idempotency_key: options.idempotencyKey,
+    payload: {
+      task: { key: slug(options.task) },
+      usage: {
+        provider: "openai",
+        model: options.model,
+        usage_kind: "conversation_turn",
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens:
+          inputTokens == null && outputTokens == null
+            ? null
+            : (inputTokens ?? 0) + (outputTokens ?? 0),
+        accuracy_mode: "estimated",
+        pricing_mode: "unpriced",
+        unpriced_reason: "missing_pricing_rule",
+      },
+      source_context: { tool: "codex-chat", capture_mode: "assistant_estimated_turn" },
+    },
+  });
+}
+
 function printReport(report: {
   date: string;
   event_count: number;
@@ -276,6 +340,14 @@ function parseOptionalInteger(value: string | undefined): number | null {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid integer: ${value}`);
   return parsed;
+}
+
+function parseEstimatedTokens(tokens: string | undefined, chars: string | undefined): number | null {
+  const explicit = parseOptionalInteger(tokens);
+  if (explicit != null) return explicit;
+  const charCount = parseOptionalInteger(chars);
+  if (charCount == null) return null;
+  return Math.max(1, Math.ceil(charCount / 4));
 }
 
 function parseOptionalNumber(value: string | undefined): number | null {
