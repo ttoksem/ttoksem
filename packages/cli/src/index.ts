@@ -149,6 +149,11 @@ usage
   .option("--output-tokens <count>", "estimated output token count")
   .option("--input-chars <count>", "input character count to estimate tokens")
   .option("--output-chars <count>", "output character count to estimate tokens")
+  .option("--prompt-text <text>", "full prompt text to store")
+  .option("--response-text <text>", "full assistant response text to store")
+  .option("--prompt-file <path>", "file containing full prompt text to store")
+  .option("--response-file <path>", "file containing full assistant response text to store")
+  .option("--prompt-mode <mode>", "prompt snapshot mode", "full")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: CodexTurnOptions) => {
     const { service, close } = await makeService();
@@ -214,6 +219,11 @@ interface CodexTurnOptions {
   outputTokens?: string;
   inputChars?: string;
   outputChars?: string;
+  promptText?: string;
+  responseText?: string;
+  promptFile?: string;
+  responseFile?: string;
+  promptMode: "none" | "hash" | "redacted" | "full";
   idempotencyKey?: string;
 }
 
@@ -287,6 +297,8 @@ function buildUsageMessage(options: UsageAddOptions): AiUsageObserved {
 }
 
 function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
+  const promptText = readOptionalText(options.promptText, options.promptFile);
+  const responseText = readOptionalText(options.responseText, options.responseFile);
   const inputTokens = parseEstimatedTokens(options.inputTokens, options.inputChars);
   const outputTokens = parseEstimatedTokens(options.outputTokens, options.outputChars);
   return AiUsageObservedSchema.parse({
@@ -314,9 +326,24 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
         pricing_mode: "unpriced",
         unpriced_reason: "missing_pricing_rule",
       },
+      prompt_snapshot:
+        options.promptMode === "none"
+          ? { mode: "none" }
+          : {
+              mode: options.promptMode,
+              prompt_text: options.promptMode === "full" ? promptText : null,
+              response_text: options.promptMode === "full" ? responseText : null,
+              retention_note: "User requested full prompt/response retention for Codex chat logging.",
+            },
       source_context: { tool: "codex-chat", capture_mode: "assistant_estimated_turn" },
     },
   });
+}
+
+function readOptionalText(text: string | undefined, file: string | undefined): string | null {
+  if (text != null) return text;
+  if (file != null) return readFileSync(resolveFromCommandCwd(file), "utf8");
+  return null;
 }
 
 function printReport(report: {
