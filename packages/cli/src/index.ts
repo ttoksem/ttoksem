@@ -69,18 +69,52 @@ task
   .command("start")
   .argument("<key>", "task key")
   .option("--name <name>", "task name")
+  .option("--description <description>", "task description")
   .option("--workspace <key>", "workspace key")
   .option("--root <path>", "workspace root path")
   .description("Create or activate a task")
-  .action(async (key: string, options: { name?: string; workspace?: string; root?: string }) => {
+  .action(
+    async (
+      key: string,
+      options: { name?: string; description?: string; workspace?: string; root?: string },
+    ) => {
+      const { service, close } = await makeService();
+      await service.init();
+      const started = await service.startTask({
+        workspace: workspaceResolver(options),
+        key: slug(key),
+        name: options.name ?? key,
+        description: options.description,
+      });
+      console.log(`task ${started.key} ${started.status} ${started.id} ${started.name}`);
+      await close();
+    },
+  );
+
+task
+  .command("update")
+  .argument("<key>", "task key")
+  .option("--name <name>", "task name")
+  .option("--description <description>", "task description")
+  .option("--clear-description", "clear task description")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("Update a task title or description")
+  .action(async (key: string, options: TaskUpdateOptions) => {
+    if (!options.name && options.description == null && !options.clearDescription) {
+      throw new Error("Provide --name, --description, or --clear-description.");
+    }
     const { service, close } = await makeService();
     await service.init();
-    const started = await service.startTask({
+    const update = {
       workspace: workspaceResolver(options),
       key: slug(key),
-      name: options.name ?? key,
-    });
-    console.log(`task ${started.key} ${started.status} ${started.id}`);
+      ...(options.name ? { name: options.name } : {}),
+      ...(options.clearDescription ? { description: null } : {}),
+      ...(options.description != null ? { description: options.description } : {}),
+    };
+    const updated = await service.updateTask(update);
+    console.log(`task ${updated.key} ${updated.status} ${updated.id} ${updated.name}`);
     await close();
   });
 
@@ -110,7 +144,7 @@ task
     const { service, close } = await makeService();
     await service.init();
     for (const item of await service.listTasks({ workspace: workspaceResolver(options) })) {
-      console.log(`${item.key}\t${item.status}\t${item.id}`);
+      console.log(`${item.key}\t${item.status}\t${item.id}\t${item.name}`);
     }
     await close();
   });
@@ -535,6 +569,14 @@ interface DashboardServeOptions {
   workspace: string;
   host: string;
   port: string;
+}
+
+interface TaskUpdateOptions {
+  name?: string;
+  description?: string;
+  clearDescription?: boolean;
+  workspace?: string;
+  root?: string;
 }
 
 interface PricingUpsertOptions {

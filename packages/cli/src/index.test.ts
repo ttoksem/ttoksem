@@ -31,6 +31,26 @@ describe("ttoksem CLI workflows", () => {
           env,
         ),
       ).toContain("task implement-cli-workflow-tests active");
+      expect(runCli(["task", "list", "--workspace", "cli-test"], env)).toContain(
+        "Implement CLI workflow tests",
+      );
+      expect(
+        runCli(
+          [
+            "task",
+            "update",
+            "implement-cli-workflow-tests",
+            "--workspace",
+            "cli-test",
+            "--name",
+            "CLI Workflow Tests",
+            "--description",
+            "Exercise task naming from the CLI",
+          ],
+          env,
+        ),
+      ).toContain("CLI Workflow Tests");
+      expect(runCli(["task", "list", "--workspace", "cli-test"], env)).toContain("CLI Workflow Tests");
 
       const assignedOutput = runCli(
         [

@@ -21,7 +21,15 @@ export interface CreateTaskInput {
   workspace_id: string;
   key: string;
   name: string;
+  description?: string | null;
   source: string;
+  now: string;
+}
+
+export interface UpdateTaskDetailsInput {
+  taskId: string;
+  name?: string;
+  description?: string | null;
   now: string;
 }
 
@@ -155,6 +163,7 @@ export interface DashboardRecentUsageRow {
   id: string;
   occurred_at: string;
   task_key: string | null;
+  task_name: string | null;
   provider: string;
   model: string;
   usage_kind: string;
@@ -222,6 +231,7 @@ export interface LedgerStore {
   listWorkspaces(): Promise<WorkspaceRecord[]>;
 
   createTask(input: CreateTaskInput): Promise<TaskRecord>;
+  updateTaskDetails(input: UpdateTaskDetailsInput): Promise<TaskRecord>;
   getTaskById(id: string): Promise<TaskRecord | null>;
   getTaskByKey(workspaceId: string, key: string): Promise<TaskRecord | null>;
   listTasks(workspaceId: string): Promise<TaskRecord[]>;

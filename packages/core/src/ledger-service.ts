@@ -126,6 +126,7 @@ export interface DashboardData {
     id: string;
     occurred_at: string;
     task_key: string;
+    task_name: string;
     provider_model: string;
     usage_kind: string;
     tokens: number;
@@ -161,6 +162,7 @@ export interface DashboardTaskDetailData {
   task: {
     key: string;
     name: string;
+    description: string | null;
     status: string;
     created_at: string;
     started_at: string | null;
@@ -246,6 +248,7 @@ export class LedgerService {
     workspace: WorkspaceResolver;
     key: string;
     name?: string;
+    description?: string | null;
   }): Promise<TaskRecord> {
     const workspace = await this.resolveWorkspace(input.workspace);
     const now = this.clock.now();
@@ -257,6 +260,7 @@ export class LedgerService {
         workspace_id: workspace.id,
         key: input.key,
         name: input.name ?? input.key,
+        description: input.description ?? null,
         source: "cli",
         now,
       }));
@@ -283,6 +287,26 @@ export class LedgerService {
   async listTasks(input: { workspace: WorkspaceResolver }): Promise<TaskRecord[]> {
     const workspace = await this.resolveWorkspace(input.workspace);
     return this.store.listTasks(workspace.id);
+  }
+
+  async updateTask(input: {
+    workspace: WorkspaceResolver;
+    key: string;
+    name?: string;
+    description?: string | null;
+  }): Promise<TaskRecord> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const task = await this.store.getTaskByKey(workspace.id, input.key);
+    if (!task) throw new Error(`Task not found: ${input.key}`);
+    const name = input.name?.trim();
+    if (name != null && name.length === 0) throw new Error("Task name cannot be empty.");
+    const update = {
+      taskId: task.id,
+      now: this.clock.now(),
+      ...(name ? { name } : {}),
+      ...(Object.hasOwn(input, "description") ? { description: input.description ?? null } : {}),
+    };
+    return this.store.updateTaskDetails(update);
   }
 
   async upsertPricingRule(input: PricingRuleUpsertInput): Promise<PricingRuleRecord> {
@@ -542,20 +566,7 @@ export class LedgerService {
         estimated_total: nanosToDecimal(task.estimated_cost_nanos),
         unpriced_count: task.unpriced_count,
       })),
-      recent: recent.map((event) => ({
-        id: event.id,
-        occurred_at: event.occurred_at,
-        task_key: event.task_key ?? "unassigned",
-        provider_model: `${event.provider}/${event.model}`,
-        usage_kind: event.usage_kind,
-        tokens: event.token_count,
-        cost: nanosToDecimal(event.estimated_cost_nanos ?? event.observed_cost_nanos),
-        currency: event.estimated_currency ?? event.observed_currency,
-        confidence: event.pricing_mode ?? event.accuracy_mode,
-        assignment_status: event.assignment_status,
-        duration_ms: event.duration_ms ?? null,
-        prompt: event.prompt_text,
-      })),
+      recent: recent.map(toDashboardRecent),
       pricing_breakdown: pricingBreakdown.map((row) => ({
         key: row.key,
         event_count: row.event_count,
@@ -617,6 +628,7 @@ export class LedgerService {
       task: {
         key: task.key,
         name: task.name,
+        description: task.description ?? null,
         status: task.status,
         created_at: task.created_at,
         started_at: task.started_at ?? null,
@@ -793,6 +805,7 @@ function toDashboardRecent(event: DashboardRecentUsageRow): DashboardData["recen
     id: event.id,
     occurred_at: event.occurred_at,
     task_key: event.task_key ?? "unassigned",
+    task_name: event.task_name ?? "Unassigned",
     provider_model: `${event.provider}/${event.model}`,
     usage_kind: event.usage_kind,
     tokens: event.token_count,
@@ -919,7 +932,7 @@ function buildAttention(
     items.push({
       severity: "warn",
       title: "Task drift check",
-      body: `${highTurnTask.task_key} has a high turn count.`,
+      body: `${taskDisplayName(highTurnTask)} has a high turn count.`,
       metric: `${highTurnTask.event_count} turns`,
       task_key: highTurnTask.task_key,
     });
@@ -930,7 +943,7 @@ function buildAttention(
     items.push({
       severity: "info",
       title: "Top cost driver",
-      body: `${topCostTask.task_key} is the largest visible spend source.`,
+      body: `${taskDisplayName(topCostTask)} is the largest visible spend source.`,
       metric: `$${topCostTask.estimated_total.toFixed(6)}`,
       task_key: topCostTask.task_key,
     });
@@ -946,6 +959,10 @@ function buildAttention(
     });
   }
   return items.slice(0, 4);
+}
+
+function taskDisplayName(task: { task_key: string; task_name: string }): string {
+  return task.task_name && task.task_name !== "Unassigned" ? task.task_name : task.task_key;
 }
 
 function quantityForRule(unitType: string, usage: AiUsageObserved["payload"]["usage"]): number | null {

@@ -350,6 +350,12 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     getWorkspaceByRootPath: async () => null,
     listWorkspaces: async () => [],
     createTask: async () => taskRecord("ws_test"),
+    updateTaskDetails: async (input) => ({
+      ...taskRecord("ws_test"),
+      name: input.name ?? "Task",
+      description: input.description ?? null,
+      updated_at: input.now,
+    }),
     getTaskById: async () => null,
     getTaskByKey: async () => null,
     listTasks: async () => [],

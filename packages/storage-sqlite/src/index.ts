@@ -332,13 +332,46 @@ export class SqliteLedgerStore implements LedgerStore {
           id, workspace_id, key, name, description, type, status, definition_mode, source,
           external_ref_json, labels_json, metadata_json, created_at, started_at, closed_at, updated_at
         ) VALUES (
-          @id, @workspace_id, @key, @name, NULL, NULL, 'open', 'explicit', @source,
+          @id, @workspace_id, @key, @name, @description, NULL, 'open', 'explicit', @source,
           NULL, NULL, NULL, @now, NULL, NULL, @now
         )`,
       )
-      .run(input);
+      .run({
+        ...input,
+        description: input.description ?? null,
+      });
     const task = await this.getTaskById(input.id);
     if (!task) throw new Error("Failed to create task.");
+    return task;
+  }
+
+  async updateTaskDetails(input: {
+    taskId: string;
+    name?: string;
+    description?: string | null;
+    now: string;
+  }): Promise<TaskRecord> {
+    const result = this.db
+      .prepare(
+        `UPDATE tasks
+         SET name = COALESCE(@name, name),
+             description = CASE
+               WHEN @descriptionProvided = 1 THEN @description
+               ELSE description
+             END,
+             updated_at = @now
+         WHERE id = @taskId`,
+      )
+      .run({
+        taskId: input.taskId,
+        name: input.name ?? null,
+        description: input.description ?? null,
+        descriptionProvided: Object.hasOwn(input, "description") ? 1 : 0,
+        now: input.now,
+      });
+    if (result.changes === 0) throw new Error("Task not found.");
+    const task = await this.getTaskById(input.taskId);
+    if (!task) throw new Error("Task not found.");
     return task;
   }
 
@@ -925,6 +958,7 @@ export class SqliteLedgerStore implements LedgerStore {
            u.id,
            u.occurred_at,
            t.key AS task_key,
+           t.name AS task_name,
            u.provider,
            u.model,
            u.usage_kind,
@@ -958,6 +992,7 @@ export class SqliteLedgerStore implements LedgerStore {
            u.id,
            u.occurred_at,
            t.key AS task_key,
+           t.name AS task_name,
            u.provider,
            u.model,
            u.usage_kind,

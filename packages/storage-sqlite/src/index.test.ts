@@ -273,8 +273,20 @@ describe("SqliteLedgerStore", () => {
         workspace_id: "ws_test",
         key: "task",
         name: "Task",
+        description: "Original task description",
         source: "test",
         now: "2026-04-27T00:00:00.000Z",
+      });
+      const updatedTask = await store.updateTaskDetails({
+        taskId: "task_test",
+        name: "Named Task",
+        description: "Updated task description",
+        now: "2026-04-27T00:00:02.000Z",
+      });
+      expect(updatedTask).toMatchObject({
+        name: "Named Task",
+        description: "Updated task description",
+        updated_at: "2026-04-27T00:00:02.000Z",
       });
       await store.createRun({
         id: "run_test",
@@ -330,6 +342,7 @@ describe("SqliteLedgerStore", () => {
       await expect(store.listDashboardTaskCosts("ws_test", 10)).resolves.toMatchObject([
         {
           task_key: "task",
+          task_name: "Named Task",
           event_count: 1,
           token_count: 30,
           estimated_cost_nanos: 1500,
@@ -338,6 +351,7 @@ describe("SqliteLedgerStore", () => {
       await expect(store.listDashboardTaskInsights("ws_test", 10)).resolves.toMatchObject([
         {
           task_key: "task",
+          task_name: "Named Task",
           task_status: "open",
           event_count: 1,
           run_count: 1,
@@ -350,6 +364,7 @@ describe("SqliteLedgerStore", () => {
       ]);
       await expect(store.getDashboardTaskInsight("ws_test", "task_test")).resolves.toMatchObject({
         task_key: "task",
+        task_name: "Named Task",
         task_status: "open",
         event_count: 1,
         run_count: 1,
@@ -361,6 +376,7 @@ describe("SqliteLedgerStore", () => {
         {
           id: "usage_test",
           task_key: "task",
+          task_name: "Named Task",
           token_count: 30,
           prompt_text: "dashboard prompt",
         },
@@ -369,6 +385,7 @@ describe("SqliteLedgerStore", () => {
         {
           id: "usage_test",
           task_key: "task",
+          task_name: "Named Task",
           token_count: 30,
           prompt_text: "dashboard prompt",
         },

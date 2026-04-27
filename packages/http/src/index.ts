@@ -295,7 +295,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .task-cell {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 8px;
       min-width: 0;
     }
@@ -375,10 +375,25 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       font-weight: 780;
       white-space: nowrap;
     }
+    .task-label,
     .insight-task {
       display: grid;
       gap: 3px;
       min-width: 0;
+    }
+    .task-title {
+      font-weight: 740;
+      line-height: 1.3;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .task-key {
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.25;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .insight-task strong,
     .insight-task .muted {
@@ -697,6 +712,18 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     function taskHref(taskKey, workspace) {
       return '/tasks/' + encodeURIComponent(taskKey) + '?workspace=' + encodeURIComponent(workspace);
     }
+    function taskTitle(row) {
+      return row.task_name || row.task_key || "unassigned";
+    }
+    function renderTaskLabel(row, workspace) {
+      const key = row.task_key || "unassigned";
+      const title = taskTitle(row);
+      const keyHtml = title === key ? "" : '<span class="task-key">' + text(key) + '</span>';
+      if (key === "unassigned") {
+        return '<div class="task-label"><strong class="task-title">' + text(title) + '</strong>' + keyHtml + '</div>';
+      }
+      return '<div class="task-label"><a class="row-link task-title" href="' + text(taskHref(key, workspace)) + '">' + text(title) + '</a>' + keyHtml + '</div>';
+    }
     function renderSignals(signals) {
       return (signals || []).map((signal) => '<span class="signal ' + signalClass(signal) + '">' + text(signal) + '</span>').join("");
     }
@@ -730,11 +757,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 260px;">Task</th><th style="width: 82px;">Status</th><th style="width: 330px;">Insight</th><th style="width: 162px;">Signals</th><th class="num" style="width: 70px;">Turns</th><th class="num" style="width: 64px;">Runs</th><th class="num" style="width: 88px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 84px;">Unpriced</th><th style="width: 146px;">First</th><th style="width: 146px;">Last</th></tr></thead><tbody>' +
         rows.map((row) => {
           const prompt = promptSnippet(row.latest_prompt);
-          const taskLabel = row.task_key === "unassigned"
-            ? '<strong>' + text(row.task_key) + '</strong>'
-            : '<a class="row-link" href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
           const promptHtml = prompt ? '<div class="prompt-snippet">' + text(prompt) + '</div>' : "";
-          return '<tr><td><div class="insight-task">' + taskLabel + '<span class="muted">' + text(row.task_name) + '</span></div></td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text"><div class="insight-text">' + text(row.insight) + '</div>' + promptHtml + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>';
+          return '<tr><td>' + renderTaskLabel(row, workspace) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text"><div class="insight-text">' + text(row.insight) + '</div>' + promptHtml + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -748,8 +772,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       document.getElementById("taskTable").innerHTML = '<table><thead><tr><th style="width: 300px;">Task</th><th class="num" style="width: 76px;">Events</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 80px;">Unpriced</th></tr></thead><tbody>' +
         data.tasks.map((row) => {
           const width = Math.max(4, Math.round((row.estimated_total / max) * 100));
-          const label = row.task_key === "unassigned" ? text(row.task_key) : '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
-          return '<tr><td><div class="task-cell"><div class="bar"><span style="width:' + width + '%"></span></div><span>' + label + '</span></div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td></tr>';
+          const label = renderTaskLabel(row, workspace);
+          return '<tr><td><div class="task-cell"><div class="bar"><span style="width:' + width + '%"></span></div>' + label + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -761,9 +785,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       }
       document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 240px;">Task</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
         data.recent.map((row) => {
-          const task = row.task_key === "unassigned"
-            ? text(row.task_key)
-            : '<a class="row-link" href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
+          const task = renderTaskLabel(row, workspace);
           return '<tr><td class="date-cell">' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
         }).join("") +
         '</tbody></table>';
@@ -872,9 +894,10 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       }
       const data = await response.json();
       const currency = detailCurrency(data);
-      document.title = data.task.key + " · ttoksem";
-      document.getElementById("taskTitle").textContent = data.task.key;
-      document.getElementById("taskMeta").textContent = data.task.name + " · created " + shortDate(data.task.created_at);
+      document.title = data.task.name + " · ttoksem";
+      document.getElementById("taskTitle").textContent = data.task.name;
+      const description = data.task.description ? " · " + data.task.description : "";
+      document.getElementById("taskMeta").textContent = data.task.key + description + " · created " + shortDate(data.task.created_at);
       document.getElementById("taskStatus").textContent = data.task.status;
       renderTaskKpis(data);
       renderTaskSignal(data);
