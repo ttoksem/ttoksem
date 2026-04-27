@@ -86,6 +86,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       --panel: #ffffff;
       --line: #d8dde8;
       --text: #1d2430;
+      --ink: var(--text);
       --muted: #657084;
       --accent: #1b7f6b;
       --accent-2: #2c5f9e;
@@ -94,22 +95,44 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       --ok-bg: #e8f5f1;
       --warn-bg: #fff4df;
       --bad-bg: #fdebea;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      --fs-2xs: 10px;
+      --fs-xs: 11px;
+      --fs-sm: 12px;
+      --fs-base: 13px;
+      --fs-control: 14px;
+      --fs-title: 15px;
+      --fs-card: 16px;
+      --fs-metric: 18px;
+      --fs-kpi: 21px;
+      --fs-brand: 22px;
+      --fs-total: 26px;
+      --lh-tight: 1.15;
+      --lh-title: 1.25;
+      --lh-copy: 1.35;
+      --fw-normal: 400;
+      --fw-medium: 600;
+      --fw-semibold: 700;
+      --fw-bold: 800;
+      font-family: var(--font-ui);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
+      font-size: var(--fs-base);
+      line-height: var(--lh-copy);
       letter-spacing: 0;
-      min-width: 1040px;
+      min-width: 1000px;
     }
     header {
       border-bottom: 1px solid var(--line);
       background: var(--panel);
     }
     .wrap {
-      width: min(1600px, calc(100% - 40px));
+      width: min(1680px, calc(100% - 24px));
       margin: 0 auto;
     }
     .topbar {
@@ -121,13 +144,13 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     h1 {
       margin: 0;
-      font-size: 22px;
-      line-height: 1.1;
-      font-weight: 700;
+      font-size: var(--fs-brand);
+      line-height: var(--lh-tight);
+      font-weight: var(--fw-semibold);
     }
     .workspace {
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--fs-base);
       margin-top: 4px;
     }
     .toolbar {
@@ -144,7 +167,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       padding: 0 10px;
       color: var(--text);
       background: #fff;
-      font-size: 14px;
+      font: inherit;
     }
     button {
       height: 36px;
@@ -153,24 +176,29 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       color: #fff;
       border-radius: 6px;
       padding: 0 12px;
-      font-weight: 650;
+      font: inherit;
+      font-weight: var(--fw-semibold);
       cursor: pointer;
     }
+    button:disabled {
+      cursor: default;
+      opacity: 0.45;
+    }
     main {
-      padding: 16px 0 34px;
+      padding: 12px 0 30px;
     }
     .grid {
       display: grid;
-      gap: 12px;
+      gap: 10px;
     }
     .kpis {
       grid-template-columns: repeat(6, minmax(0, 1fr));
     }
     .workspace-stage {
-      grid-template-columns: minmax(0, 1fr) 400px;
+      grid-template-columns: minmax(0, 1fr) 300px;
       grid-template-rows: auto auto;
       align-items: stretch;
-      margin-top: 12px;
+      margin-top: 10px;
     }
     .workspace-stage > .panel:first-child {
       grid-column: 1;
@@ -185,12 +213,28 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       grid-row: 2;
     }
     .overview-board {
-      grid-template-columns: minmax(0, 1fr) 460px;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-areas:
+        "portfolio cost"
+        "insight insight"
+        "recent recent";
       align-items: start;
-      margin-top: 12px;
+      margin-top: 10px;
+    }
+    .portfolio-panel {
+      grid-area: portfolio;
+    }
+    .cost-column {
+      grid-area: cost;
+    }
+    .task-insight-panel {
+      grid-area: insight;
+    }
+    .recent-usage-panel {
+      grid-area: recent;
     }
     .overview-primary {
-      margin-top: 12px;
+      margin-top: 10px;
     }
     .detail-layout {
       grid-template-columns: minmax(0, 1fr) 420px;
@@ -214,8 +258,9 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     h2 {
       margin: 0;
-      font-size: 15px;
-      line-height: 1.2;
+      font-size: var(--fs-title);
+      line-height: var(--lh-title);
+      font-weight: var(--fw-semibold);
     }
     a {
       color: var(--accent-2);
@@ -232,39 +277,39 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       margin: 4px 0 14px;
     }
     .page-title h1 {
-      font-size: 24px;
+      font-size: var(--fs-brand);
     }
     .title-meta {
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--fs-base);
       margin-top: 5px;
     }
     .kpi {
-      min-height: 86px;
-      padding: 13px 14px;
+      min-height: 74px;
+      padding: 10px 12px;
     }
     .kpi-label {
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 650;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
       text-transform: uppercase;
     }
     .kpi-value {
-      margin-top: 8px;
-      font-size: 24px;
-      line-height: 1.1;
-      font-weight: 760;
+      margin-top: 6px;
+      font-size: var(--fs-kpi);
+      line-height: var(--lh-tight);
+      font-weight: var(--fw-bold);
       white-space: nowrap;
     }
     .kpi-sub {
-      margin-top: 8px;
+      margin-top: 6px;
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--fs-base);
     }
     .workspace-pulse {
       display: grid;
-      gap: 16px;
-      padding: 16px;
+      gap: 12px;
+      padding: 14px;
     }
     .pulse-head {
       display: grid;
@@ -273,21 +318,21 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       align-items: start;
     }
     .pulse-title {
-      font-size: 18px;
-      font-weight: 780;
-      line-height: 1.2;
+      font-size: var(--fs-metric);
+      font-weight: var(--fw-bold);
+      line-height: var(--lh-title);
     }
     .pulse-sub {
       margin-top: 5px;
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.35;
+      font-size: var(--fs-base);
+      line-height: var(--lh-copy);
     }
     .pulse-total {
       text-align: right;
-      font-size: 28px;
-      line-height: 1;
-      font-weight: 780;
+      font-size: var(--fs-total);
+      line-height: var(--lh-tight);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
@@ -295,22 +340,22 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       display: block;
       margin-top: 5px;
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 650;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
       text-transform: uppercase;
     }
     .metric-strip {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      gap: 9px;
     }
     .chart-panel {
       display: grid;
-      gap: 10px;
+      gap: 9px;
       min-width: 0;
       border: 1px solid #edf1f6;
       border-radius: 8px;
-      padding: 12px;
+      padding: 11px;
       background: #fbfcfe;
     }
     .chart-head {
@@ -320,19 +365,19 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       align-items: start;
     }
     .chart-title {
-      font-size: 13px;
-      font-weight: 760;
+      font-size: var(--fs-base);
+      font-weight: var(--fw-semibold);
     }
     .chart-sub {
       margin-top: 3px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
     }
     .chart-total {
       color: var(--ink);
-      font-size: 18px;
-      font-weight: 780;
+      font-size: var(--fs-metric);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
@@ -348,18 +393,18 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .chart-axis {
       fill: var(--muted);
-      font-size: 10px;
-      font-weight: 650;
+      font-size: var(--fs-2xs);
+      font-weight: var(--fw-medium);
     }
     .chart-label {
       fill: var(--ink);
-      font-size: 11px;
-      font-weight: 700;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
     }
     .chart-value {
       fill: var(--muted);
-      font-size: 11px;
-      font-weight: 650;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-medium);
     }
     .chart-bar {
       fill: var(--accent);
@@ -386,7 +431,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       flex-wrap: wrap;
       gap: 8px 14px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: var(--fs-sm);
     }
     .legend-item {
       display: inline-flex;
@@ -408,15 +453,17 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       display: grid;
       place-items: center;
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--fs-base);
       border: 1px dashed #d7deea;
       border-radius: 8px;
       background: #fff;
     }
     .portfolio-view {
       display: grid;
-      gap: 14px;
-      padding: 16px;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      align-items: stretch;
+      padding: 14px;
     }
     .portfolio-readout {
       display: grid;
@@ -427,29 +474,30 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       min-width: 0;
       border: 1px solid #edf1f6;
       border-radius: 8px;
-      padding: 10px 11px;
+      padding: 9px 10px;
       background: #fbfcfe;
     }
     .readout-card span {
       display: block;
       color: var(--muted);
-      font-size: 11px;
-      font-weight: 760;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
       text-transform: uppercase;
     }
     .readout-card strong {
       display: block;
       margin-top: 5px;
       overflow-wrap: anywhere;
-      font-size: 16px;
-      line-height: 1.2;
+      font-size: var(--fs-card);
+      line-height: var(--lh-title);
+      font-weight: var(--fw-semibold);
     }
     .readout-card small {
       display: block;
       margin-top: 5px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.3;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
     }
     .portfolio-dot {
       fill: var(--accent);
@@ -468,13 +516,13 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .quadrant-label {
       fill: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
     }
     .work-progress {
       display: grid;
-      gap: 14px;
-      padding: 16px;
+      gap: 12px;
+      padding: 14px;
     }
     .lifecycle-list {
       display: grid;
@@ -491,8 +539,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 12px;
-      font-weight: 700;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
     }
     .lifecycle-track {
       position: relative;
@@ -511,8 +559,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .cost-intel {
       display: grid;
-      gap: 14px;
-      padding: 16px;
+      gap: 12px;
+      padding: 14px;
     }
     .mix-list {
       display: grid;
@@ -529,17 +577,18 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 13px;
-      font-weight: 760;
+      font-size: var(--fs-base);
+      font-weight: var(--fw-semibold);
     }
     .mix-meta {
       margin-top: 4px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.3;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
     }
     .mix-cost {
-      font-weight: 780;
+      font-size: var(--fs-base);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
@@ -561,22 +610,22 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .metric-label {
       color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
       text-transform: uppercase;
     }
     .metric-value {
       margin-top: 5px;
-      font-size: 18px;
-      font-weight: 780;
+      font-size: var(--fs-metric);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
     .metric-sub {
       margin-top: 4px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.3;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
     }
     .progress-track {
       display: flex;
@@ -613,41 +662,49 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       gap: 10px;
       margin-top: 7px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: var(--fs-sm);
     }
     .task-flow {
       display: grid;
-      gap: 14px;
-      padding: 16px;
+      gap: 12px;
+      padding: 14px;
+    }
+    .task-flow .metric-strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .flow-row {
       display: grid;
-      grid-template-columns: minmax(120px, 150px) minmax(0, 1fr) auto;
-      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px 10px;
       align-items: center;
     }
     .flow-label {
+      grid-column: 1 / -1;
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
       text-transform: uppercase;
     }
     .flow-value {
-      font-size: 18px;
-      font-weight: 780;
+      font-size: var(--fs-metric);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
     .driver-list {
       display: grid;
-      gap: 12px;
-      padding: 14px 16px 16px;
+      gap: 10px;
+      padding: 12px 14px 14px;
+    }
+    #taskTable .driver-list {
+      padding-top: 0;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .driver-row {
       display: grid;
-      gap: 8px;
+      gap: 7px;
       min-width: 0;
-      padding-bottom: 12px;
+      padding-bottom: 10px;
       border-bottom: 1px solid #eef1f6;
     }
     .driver-row:last-child {
@@ -661,7 +718,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       align-items: start;
     }
     .driver-cost {
-      font-weight: 780;
+      font-size: var(--fs-base);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
@@ -670,8 +728,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       flex-wrap: wrap;
       gap: 8px 12px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.3;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
     }
     .driver-meta span {
       white-space: nowrap;
@@ -686,7 +744,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
-      font-size: 13px;
+      font-size: var(--fs-base);
     }
     .mini-row strong {
       overflow-wrap: anywhere;
@@ -697,7 +755,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       min-width: 980px;
       border-collapse: collapse;
       table-layout: fixed;
-      font-size: 13px;
+      font-size: var(--fs-base);
     }
     #taskTable, #recentTable, #taskEventTable, #taskRunTable {
       overflow-x: auto;
@@ -714,6 +772,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     #recentTable table, #taskEventTable table {
       min-width: 1320px;
     }
+    #recentTable {
+      overflow-x: auto;
+    }
+    .table-panel th,
+    .table-panel td {
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }
     #taskRunTable table {
       min-width: 1230px;
     }
@@ -728,8 +794,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     th {
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
       background: #fbfcfe;
     }
     tr:last-child td { border-bottom: 0; }
@@ -742,7 +808,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .task-cell span {
       min-width: 0;
-      line-height: 1.25;
+      line-height: var(--lh-title);
       overflow-wrap: anywhere;
       white-space: normal;
     }
@@ -767,8 +833,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       max-width: 100%;
       padding: 0 8px;
       border-radius: 999px;
-      font-size: 12px;
-      font-weight: 650;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-medium);
       background: var(--ok-bg);
       color: var(--accent);
     }
@@ -786,14 +852,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .attention-list {
       display: grid;
-      padding: 2px 16px;
+      padding: 0 14px;
     }
     .attention-row {
       display: grid;
-      grid-template-columns: 112px minmax(0, 1fr) auto;
-      gap: 12px;
+      grid-template-columns: 62px minmax(0, 1fr) auto;
+      gap: 10px;
       align-items: center;
-      min-height: 66px;
+      min-height: 58px;
       border-bottom: 1px solid #eef1f6;
     }
     .attention-row:last-child {
@@ -803,17 +869,17 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       justify-self: start;
     }
     .attention-title {
-      font-size: 13px;
-      font-weight: 740;
+      font-size: var(--fs-base);
+      font-weight: var(--fw-semibold);
     }
     .attention-body {
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.35;
+      font-size: var(--fs-base);
+      line-height: var(--lh-copy);
     }
     .attention-metric {
-      font-size: 18px;
-      font-weight: 780;
+      font-size: var(--fs-metric);
+      font-weight: var(--fw-bold);
       white-space: nowrap;
     }
     .task-label,
@@ -823,16 +889,16 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       min-width: 0;
     }
     .task-title {
-      font-weight: 740;
-      line-height: 1.3;
+      font-weight: var(--fw-semibold);
+      line-height: var(--lh-title);
       white-space: normal;
       overflow-wrap: anywhere;
     }
     .task-key {
       color: var(--muted);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
-      line-height: 1.25;
+      font-family: var(--font-mono);
+      font-size: var(--fs-sm);
+      line-height: var(--lh-title);
       white-space: normal;
       overflow-wrap: anywhere;
     }
@@ -840,14 +906,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .insight-task .muted {
       white-space: normal;
       overflow-wrap: anywhere;
-      line-height: 1.3;
+      line-height: var(--lh-title);
     }
     .muted {
       color: var(--muted);
     }
     .insight-text {
       white-space: normal;
-      line-height: 1.35;
+      line-height: var(--lh-copy);
     }
     .signal-list {
       display: flex;
@@ -863,8 +929,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       border-radius: 999px;
       background: #edf4ff;
       color: #2c5f9e;
-      font-size: 12px;
-      font-weight: 650;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-medium);
     }
     .signal.warn {
       background: var(--warn-bg);
@@ -877,8 +943,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .prompt-snippet {
       margin-top: 7px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
       white-space: normal;
       overflow-wrap: anywhere;
     }
@@ -892,11 +958,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       grid-template-columns: minmax(92px, 132px) minmax(0, 1fr) 52px;
       gap: 10px;
       align-items: center;
-      font-size: 13px;
+      font-size: var(--fs-base);
     }
     .wide-text {
       white-space: normal;
-      line-height: 1.35;
+      line-height: var(--lh-copy);
       overflow-wrap: anywhere;
     }
     .money-cell,
@@ -907,7 +973,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .row-link {
       display: inline-flex;
       max-width: 100%;
-      font-weight: 740;
+      font-weight: var(--fw-semibold);
       overflow-wrap: anywhere;
       white-space: normal;
     }
@@ -916,9 +982,35 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       align-items: center;
       gap: 10px;
     }
+    .pager {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .page-range {
+      color: var(--muted);
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
+      white-space: nowrap;
+    }
+    .page-button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-color: var(--line);
+      background: #fff;
+      color: var(--text);
+      font-size: var(--fs-base);
+      line-height: var(--lh-tight);
+    }
+    .page-button:not(:disabled):hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
     .section-tabs a {
-      font-size: 13px;
-      font-weight: 700;
+      font-size: var(--fs-base);
+      font-weight: var(--fw-semibold);
     }
     .hidden {
       display: none;
@@ -940,19 +1032,19 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .daily-label {
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
       text-transform: uppercase;
     }
     .daily-sub {
       margin-top: 4px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.3;
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
     }
     .daily-total {
-      font-size: 18px;
-      font-weight: 780;
+      font-size: var(--fs-metric);
+      font-weight: var(--fw-bold);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
@@ -975,17 +1067,30 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .empty, .error {
       padding: 18px 16px;
       color: var(--muted);
-      font-size: 14px;
+      font-size: var(--fs-control);
     }
     .error { color: var(--bad); }
-    @media (max-width: 1220px) {
-      body { min-width: 1040px; }
+    @media (max-width: 900px) {
+      body { min-width: 900px; }
       .kpis {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
       .workspace-stage,
       .overview-board,
       .detail-layout {
+        grid-template-columns: 1fr;
+      }
+      .overview-board {
+        grid-template-areas:
+          "portfolio"
+          "cost"
+          "insight"
+          "recent";
+      }
+      .portfolio-view {
+        grid-template-columns: 1fr;
+      }
+      #taskTable .driver-list {
         grid-template-columns: 1fr;
       }
       .workspace-stage > .panel:first-child,
@@ -998,12 +1103,39 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
-    @media (min-width: 1500px) {
+    @media (min-width: 1240px) {
       .workspace-stage {
-        grid-template-columns: minmax(0, 1fr) 420px;
+        grid-template-columns: minmax(0, 1fr) 360px;
       }
       .overview-board {
-        grid-template-columns: minmax(0, 1fr) 480px;
+        grid-template-columns: minmax(0, 1fr) 400px;
+      }
+      .portfolio-view {
+        grid-template-columns: minmax(0, 1fr) 280px;
+      }
+      .portfolio-view > .chart-panel {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .portfolio-readout {
+        grid-column: 2;
+        grid-row: 1;
+        grid-template-columns: 1fr;
+        align-content: start;
+      }
+      #taskTable .driver-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      #taskTable .driver-row {
+        padding-bottom: 9px;
+      }
+    }
+    @media (min-width: 1500px) {
+      .workspace-stage {
+        grid-template-columns: minmax(0, 1fr) 400px;
+      }
+      .overview-board {
+        grid-template-columns: minmax(0, 1fr) 450px;
       }
     }
   </style>
@@ -1038,24 +1170,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     </section>
     <section class="grid kpis overview-primary" id="kpis"></section>
     <section class="grid overview-board">
-      <section class="stack">
-        <section class="panel">
-          <div class="panel-head"><h2>Task Portfolio</h2><span class="pill" id="taskCount"></span></div>
-          <div id="taskTable"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head">
-            <h2>Task Insight</h2>
-            <div class="section-tabs"><span class="pill" id="insightCount"></span></div>
-          </div>
-          <div id="insightTable"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Recent Usage</h2><span class="pill" id="recentCount"></span></div>
-          <div id="recentTable"></div>
-        </section>
+      <section class="panel portfolio-panel">
+        <div class="panel-head"><h2>Task Portfolio</h2><div class="section-tabs"><span class="pill" id="taskCount"></span><span class="pager" id="taskPager"></span></div></div>
+        <div id="taskTable"></div>
       </section>
-      <aside class="stack">
+      <aside class="stack cost-column">
         <section class="panel">
           <div class="panel-head"><h2>Cost Intelligence</h2><span class="pill" id="modelCount"></span></div>
           <div id="costIntelligence"></div>
@@ -1065,6 +1184,17 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
           <div class="spark" id="dailySpark"></div>
         </section>
       </aside>
+      <section class="panel table-panel task-insight-panel">
+        <div class="panel-head">
+          <h2>Task Insight</h2>
+          <div class="section-tabs"><span class="pill" id="insightCount"></span><span class="pager" id="insightPager"></span></div>
+        </div>
+        <div id="insightTable"></div>
+      </section>
+      <section class="panel table-panel recent-usage-panel">
+        <div class="panel-head"><h2>Recent Usage</h2><div class="section-tabs"><span class="pill" id="recentCount"></span><span class="pager" id="recentPager"></span></div></div>
+        <div id="recentTable"></div>
+      </section>
     </section>
   </main>
   <main class="wrap hidden" id="taskPage">
@@ -1118,6 +1248,20 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     const workspaceInput = document.getElementById("workspaceInput");
     const workspaceLabel = document.getElementById("workspaceLabel");
     const form = document.getElementById("workspaceForm");
+    const PAGE_SIZE = {
+      tasks: 6,
+      insights: 8,
+      recent: 10,
+    };
+    const dashboardState = {
+      data: null,
+      workspace: workspaceInput.value,
+      pages: {
+        tasks: 0,
+        insights: 0,
+        recent: 0,
+      },
+    };
     workspaceInput.value = new URLSearchParams(location.search).get("workspace") || defaultWorkspace;
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1127,6 +1271,19 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       } else {
         loadDashboard(workspace);
       }
+    });
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("[data-page-key]");
+      if (!button || button.disabled || !dashboardState.data) return;
+      const key = button.getAttribute("data-page-key");
+      const delta = Number(button.getAttribute("data-page-delta") || 0);
+      if (!key || !Number.isFinite(delta)) return;
+      dashboardState.pages[key] = (dashboardState.pages[key] || 0) + delta;
+      if (key === "tasks") renderTasks(dashboardState.data, dashboardState.workspace);
+      if (key === "insights") renderTaskInsights(dashboardState.data, dashboardState.workspace);
+      if (key === "recent") renderRecent(dashboardState.data, dashboardState.workspace);
     });
 
     function money(value, currency) {
@@ -1148,6 +1305,34 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         '"': "&quot;",
         "'": "&#039;",
       })[char]);
+    }
+    function pagedRows(key, rows, pageSize) {
+      const total = rows.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const requested = Number(dashboardState.pages[key] || 0);
+      const page = Math.min(Math.max(0, requested), totalPages - 1);
+      dashboardState.pages[key] = page;
+      const start = total === 0 ? 0 : page * pageSize;
+      const end = Math.min(total, start + pageSize);
+      return {
+        rows: rows.slice(start, end),
+        page,
+        totalPages,
+        start,
+        end,
+        total,
+      };
+    }
+    function renderPager(id, key, page) {
+      const pager = document.getElementById(id);
+      if (!pager) return;
+      const range = page.total === 0
+        ? "0 of 0"
+        : integer(page.start + 1) + "-" + integer(page.end) + " of " + integer(page.total);
+      pager.innerHTML =
+        '<span class="page-range">' + text(range) + '</span>' +
+        '<button type="button" class="page-button" data-page-key="' + text(key) + '" data-page-delta="-1" aria-label="Previous page"' + (page.page <= 0 ? " disabled" : "") + '>&lt;</button>' +
+        '<button type="button" class="page-button" data-page-key="' + text(key) + '" data-page-delta="1" aria-label="Next page"' + (page.page >= page.totalPages - 1 ? " disabled" : "") + '>&gt;</button>';
     }
     function pillClass(value) {
       if (value === "unpriced" || value === "unassigned") return "warn";
@@ -1230,15 +1415,15 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       const maxEvents = Math.max(...buckets.map((row) => row.event_count), 1);
       const maxCost = Math.max(...buckets.map((row) => row.cost), 0.000001);
       const width = 640;
-      const height = 220;
-      const left = 42;
-      const top = 18;
-      const right = 22;
-      const bottom = 34;
+      const height = 176;
+      const left = 38;
+      const top = 14;
+      const right = 18;
+      const bottom = 30;
       const plotWidth = width - left - right;
       const plotHeight = height - top - bottom;
       const step = buckets.length > 1 ? plotWidth / (buckets.length - 1) : 0;
-      const barWidth = Math.max(10, Math.min(34, plotWidth / Math.max(buckets.length, 1) * 0.48));
+      const barWidth = Math.max(9, Math.min(30, plotWidth / Math.max(buckets.length, 1) * 0.46));
       const xAt = (index) => buckets.length === 1 ? left + plotWidth / 2 : left + index * step;
       const eventY = (value) => top + plotHeight - (value / maxEvents) * plotHeight;
       const costY = (value) => top + plotHeight - (value / maxCost) * plotHeight;
@@ -1324,11 +1509,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task portfolio</div><div class="chart-sub">Cost, turns, and token weight by task</div></div></div><div class="chart-empty">No task portfolio data.</div></div>';
       }
       const width = 860;
-      const height = 360;
+      const height = 310;
       const left = 58;
-      const top = 28;
+      const top = 24;
       const right = 26;
-      const bottom = 46;
+      const bottom = 42;
       const plotWidth = width - left - right;
       const plotHeight = height - top - bottom;
       const maxCost = Math.max(...rows.map((row) => row.estimated_total || 0), 0.000001);
@@ -1422,7 +1607,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         .filter((row) => row.task_key !== "unassigned" && row.first_activity_at && row.last_activity_at)
         .slice()
         .sort((a, b) => String(b.last_activity_at).localeCompare(String(a.last_activity_at)))
-        .slice(0, 6);
+        .slice(0, 5);
       const minMs = Math.min(...datedRows.map((row) => Date.parse(row.first_activity_at)));
       const maxMs = Math.max(...datedRows.map((row) => Date.parse(row.last_activity_at)));
       const spanMs = Math.max(1, maxMs - minMs);
@@ -1468,14 +1653,16 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         ).join("") + '</div>';
     }
     function renderTaskInsights(data, workspace) {
-      const rows = data.task_insights || [];
-      document.getElementById("insightCount").textContent = integer(rows.length);
-      if (rows.length === 0) {
+      const allRows = data.task_insights || [];
+      const page = pagedRows("insights", allRows, PAGE_SIZE.insights);
+      document.getElementById("insightCount").textContent = integer(allRows.length);
+      renderPager("insightPager", "insights", page);
+      if (allRows.length === 0) {
         document.getElementById("insightTable").innerHTML = '<div class="empty">No task insight yet.</div>';
         return;
       }
       document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 260px;">Task</th><th style="width: 82px;">Status</th><th style="width: 330px;">Insight</th><th style="width: 162px;">Signals</th><th class="num" style="width: 70px;">Turns</th><th class="num" style="width: 64px;">Runs</th><th class="num" style="width: 88px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 84px;">Unpriced</th><th style="width: 146px;">First</th><th style="width: 146px;">Last</th></tr></thead><tbody>' +
-        rows.map((row) => {
+        page.rows.map((row) => {
           const prompt = promptSnippet(row.latest_prompt);
           const promptHtml = prompt ? '<div class="prompt-snippet">' + text(prompt) + '</div>' : "";
           return '<tr><td>' + renderTaskLabel(row, workspace) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text"><div class="insight-text">' + text(row.insight) + '</div>' + promptHtml + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>';
@@ -1485,13 +1672,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     function renderTasks(data, workspace) {
       const max = Math.max(...data.tasks.map((row) => row.estimated_total), 0.000001);
       document.getElementById("taskCount").textContent = integer(data.tasks.length);
+      const page = pagedRows("tasks", data.tasks, PAGE_SIZE.tasks);
+      renderPager("taskPager", "tasks", page);
       if (data.tasks.length === 0) {
         document.getElementById("taskTable").innerHTML = '<div class="empty">No usage.</div>';
         return;
       }
-      const rows = data.tasks.slice(0, 12);
       document.getElementById("taskTable").innerHTML = '<div class="portfolio-view">' + renderTaskPortfolioChart(data, workspace) + renderPortfolioReadout(data, workspace) + '</div><div class="driver-list">' +
-        rows.map((row) => {
+        page.rows.map((row) => {
           const width = Math.max(4, Math.round((row.estimated_total / max) * 100));
           const label = renderTaskLabel(row, workspace);
           const share = percent(row.estimated_total, data.summary.estimated_total);
@@ -1500,13 +1688,16 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         '</div>';
     }
     function renderRecent(data, workspace) {
-      document.getElementById("recentCount").textContent = integer(data.recent.length);
-      if (data.recent.length === 0) {
+      const allRows = data.recent || [];
+      const page = pagedRows("recent", allRows, PAGE_SIZE.recent);
+      document.getElementById("recentCount").textContent = integer(allRows.length);
+      renderPager("recentPager", "recent", page);
+      if (allRows.length === 0) {
         document.getElementById("recentTable").innerHTML = '<div class="empty">No usage.</div>';
         return;
       }
       document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 240px;">Task</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
-        data.recent.map((row) => {
+        page.rows.map((row) => {
           const task = renderTaskLabel(row, workspace);
           return '<tr><td class="date-cell">' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
         }).join("") +
@@ -1584,6 +1775,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         return;
       }
       const data = await response.json();
+      dashboardState.data = data;
+      dashboardState.workspace = workspace;
+      dashboardState.pages.tasks = 0;
+      dashboardState.pages.insights = 0;
+      dashboardState.pages.recent = 0;
       renderWorkspacePulse(data, workspace);
       renderTaskFlow(data);
       renderKpis(data);
