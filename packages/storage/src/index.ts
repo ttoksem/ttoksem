@@ -176,6 +176,19 @@ export interface DashboardDailyCostRow {
   estimated_cost_nanos: number;
 }
 
+export interface DashboardTaskRunRow {
+  run_id: string | null;
+  run_status: string | null;
+  run_source: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  event_count: number;
+  token_count: number;
+  estimated_cost_nanos: number;
+  first_activity_at: string | null;
+  last_activity_at: string | null;
+}
+
 export interface PricingRuleLookupInput {
   workspaceId: string;
   provider: string;
@@ -260,9 +273,37 @@ export interface LedgerStore {
   reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]>;
   getDashboardSummary(workspaceId: string): Promise<DashboardSummaryRow>;
   listDashboardTaskCosts(workspaceId: string, limit: number): Promise<DashboardTaskCostRow[]>;
+  getDashboardTaskInsight(workspaceId: string, taskId: string): Promise<DashboardTaskInsightRow | null>;
   listDashboardTaskInsights(workspaceId: string, limit: number): Promise<DashboardTaskInsightRow[]>;
   listRecentUsageEvents(workspaceId: string, limit: number): Promise<DashboardRecentUsageRow[]>;
+  listRecentUsageEventsForTask(
+    workspaceId: string,
+    taskId: string,
+    limit: number,
+  ): Promise<DashboardRecentUsageRow[]>;
   listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;
+  listDashboardPricingModeBreakdownForTask(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<DashboardBreakdownRow[]>;
   listDashboardAccuracyModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;
+  listDashboardAccuracyModeBreakdownForTask(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<DashboardBreakdownRow[]>;
+  listDashboardProviderModelBreakdownForTask(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<DashboardBreakdownRow[]>;
   listDashboardDailyCosts(workspaceId: string, limit: number): Promise<DashboardDailyCostRow[]>;
+  listDashboardDailyCostsForTask(
+    workspaceId: string,
+    taskId: string,
+    limit: number,
+  ): Promise<DashboardDailyCostRow[]>;
+  listDashboardRunsForTask(
+    workspaceId: string,
+    taskId: string,
+    limit: number,
+  ): Promise<DashboardTaskRunRow[]>;
 }

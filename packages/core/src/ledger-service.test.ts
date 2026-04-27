@@ -395,11 +395,18 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
       currency: null,
     }),
     listDashboardTaskCosts: async () => [],
+    getDashboardTaskInsight: async () => null,
     listDashboardTaskInsights: async () => [],
     listRecentUsageEvents: async () => [],
+    listRecentUsageEventsForTask: async () => [],
     listDashboardPricingModeBreakdown: async () => [],
+    listDashboardPricingModeBreakdownForTask: async () => [],
     listDashboardAccuracyModeBreakdown: async () => [],
+    listDashboardAccuracyModeBreakdownForTask: async () => [],
+    listDashboardProviderModelBreakdownForTask: async () => [],
     listDashboardDailyCosts: async () => [],
+    listDashboardDailyCostsForTask: async () => [],
+    listDashboardRunsForTask: async () => [],
     ...overrides,
   };
 }

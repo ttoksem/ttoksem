@@ -10,6 +10,8 @@ import {
   type WorkspaceRecord,
 } from "@ttoksem/schema";
 import type {
+  DashboardBreakdownRow,
+  DashboardRecentUsageRow,
   DashboardSummaryRow,
   DashboardTaskInsightRow,
   LedgerReportRow,
@@ -149,6 +151,39 @@ export interface DashboardData {
     event_count: number;
     estimated_total: number;
   }>;
+}
+
+export interface DashboardTaskDetailData {
+  workspace: {
+    key: string;
+    name: string;
+  };
+  task: {
+    key: string;
+    name: string;
+    status: string;
+    created_at: string;
+    started_at: string | null;
+    closed_at: string | null;
+  };
+  insight: DashboardData["task_insights"][number];
+  recent: DashboardData["recent"];
+  daily: DashboardData["daily"];
+  runs: Array<{
+    run_id: string;
+    status: string;
+    source: string;
+    started_at: string | null;
+    ended_at: string | null;
+    event_count: number;
+    token_count: number;
+    estimated_total: number;
+    first_activity_at: string | null;
+    last_activity_at: string | null;
+  }>;
+  provider_breakdown: DashboardData["pricing_breakdown"];
+  pricing_breakdown: DashboardData["pricing_breakdown"];
+  accuracy_breakdown: DashboardData["accuracy_breakdown"];
 }
 
 export class LedgerService {
@@ -539,6 +574,79 @@ export class LedgerService {
     };
   }
 
+  async dashboardTask(input: {
+    workspace: WorkspaceResolver;
+    taskKey: string;
+    recentLimit?: number;
+    dayLimit?: number;
+    runLimit?: number;
+  }): Promise<DashboardTaskDetailData> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const task = await this.store.getTaskByKey(workspace.id, input.taskKey);
+    if (!task) throw new Error("Task not found.");
+
+    const [
+      workspaceInsights,
+      taskInsightRow,
+      recent,
+      daily,
+      runs,
+      providerBreakdown,
+      pricingBreakdown,
+      accuracyBreakdown,
+    ] = await Promise.all([
+      this.store.listDashboardTaskInsights(workspace.id, 200),
+      this.store.getDashboardTaskInsight(workspace.id, task.id),
+      this.store.listRecentUsageEventsForTask(workspace.id, task.id, input.recentLimit ?? 100),
+      this.store.listDashboardDailyCostsForTask(workspace.id, task.id, input.dayLimit ?? 30),
+      this.store.listDashboardRunsForTask(workspace.id, task.id, input.runLimit ?? 100),
+      this.store.listDashboardProviderModelBreakdownForTask(workspace.id, task.id),
+      this.store.listDashboardPricingModeBreakdownForTask(workspace.id, task.id),
+      this.store.listDashboardAccuracyModeBreakdownForTask(workspace.id, task.id),
+    ]);
+    const maxCostNanos = Math.max(...workspaceInsights.map((row) => row.estimated_cost_nanos), 0);
+    const insight = taskInsightRow
+      ? buildTaskInsights([taskInsightRow], { maxCostNanos })[0]
+      : emptyTaskInsight(task);
+
+    return {
+      workspace: {
+        key: workspace.key,
+        name: workspace.name,
+      },
+      task: {
+        key: task.key,
+        name: task.name,
+        status: task.status,
+        created_at: task.created_at,
+        started_at: task.started_at ?? null,
+        closed_at: task.closed_at ?? null,
+      },
+      insight,
+      recent: recent.map(toDashboardRecent),
+      daily: daily.map((row) => ({
+        date: row.date,
+        event_count: row.event_count,
+        estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+      })),
+      runs: runs.map((run) => ({
+        run_id: run.run_id ?? "no-run",
+        status: run.run_status ?? "no-run",
+        source: run.run_source ?? "unknown",
+        started_at: run.started_at,
+        ended_at: run.ended_at,
+        event_count: run.event_count,
+        token_count: run.token_count,
+        estimated_total: nanosToDecimal(run.estimated_cost_nanos),
+        first_activity_at: run.first_activity_at,
+        last_activity_at: run.last_activity_at,
+      })),
+      provider_breakdown: providerBreakdown.map(toDashboardBreakdown),
+      pricing_breakdown: pricingBreakdown.map(toDashboardBreakdown),
+      accuracy_breakdown: accuracyBreakdown.map(toDashboardBreakdown),
+    };
+  }
+
   private async resolveUsageTask(
     workspace: WorkspaceRecord,
     message: AiUsageObserved,
@@ -680,8 +788,55 @@ export class LedgerService {
   }
 }
 
-function buildTaskInsights(rows: DashboardTaskInsightRow[]): DashboardData["task_insights"] {
-  const maxCostNanos = Math.max(...rows.map((row) => row.estimated_cost_nanos), 0);
+function toDashboardRecent(event: DashboardRecentUsageRow): DashboardData["recent"][number] {
+  return {
+    id: event.id,
+    occurred_at: event.occurred_at,
+    task_key: event.task_key ?? "unassigned",
+    provider_model: `${event.provider}/${event.model}`,
+    usage_kind: event.usage_kind,
+    tokens: event.token_count,
+    cost: nanosToDecimal(event.estimated_cost_nanos ?? event.observed_cost_nanos),
+    currency: event.estimated_currency ?? event.observed_currency,
+    confidence: event.pricing_mode ?? event.accuracy_mode,
+    assignment_status: event.assignment_status,
+    duration_ms: event.duration_ms ?? null,
+    prompt: event.prompt_text,
+  };
+}
+
+function toDashboardBreakdown(row: DashboardBreakdownRow): DashboardData["pricing_breakdown"][number] {
+  return {
+    key: row.key,
+    event_count: row.event_count,
+    estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+  };
+}
+
+function emptyTaskInsight(task: TaskRecord): DashboardData["task_insights"][number] {
+  return {
+    task_key: task.key,
+    task_name: task.name,
+    status: task.status,
+    event_count: 0,
+    token_count: 0,
+    estimated_total: 0,
+    unpriced_count: 0,
+    run_count: 0,
+    first_activity_at: null,
+    last_activity_at: null,
+    latest_prompt: null,
+    signals: [task.status],
+    insight: "No usage has been recorded for this task yet.",
+  };
+}
+
+function buildTaskInsights(
+  rows: DashboardTaskInsightRow[],
+  options: { maxCostNanos?: number } = {},
+): DashboardData["task_insights"] {
+  const maxCostNanos =
+    options.maxCostNanos ?? Math.max(...rows.map((row) => row.estimated_cost_nanos), 0);
   return rows.map((row) => {
     const isUnassigned = row.task_id == null || row.task_key == null;
     return {

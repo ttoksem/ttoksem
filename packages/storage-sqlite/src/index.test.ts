@@ -348,7 +348,24 @@ describe("SqliteLedgerStore", () => {
           latest_prompt: "dashboard prompt",
         },
       ]);
+      await expect(store.getDashboardTaskInsight("ws_test", "task_test")).resolves.toMatchObject({
+        task_key: "task",
+        task_status: "open",
+        event_count: 1,
+        run_count: 1,
+        token_count: 30,
+        estimated_cost_nanos: 1500,
+        latest_prompt: "dashboard prompt",
+      });
       await expect(store.listRecentUsageEvents("ws_test", 10)).resolves.toMatchObject([
+        {
+          id: "usage_test",
+          task_key: "task",
+          token_count: 30,
+          prompt_text: "dashboard prompt",
+        },
+      ]);
+      await expect(store.listRecentUsageEventsForTask("ws_test", "task_test", 10)).resolves.toMatchObject([
         {
           id: "usage_test",
           task_key: "task",
@@ -359,8 +376,29 @@ describe("SqliteLedgerStore", () => {
       await expect(store.listDashboardPricingModeBreakdown("ws_test")).resolves.toMatchObject([
         { key: "rule_calculated", event_count: 1, estimated_cost_nanos: 1500 },
       ]);
+      await expect(store.listDashboardPricingModeBreakdownForTask("ws_test", "task_test")).resolves.toMatchObject([
+        { key: "rule_calculated", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
+      await expect(store.listDashboardAccuracyModeBreakdownForTask("ws_test", "task_test")).resolves.toMatchObject([
+        { key: "estimated", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
+      await expect(store.listDashboardProviderModelBreakdownForTask("ws_test", "task_test")).resolves.toMatchObject([
+        { key: "openai/codex-chat", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
       await expect(store.listDashboardDailyCosts("ws_test", 10)).resolves.toMatchObject([
         { date: "2026-04-27", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
+      await expect(store.listDashboardDailyCostsForTask("ws_test", "task_test", 10)).resolves.toMatchObject([
+        { date: "2026-04-27", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
+      await expect(store.listDashboardRunsForTask("ws_test", "task_test", 10)).resolves.toMatchObject([
+        {
+          run_id: "run_test",
+          run_status: "active",
+          event_count: 1,
+          token_count: 30,
+          estimated_cost_nanos: 1500,
+        },
       ]);
     } finally {
       await store.close();
