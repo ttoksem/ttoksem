@@ -124,6 +124,9 @@ usage
   .option("--task <key>", "task key")
   .option("--provider <provider>", "provider name")
   .option("--model <model>", "model name")
+  .option("--started-at <iso>", "usage start timestamp")
+  .option("--ended-at <iso>", "usage end timestamp")
+  .option("--duration-ms <ms>", "usage duration in milliseconds")
   .option("--input-tokens <count>", "input token count")
   .option("--output-tokens <count>", "output token count")
   .option("--observed-cost <amount>", "provider-observed cost")
@@ -164,6 +167,9 @@ usage
   .option("--workspace <key>", "workspace key", "ttoksem-dev")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--model <model>", "model label", "codex-chat")
+  .option("--started-at <iso>", "turn start timestamp")
+  .option("--ended-at <iso>", "turn end timestamp")
+  .option("--duration-ms <ms>", "turn duration in milliseconds")
   .option("--input-tokens <count>", "estimated input token count")
   .option("--output-tokens <count>", "estimated output token count")
   .option("--input-chars <count>", "input character count to estimate tokens")
@@ -247,6 +253,9 @@ interface UsageAddOptions {
   task?: string;
   provider?: string;
   model?: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: string;
   inputTokens?: string;
   outputTokens?: string;
   observedCost?: string;
@@ -265,6 +274,9 @@ interface CodexTurnOptions {
   workspace: string;
   task?: string;
   model: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: string;
   inputTokens?: string;
   outputTokens?: string;
   inputChars?: string;
@@ -336,6 +348,9 @@ function buildUsageMessage(options: UsageAddOptions): AiUsageObserved {
         provider: options.provider,
         model: options.model,
         usage_kind: "chat_completion",
+        started_at: options.startedAt ?? null,
+        ended_at: options.endedAt ?? null,
+        duration_ms: parseOptionalInteger(options.durationMs),
         input_tokens: parseOptionalInteger(options.inputTokens),
         output_tokens: parseOptionalInteger(options.outputTokens),
         observed_cost: observedCost,
@@ -355,8 +370,29 @@ function buildUsageMessage(options: UsageAddOptions): AiUsageObserved {
 function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
   const promptText = readOptionalText(options.promptText, options.promptFile);
   const responseText = readOptionalText(options.responseText, options.responseFile);
-  const inputTokens = parseEstimatedTokens(options.inputTokens, options.inputChars);
-  const outputTokens = parseEstimatedTokens(options.outputTokens, options.outputChars);
+  const inputEstimate = estimateTokenCount({
+    tokens: options.inputTokens,
+    chars: options.inputChars,
+    text: promptText,
+    scope: "user_prompt_only",
+    textSource: "prompt_text",
+    charsSource: "input_chars_option",
+    tokensSource: "input_tokens_option",
+  });
+  const outputEstimate = estimateTokenCount({
+    tokens: options.outputTokens,
+    chars: options.outputChars,
+    text: responseText,
+    scope: "assistant_response_text",
+    textSource: "response_text",
+    charsSource: "output_chars_option",
+    tokensSource: "output_tokens_option",
+  });
+  const inputTokens = inputEstimate.tokens;
+  const outputTokens = outputEstimate.tokens;
+  const totalTokens =
+    inputTokens == null && outputTokens == null ? null : (inputTokens ?? 0) + (outputTokens ?? 0);
+  const accuracyMode = tokenAccuracyMode(inputEstimate.mode, outputEstimate.mode);
   return AiUsageObservedSchema.parse({
     schema_version: "1.0",
     message_id: `msg_codex_${Date.now()}`,
@@ -372,13 +408,13 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
         provider: "openai",
         model: options.model,
         usage_kind: "conversation_turn",
+        started_at: options.startedAt ?? null,
+        ended_at: options.endedAt ?? null,
+        duration_ms: parseOptionalInteger(options.durationMs),
         input_tokens: inputTokens,
         output_tokens: outputTokens,
-        total_tokens:
-          inputTokens == null && outputTokens == null
-            ? null
-            : (inputTokens ?? 0) + (outputTokens ?? 0),
-        accuracy_mode: "estimated",
+        total_tokens: totalTokens,
+        accuracy_mode: accuracyMode,
         pricing_mode: "unpriced",
         unpriced_reason: "missing_pricing_rule",
       },
@@ -391,7 +427,15 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
               response_text: options.promptMode === "full" ? responseText : null,
               retention_note: "User requested full prompt/response retention for Codex chat logging.",
             },
-      source_context: { tool: "codex-chat", capture_mode: "assistant_estimated_turn" },
+      source_context: {
+        tool: "codex-chat",
+        capture_mode: "assistant_estimated_turn",
+        token_estimation: {
+          input: inputEstimate.context,
+          output: outputEstimate.context,
+          total_tokens: totalTokens,
+        },
+      },
     },
   });
 }
@@ -427,6 +471,7 @@ function printUsageEventLine(event: UsageEventRecord): void {
       event.occurred_at,
       `${event.provider}/${event.model}`,
       `tokens=${tokens}`,
+      event.duration_ms == null ? "" : `duration_ms=${event.duration_ms}`,
       `pricing=${event.pricing_mode ?? "unknown"}`,
       prompt ? `prompt=${truncate(prompt, 80)}` : "",
     ]
@@ -466,12 +511,61 @@ function parsePositiveInteger(value: string): number {
   return parsed;
 }
 
-function parseEstimatedTokens(tokens: string | undefined, chars: string | undefined): number | null {
-  const explicit = parseOptionalInteger(tokens);
-  if (explicit != null) return explicit;
-  const charCount = parseOptionalInteger(chars);
-  if (charCount == null) return null;
-  return Math.max(1, Math.ceil(charCount / 4));
+function estimateTokenCount(input: {
+  tokens?: string;
+  chars?: string;
+  text: string | null;
+  scope: string;
+  textSource: string;
+  charsSource: string;
+  tokensSource: string;
+}): {
+  tokens: number | null;
+  mode: "manual" | "estimated" | null;
+  context: Record<string, unknown> | null;
+} {
+  const explicitTokens = parseOptionalInteger(input.tokens);
+  if (explicitTokens != null) {
+    return {
+      tokens: explicitTokens,
+      mode: "manual",
+      context: {
+        mode: "manual",
+        method: "user_entered",
+        scope: input.scope,
+        source: input.tokensSource,
+        tokens: explicitTokens,
+      },
+    };
+  }
+
+  const explicitChars = parseOptionalInteger(input.chars);
+  const charCount = explicitChars ?? input.text?.length ?? null;
+  if (charCount == null) return { tokens: null, mode: null, context: null };
+
+  const tokens = Math.max(1, Math.ceil(charCount / 4));
+  return {
+    tokens,
+    mode: "estimated",
+    context: {
+      mode: "estimated",
+      method: "chars_div_4",
+      scope: input.scope,
+      source: explicitChars == null ? input.textSource : input.charsSource,
+      chars: charCount,
+      tokens,
+      version: "v1",
+    },
+  };
+}
+
+function tokenAccuracyMode(
+  inputMode: "manual" | "estimated" | null,
+  outputMode: "manual" | "estimated" | null,
+): "manual" | "estimated" {
+  if (inputMode === "estimated" || outputMode === "estimated") return "estimated";
+  if (inputMode === "manual" || outputMode === "manual") return "manual";
+  return "estimated";
 }
 
 function parseOptionalNumber(value: string | undefined): number | null {

@@ -152,6 +152,9 @@ export class LedgerService {
       source,
       idempotency_key: parsed.idempotency_key ?? null,
       occurred_at: parsed.occurred_at,
+      started_at: usage.started_at ?? null,
+      ended_at: usage.ended_at ?? null,
+      duration_ms: usage.duration_ms ?? inferDurationMs(usage.started_at, usage.ended_at),
       provider: usage.provider,
       model: usage.model,
       usage_kind: usage.usage_kind,
@@ -241,6 +244,15 @@ function inferPricingMode(
   if (observedCost != null) return "provider_reported";
   if (estimatedCost != null) return "rule_calculated";
   return "unpriced";
+}
+
+function inferDurationMs(
+  startedAt: string | null | undefined,
+  endedAt: string | null | undefined,
+): number | null {
+  if (!startedAt || !endedAt) return null;
+  const duration = Date.parse(endedAt) - Date.parse(startedAt);
+  return Number.isFinite(duration) && duration >= 0 ? duration : null;
 }
 
 function defaultIdFactory(prefix: string): string {

@@ -23,6 +23,16 @@ The MVP does not perform currency conversion, mixed-currency subtotaling, or pri
 
 In practice, most initial pricing data is expected to be USD. Reports should only show a single currency when all included cost rows use the same currency; mixed or missing currency rows should be surfaced as unknown or warning state instead of silently merged.
 
+## Usage Timing Policy
+
+`occurred_at` remains the canonical event time for ordering and reporting. Usage records may also carry optional execution timing:
+
+- `started_at`: when the measured assistant/model work started
+- `ended_at`: when that work ended
+- `duration_ms`: elapsed time in milliseconds
+
+If `started_at` and `ended_at` are present but `duration_ms` is omitted, the core service derives `duration_ms`. Missing timing fields are allowed so lightweight/manual logging stays simple.
+
 ## Project Shape
 
 This repo is intentionally a pnpm workspace, not a single `src/` package.
@@ -40,6 +50,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 ## Examples
 
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
+- [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 
 ## Development
 
@@ -57,7 +68,7 @@ Use `TTOKSEM_DB=/path/to/ttoksem.db` to select a local SQLite file. Without it, 
 ```bash
 pnpm cli workspace init --key ttoksem-dev --root .
 pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
-pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging
+pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev

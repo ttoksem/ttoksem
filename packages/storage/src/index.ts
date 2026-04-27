@@ -31,6 +31,9 @@ export interface CreateUsageEventInput {
   source: string;
   idempotency_key?: string | null;
   occurred_at: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  duration_ms?: number | null;
   provider: string;
   model: string;
   usage_kind: string;

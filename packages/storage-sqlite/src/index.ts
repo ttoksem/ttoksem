@@ -84,6 +84,9 @@ export class SqliteLedgerStore implements LedgerStore {
         source TEXT NOT NULL,
         idempotency_key TEXT,
         occurred_at TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT,
+        duration_ms INTEGER,
         provider TEXT NOT NULL,
         model TEXT NOT NULL,
         usage_kind TEXT NOT NULL,
@@ -121,6 +124,9 @@ export class SqliteLedgerStore implements LedgerStore {
       .run("0001_initial", new Date().toISOString());
     addColumnIfMissing(this.db, "usage_events", "observed_currency", "TEXT");
     addColumnIfMissing(this.db, "usage_events", "estimated_currency", "TEXT");
+    addColumnIfMissing(this.db, "usage_events", "started_at", "TEXT");
+    addColumnIfMissing(this.db, "usage_events", "ended_at", "TEXT");
+    addColumnIfMissing(this.db, "usage_events", "duration_ms", "INTEGER");
     if (hasColumn(this.db, "usage_events", "currency")) {
       this.db
         .prepare(
@@ -252,19 +258,27 @@ export class SqliteLedgerStore implements LedgerStore {
       .prepare(
         `INSERT INTO usage_events (
           id, workspace_id, task_id, run_id, message_id, source, idempotency_key, occurred_at,
+          started_at, ended_at, duration_ms,
           provider, model, usage_kind, input_tokens, output_tokens, total_tokens,
           observed_cost_nanos, estimated_cost_nanos, observed_currency, estimated_currency,
           accuracy_mode, pricing_mode,
           unpriced_reason, assignment_status, payload_json, created_at
         ) VALUES (
           @id, @workspace_id, @task_id, @run_id, @message_id, @source, @idempotency_key, @occurred_at,
+          @started_at, @ended_at, @duration_ms,
           @provider, @model, @usage_kind, @input_tokens, @output_tokens, @total_tokens,
           @observed_cost_nanos, @estimated_cost_nanos, @observed_currency, @estimated_currency,
           @accuracy_mode, @pricing_mode,
           @unpriced_reason, @assignment_status, @payload_json, @now
         )`,
       )
-      .run({ ...input, payload_json: JSON.stringify(input.payload_json) });
+      .run({
+        ...input,
+        started_at: input.started_at ?? null,
+        ended_at: input.ended_at ?? null,
+        duration_ms: input.duration_ms ?? null,
+        payload_json: JSON.stringify(input.payload_json),
+      });
     const event = this.db.prepare("SELECT * FROM usage_events WHERE id = ?").get(input.id);
     return UsageEventRecordSchema.parse(fromDbJson(event as DbRow));
   }

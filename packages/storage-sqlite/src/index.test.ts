@@ -61,6 +61,9 @@ describe("SqliteLedgerStore", () => {
         source: "test",
         idempotency_key: "test:usage",
         occurred_at: "2026-04-27T00:00:00.000Z",
+        started_at: "2026-04-27T00:00:01.000Z",
+        ended_at: "2026-04-27T00:00:03.000Z",
+        duration_ms: 2000,
         provider: "openai",
         model: "codex-chat",
         usage_kind: "conversation_turn",
@@ -90,6 +93,7 @@ describe("SqliteLedgerStore", () => {
 
       expect(moved.task_id).toBe("task_test");
       expect(moved.assignment_status).toBe("assigned");
+      expect(moved.duration_ms).toBe(2000);
       await expect(store.listUsageEventsByAssignment("ws_test", "unassigned", 10)).resolves.toHaveLength(
         0,
       );
