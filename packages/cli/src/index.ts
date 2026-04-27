@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { Command } from "commander";
 import { LedgerService } from "@ttoksem/core";
 import { AiUsageObservedSchema, type AiUsageObserved, type UsageEventRecord } from "@ttoksem/schema";
+import { serveDashboard } from "@ttoksem/server";
 import { SqliteLedgerStore } from "@ttoksem/storage-sqlite";
 
 const program = new Command();
@@ -215,6 +216,27 @@ inbox
       }
     }
     await close();
+  });
+
+const dashboard = program.command("dashboard").description("Dashboard commands");
+
+dashboard
+  .command("serve")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--host <host>", "host to bind", "127.0.0.1")
+  .option("--port <port>", "port to bind", "4317")
+  .description("Serve the local read-only dashboard")
+  .action(async (options: DashboardServeOptions) => {
+    const dbPath = defaultDbPath();
+    mkdirSync(dirname(dbPath), { recursive: true });
+    const server = await serveDashboard({
+      dbPath,
+      workspaceKey: options.workspace,
+      hostname: options.host,
+      port: parsePositiveInteger(options.port),
+    });
+    console.log(`dashboard ${server.url}`);
+    await waitForShutdown(server.close);
   });
 
 const pricing = program.command("pricing").description("Pricing commands");
@@ -509,6 +531,12 @@ interface InboxListOptions {
   limit: string;
 }
 
+interface DashboardServeOptions {
+  workspace: string;
+  host: string;
+  port: string;
+}
+
 interface PricingUpsertOptions {
   provider: string;
   model: string;
@@ -567,9 +595,7 @@ async function makeService(): Promise<{
   dbPath: string;
   close: () => Promise<void>;
 }> {
-  const dbPath = process.env.TTOKSEM_DB
-    ? resolve(process.env.TTOKSEM_DB)
-    : resolveFromCommandCwd(".ttoksem/ttoksem.db");
+  const dbPath = defaultDbPath();
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteLedgerStore(dbPath);
   return {
@@ -577,6 +603,25 @@ async function makeService(): Promise<{
     dbPath,
     close: () => store.close(),
   };
+}
+
+function defaultDbPath(): string {
+  return process.env.TTOKSEM_DB
+    ? resolve(process.env.TTOKSEM_DB)
+    : resolveFromCommandCwd(".ttoksem/ttoksem.db");
+}
+
+async function waitForShutdown(close: () => Promise<void>): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let closing = false;
+    const shutdown = () => {
+      if (closing) return;
+      closing = true;
+      close().then(resolve, reject);
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+  });
 }
 
 function workspaceResolver(options: { workspace?: string; root?: string }) {

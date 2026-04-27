@@ -8,15 +8,16 @@ Current scope:
 - Zod v4 schemas for initial ledger inputs and records
 - Worker-compatible core service boundary
 - SQLite-first local adapter with explicit SQL
-- CLI entrypoint for workspace, task, usage, report, and doctor workflows
+- CLI entrypoint for workspace, task, usage, report, dashboard, and doctor workflows
+- Hono HTTP package and local server entrypoint for the read-only dashboard
 
 The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local CLI cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, and task/day cost reports.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, and a local read-only Hono dashboard.
 
-Post-MVP scope includes dashboards, HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, and provider SDK collectors with exact usage capture.
+Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, and provider SDK collectors with exact usage capture.
 
 ## Currency Policy
 
@@ -90,7 +91,9 @@ The split is not mainly for public npm publishing. It exists to keep runtime bou
 - `@ttoksem/core`: runtime-neutral ledger behavior
 - `@ttoksem/storage`: storage interfaces
 - `@ttoksem/storage-sqlite`: local SQLite adapter
+- `@ttoksem/http`: Hono routes for local dashboard/API surfaces
 - `@ttoksem/cli`: Node.js CLI entrypoint
+- `@ttoksem/server`: local Node server entrypoint under `apps/server`
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution model.
 
@@ -128,6 +131,7 @@ pnpm cli pricing migrate-events --workspace ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev
+pnpm cli dashboard serve --workspace ttoksem-dev --port 4317
 ```
 
 If `usage chat-turn` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. `usage codex-turn` remains available as the current Codex logging compatibility command.

@@ -18,6 +18,11 @@ import type {
   CreateTaskInput,
   CreateUsageEventInput,
   CreateWorkspaceInput,
+  DashboardBreakdownRow,
+  DashboardDailyCostRow,
+  DashboardRecentUsageRow,
+  DashboardSummaryRow,
+  DashboardTaskCostRow,
   LedgerReportRow,
   LedgerStore,
   PricingRuleLookupInput,
@@ -745,6 +750,136 @@ export class SqliteLedgerStore implements LedgerStore {
          WHERE workspace_id = ? AND task_id = ?`,
       )
       .all(workspaceId, taskId) as LedgerReportRow[];
+  }
+
+  async getDashboardSummary(workspaceId: string): Promise<DashboardSummaryRow> {
+    const row = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS event_count,
+           COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos,
+           COALESCE(SUM(COALESCE(observed_cost_nanos, 0)), 0) AS observed_cost_nanos,
+           SUM(CASE WHEN pricing_mode = 'unpriced' THEN 1 ELSE 0 END) AS unpriced_count,
+           SUM(CASE WHEN assignment_status = 'unassigned' THEN 1 ELSE 0 END) AS unassigned_count,
+           SUM(CASE WHEN assignment_status = 'assigned' THEN 1 ELSE 0 END) AS assigned_count,
+           COUNT(DISTINCT task_id) AS task_count,
+           COUNT(DISTINCT run_id) AS run_count
+         FROM usage_events
+         WHERE workspace_id = ?`,
+      )
+      .get(workspaceId) as Omit<DashboardSummaryRow, "currency">;
+    const currencies = this.db
+      .prepare(
+        `SELECT DISTINCT COALESCE(estimated_currency, observed_currency) AS currency
+         FROM usage_events
+         WHERE workspace_id = ?
+           AND COALESCE(estimated_currency, observed_currency) IS NOT NULL`,
+      )
+      .all(workspaceId) as Array<{ currency: string }>;
+    return {
+      ...row,
+      currency: currencies.length === 1 ? currencies[0]?.currency ?? null : null,
+    };
+  }
+
+  async listDashboardTaskCosts(workspaceId: string, limit: number): Promise<DashboardTaskCostRow[]> {
+    return this.db
+      .prepare(
+        `SELECT
+           u.task_id AS task_id,
+           t.key AS task_key,
+           t.name AS task_name,
+           COUNT(*) AS event_count,
+           COALESCE(SUM(COALESCE(u.total_tokens, COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0))), 0) AS token_count,
+           COALESCE(SUM(COALESCE(u.estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos,
+           SUM(CASE WHEN u.pricing_mode = 'unpriced' THEN 1 ELSE 0 END) AS unpriced_count
+         FROM usage_events u
+         LEFT JOIN tasks t ON t.id = u.task_id
+         WHERE u.workspace_id = ?
+         GROUP BY u.task_id, t.key, t.name
+         ORDER BY estimated_cost_nanos DESC, event_count DESC
+         LIMIT ?`,
+      )
+      .all(workspaceId, limit) as DashboardTaskCostRow[];
+  }
+
+  async listRecentUsageEvents(workspaceId: string, limit: number): Promise<DashboardRecentUsageRow[]> {
+    return this.db
+      .prepare(
+        `SELECT
+           u.id,
+           u.occurred_at,
+           t.key AS task_key,
+           u.provider,
+           u.model,
+           u.usage_kind,
+           COALESCE(u.total_tokens, COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0)) AS token_count,
+           u.estimated_cost_nanos,
+           u.observed_cost_nanos,
+           u.estimated_currency,
+           u.observed_currency,
+           u.pricing_mode,
+           u.accuracy_mode,
+           u.assignment_status,
+           u.duration_ms,
+           json_extract(u.payload_json, '$.payload.prompt_snapshot.prompt_text') AS prompt_text
+         FROM usage_events u
+         LEFT JOIN tasks t ON t.id = u.task_id
+         WHERE u.workspace_id = ?
+         ORDER BY u.occurred_at DESC
+         LIMIT ?`,
+      )
+      .all(workspaceId, limit) as DashboardRecentUsageRow[];
+  }
+
+  async listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]> {
+    return this.db
+      .prepare(
+        `SELECT
+           COALESCE(pricing_mode, 'unknown') AS key,
+           COUNT(*) AS event_count,
+           COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
+         FROM usage_events
+         WHERE workspace_id = ?
+         GROUP BY COALESCE(pricing_mode, 'unknown')
+         ORDER BY event_count DESC`,
+      )
+      .all(workspaceId) as DashboardBreakdownRow[];
+  }
+
+  async listDashboardAccuracyModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]> {
+    return this.db
+      .prepare(
+        `SELECT
+           accuracy_mode AS key,
+           COUNT(*) AS event_count,
+           COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
+         FROM usage_events
+         WHERE workspace_id = ?
+         GROUP BY accuracy_mode
+         ORDER BY event_count DESC`,
+      )
+      .all(workspaceId) as DashboardBreakdownRow[];
+  }
+
+  async listDashboardDailyCosts(workspaceId: string, limit: number): Promise<DashboardDailyCostRow[]> {
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM (
+           SELECT
+             substr(occurred_at, 1, 10) AS date,
+             COUNT(*) AS event_count,
+             COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
+           FROM usage_events
+           WHERE workspace_id = ?
+           GROUP BY substr(occurred_at, 1, 10)
+           ORDER BY date DESC
+           LIMIT ?
+         )
+         ORDER BY date ASC`,
+      )
+      .all(workspaceId, limit) as DashboardDailyCostRow[];
   }
 }
 

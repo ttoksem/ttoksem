@@ -68,6 +68,61 @@ export interface PricingMigrationResult {
   still_unpriced: number;
 }
 
+export interface DashboardData {
+  workspace: {
+    key: string;
+    name: string;
+  };
+  summary: {
+    event_count: number;
+    estimated_total: number;
+    observed_total: number;
+    currency: string | null;
+    unpriced_count: number;
+    unassigned_count: number;
+    assigned_count: number;
+    task_count: number;
+    run_count: number;
+  };
+  tasks: Array<{
+    task_key: string;
+    task_name: string;
+    event_count: number;
+    token_count: number;
+    estimated_total: number;
+    unpriced_count: number;
+  }>;
+  recent: Array<{
+    id: string;
+    occurred_at: string;
+    task_key: string;
+    provider_model: string;
+    usage_kind: string;
+    tokens: number;
+    cost: number;
+    currency: string | null;
+    confidence: string;
+    assignment_status: string;
+    duration_ms: number | null;
+    prompt: string | null;
+  }>;
+  pricing_breakdown: Array<{
+    key: string;
+    event_count: number;
+    estimated_total: number;
+  }>;
+  accuracy_breakdown: Array<{
+    key: string;
+    event_count: number;
+    estimated_total: number;
+  }>;
+  daily: Array<{
+    date: string;
+    event_count: number;
+    estimated_total: number;
+  }>;
+}
+
 export class LedgerService {
   private readonly store: LedgerStore;
   private readonly clock: Clock;
@@ -377,6 +432,78 @@ export class LedgerService {
     if (!task) throw new Error("Task not found.");
     const rows = await this.store.reportUsageByTask(workspace.id, task.id);
     return toDailyReport(workspace, `task:${task.key}`, rows);
+  }
+
+  async dashboard(input: {
+    workspace: WorkspaceResolver;
+    taskLimit?: number;
+    recentLimit?: number;
+    dayLimit?: number;
+  }): Promise<DashboardData> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const [summary, tasks, recent, pricingBreakdown, accuracyBreakdown, daily] = await Promise.all([
+      this.store.getDashboardSummary(workspace.id),
+      this.store.listDashboardTaskCosts(workspace.id, input.taskLimit ?? 20),
+      this.store.listRecentUsageEvents(workspace.id, input.recentLimit ?? 30),
+      this.store.listDashboardPricingModeBreakdown(workspace.id),
+      this.store.listDashboardAccuracyModeBreakdown(workspace.id),
+      this.store.listDashboardDailyCosts(workspace.id, input.dayLimit ?? 14),
+    ]);
+
+    return {
+      workspace: {
+        key: workspace.key,
+        name: workspace.name,
+      },
+      summary: {
+        event_count: summary.event_count,
+        estimated_total: nanosToDecimal(summary.estimated_cost_nanos),
+        observed_total: nanosToDecimal(summary.observed_cost_nanos),
+        currency: summary.currency,
+        unpriced_count: summary.unpriced_count,
+        unassigned_count: summary.unassigned_count,
+        assigned_count: summary.assigned_count,
+        task_count: summary.task_count,
+        run_count: summary.run_count,
+      },
+      tasks: tasks.map((task) => ({
+        task_key: task.task_key ?? "unassigned",
+        task_name: task.task_name ?? "Unassigned",
+        event_count: task.event_count,
+        token_count: task.token_count,
+        estimated_total: nanosToDecimal(task.estimated_cost_nanos),
+        unpriced_count: task.unpriced_count,
+      })),
+      recent: recent.map((event) => ({
+        id: event.id,
+        occurred_at: event.occurred_at,
+        task_key: event.task_key ?? "unassigned",
+        provider_model: `${event.provider}/${event.model}`,
+        usage_kind: event.usage_kind,
+        tokens: event.token_count,
+        cost: nanosToDecimal(event.estimated_cost_nanos ?? event.observed_cost_nanos),
+        currency: event.estimated_currency ?? event.observed_currency,
+        confidence: event.pricing_mode ?? event.accuracy_mode,
+        assignment_status: event.assignment_status,
+        duration_ms: event.duration_ms ?? null,
+        prompt: event.prompt_text,
+      })),
+      pricing_breakdown: pricingBreakdown.map((row) => ({
+        key: row.key,
+        event_count: row.event_count,
+        estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+      })),
+      accuracy_breakdown: accuracyBreakdown.map((row) => ({
+        key: row.key,
+        event_count: row.event_count,
+        estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+      })),
+      daily: daily.map((row) => ({
+        date: row.date,
+        event_count: row.event_count,
+        estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+      })),
+    };
   }
 
   private async resolveUsageTask(

@@ -254,6 +254,108 @@ describe("SqliteLedgerStore", () => {
       rmSync(`${dbPath}-wal`, { force: true });
     }
   });
+
+  it("returns dashboard summary, task costs, and recent usage rows", async () => {
+    const dbPath = testDbPath();
+    const store = new SqliteLedgerStore(dbPath);
+    try {
+      await store.migrate();
+      await store.createWorkspace({
+        id: "ws_test",
+        key: "test",
+        name: "Test",
+        root_path: "/tmp/test",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createTask({
+        id: "task_test",
+        workspace_id: "ws_test",
+        key: "task",
+        name: "Task",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createRun({
+        id: "run_test",
+        workspace_id: "ws_test",
+        task_id: "task_test",
+        source: "test",
+        started_at: "2026-04-27T00:00:00.000Z",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createUsageEvent({
+        id: "usage_test",
+        workspace_id: "ws_test",
+        task_id: "task_test",
+        run_id: "run_test",
+        message_id: "msg_test",
+        source: "test",
+        idempotency_key: "test:dashboard",
+        occurred_at: "2026-04-27T00:00:00.000Z",
+        provider: "openai",
+        model: "codex-chat",
+        usage_kind: "conversation_turn",
+        input_tokens: 10,
+        output_tokens: 20,
+        total_tokens: 30,
+        observed_cost_nanos: null,
+        estimated_cost_nanos: 1500,
+        observed_currency: null,
+        estimated_currency: "USD",
+        accuracy_mode: "estimated",
+        pricing_mode: "rule_calculated",
+        unpriced_reason: null,
+        assignment_status: "assigned",
+        payload_json: {
+          schema_version: "1.0",
+          payload: {
+            task: { key: "task" },
+            prompt_snapshot: { mode: "full", prompt_text: "dashboard prompt" },
+          },
+        },
+        now: "2026-04-27T00:00:00.000Z",
+      });
+
+      await expect(store.getDashboardSummary("ws_test")).resolves.toMatchObject({
+        event_count: 1,
+        estimated_cost_nanos: 1500,
+        unpriced_count: 0,
+        unassigned_count: 0,
+        assigned_count: 1,
+        task_count: 1,
+        run_count: 1,
+        currency: "USD",
+      });
+      await expect(store.listDashboardTaskCosts("ws_test", 10)).resolves.toMatchObject([
+        {
+          task_key: "task",
+          event_count: 1,
+          token_count: 30,
+          estimated_cost_nanos: 1500,
+        },
+      ]);
+      await expect(store.listRecentUsageEvents("ws_test", 10)).resolves.toMatchObject([
+        {
+          id: "usage_test",
+          task_key: "task",
+          token_count: 30,
+          prompt_text: "dashboard prompt",
+        },
+      ]);
+      await expect(store.listDashboardPricingModeBreakdown("ws_test")).resolves.toMatchObject([
+        { key: "rule_calculated", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
+      await expect(store.listDashboardDailyCosts("ws_test", 10)).resolves.toMatchObject([
+        { date: "2026-04-27", event_count: 1, estimated_cost_nanos: 1500 },
+      ]);
+    } finally {
+      await store.close();
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+    }
+  });
 });
 
 function testDbPath(): string {

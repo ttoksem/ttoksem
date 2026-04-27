@@ -5,11 +5,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "references": [
-    { "path": "../schema" },
-    { "path": "../core" },
-    { "path": "../storage-sqlite" },
-    { "path": "../../apps/server" }
-  ],
+  "references": [{ "path": "../core" }],
   "include": ["src/**/*.ts"]
 }

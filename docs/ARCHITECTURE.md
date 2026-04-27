@@ -33,9 +33,17 @@ packages/storage-sqlite
   Local SQLite implementation using explicit SQL.
   Node-specific and native-driver code belongs here.
 
+packages/http
+  Hono routes for local HTTP surfaces.
+  Depends on core behavior and accepts injected services.
+
 packages/cli
   Node CLI entrypoint.
   Wires core plus the SQLite adapter for local use.
+
+apps/server
+  Local Node server entrypoint.
+  Wires Hono routes plus the SQLite adapter for dashboard use.
 ```
 
 ## Dependency Direction
@@ -47,7 +55,9 @@ schema
 storage -> schema
 core -> schema + storage
 storage-sqlite -> schema + storage
-cli -> core + storage-sqlite
+http -> core
+server -> core + http + storage-sqlite
+cli -> core + server + storage-sqlite
 ```
 
 The important rule is that `core` must not import from `cli`, `storage-sqlite`, Node filesystem APIs, or native SQLite drivers.
@@ -90,6 +100,7 @@ For local use, there is no separate deployment step:
 pnpm cli workspace init --key ttoksem --root .
 pnpm cli task start first-task --workspace ttoksem
 pnpm cli report today --workspace ttoksem
+pnpm cli dashboard serve --workspace ttoksem --port 4317
 ```
 
 ## Deployment Options
@@ -120,4 +131,3 @@ The cost is a slightly more complex repo for early development:
 - imports use internal package names such as `@ttoksem/core`
 
 This is a deliberate tradeoff from the design source. If the package boundaries start slowing down normal feature work more than they help, the same folder structure can be folded back into a single package without changing the domain model.
-

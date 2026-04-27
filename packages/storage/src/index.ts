@@ -108,6 +108,59 @@ export interface LedgerReportRow {
   pricing_mode: string | null;
 }
 
+export interface DashboardSummaryRow {
+  event_count: number;
+  estimated_cost_nanos: number;
+  observed_cost_nanos: number;
+  unpriced_count: number;
+  unassigned_count: number;
+  assigned_count: number;
+  task_count: number;
+  run_count: number;
+  currency: string | null;
+}
+
+export interface DashboardTaskCostRow {
+  task_id: string | null;
+  task_key: string | null;
+  task_name: string | null;
+  event_count: number;
+  token_count: number;
+  estimated_cost_nanos: number;
+  unpriced_count: number;
+}
+
+export interface DashboardBreakdownRow {
+  key: string;
+  event_count: number;
+  estimated_cost_nanos: number;
+}
+
+export interface DashboardRecentUsageRow {
+  id: string;
+  occurred_at: string;
+  task_key: string | null;
+  provider: string;
+  model: string;
+  usage_kind: string;
+  token_count: number;
+  estimated_cost_nanos: number | null;
+  observed_cost_nanos: number | null;
+  estimated_currency: string | null;
+  observed_currency: string | null;
+  pricing_mode: string | null;
+  accuracy_mode: string;
+  assignment_status: string;
+  duration_ms: number | null;
+  prompt_text: string | null;
+}
+
+export interface DashboardDailyCostRow {
+  date: string;
+  event_count: number;
+  estimated_cost_nanos: number;
+}
+
 export interface PricingRuleLookupInput {
   workspaceId: string;
   provider: string;
@@ -190,4 +243,10 @@ export interface LedgerStore {
   ): Promise<UsageEventRecord>;
   reportUsageByDay(workspaceId: string, date: string): Promise<LedgerReportRow[]>;
   reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]>;
+  getDashboardSummary(workspaceId: string): Promise<DashboardSummaryRow>;
+  listDashboardTaskCosts(workspaceId: string, limit: number): Promise<DashboardTaskCostRow[]>;
+  listRecentUsageEvents(workspaceId: string, limit: number): Promise<DashboardRecentUsageRow[]>;
+  listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;
+  listDashboardAccuracyModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;
+  listDashboardDailyCosts(workspaceId: string, limit: number): Promise<DashboardDailyCostRow[]>;
 }

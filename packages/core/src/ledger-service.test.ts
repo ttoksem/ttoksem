@@ -383,6 +383,22 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
       }),
     reportUsageByDay: async () => [],
     reportUsageByTask: async () => [],
+    getDashboardSummary: async () => ({
+      event_count: 0,
+      estimated_cost_nanos: 0,
+      observed_cost_nanos: 0,
+      unpriced_count: 0,
+      unassigned_count: 0,
+      assigned_count: 0,
+      task_count: 0,
+      run_count: 0,
+      currency: null,
+    }),
+    listDashboardTaskCosts: async () => [],
+    listRecentUsageEvents: async () => [],
+    listDashboardPricingModeBreakdown: async () => [],
+    listDashboardAccuracyModeBreakdown: async () => [],
+    listDashboardDailyCosts: async () => [],
     ...overrides,
   };
 }

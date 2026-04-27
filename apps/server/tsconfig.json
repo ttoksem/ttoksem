@@ -6,10 +6,9 @@
     "outDir": "dist"
   },
   "references": [
-    { "path": "../schema" },
-    { "path": "../core" },
-    { "path": "../storage-sqlite" },
-    { "path": "../../apps/server" }
+    { "path": "../../packages/core" },
+    { "path": "../../packages/http" },
+    { "path": "../../packages/storage-sqlite" }
   ],
   "include": ["src/**/*.ts"]
 }

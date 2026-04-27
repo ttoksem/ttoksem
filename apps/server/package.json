@@ -1,24 +1,22 @@
 {
-  "name": "@ttoksem/cli",
+  "name": "@ttoksem/server",
   "version": "0.0.0",
+  "private": true,
   "type": "module",
-  "bin": {
-    "ttoksem": "./dist/index.js"
+  "exports": {
+    ".": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "dev": "tsx src/index.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.0",
     "@ttoksem/core": "workspace:*",
-    "@ttoksem/schema": "workspace:*",
-    "@ttoksem/server": "workspace:*",
-    "@ttoksem/storage-sqlite": "workspace:*",
-    "commander": "^14.0.2",
-    "tsx": "^4.20.6"
+    "@ttoksem/http": "workspace:*",
+    "@ttoksem/storage-sqlite": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.2",

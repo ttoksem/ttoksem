@@ -18,6 +18,31 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
 
+  apps/server:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.0.0
+        version: 2.0.0(hono@4.12.15)
+      '@ttoksem/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ttoksem/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@ttoksem/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/storage-sqlite
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.2
+        version: 22.19.17
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
+
   packages/cli:
     dependencies:
       '@ttoksem/core':
@@ -26,6 +51,9 @@ importers:
       '@ttoksem/schema':
         specifier: workspace:*
         version: link:../schema
+      '@ttoksem/server':
+        specifier: workspace:*
+        version: link:../../apps/server
       '@ttoksem/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
@@ -54,6 +82,22 @@ importers:
       '@ttoksem/storage':
         specifier: workspace:*
         version: link:../storage
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
+
+  packages/http:
+    dependencies:
+      '@ttoksem/core':
+        specifier: workspace:*
+        version: link:../core
+      hono:
+        specifier: ^4.12.15
+        version: 4.12.15
     devDependencies:
       typescript:
         specifier: ^5.9.3
@@ -267,6 +311,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@hono/node-server@2.0.0':
+    resolution: {integrity: sha512-n3GfHwwCvHCkGmOwKfxUPOlbfzuO64Sbc5XC4NGPIXxkuOnJrdgExdRKmHfF924r914WRJPT397GdqLvdYTeyQ==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -564,6 +614,10 @@ packages:
 
   github-from-package@0.0.0:
     resolution: {integrity: sha512-SyHy3T1v2NUXn29OsWdxmK6RwHD+vkj3v8en8AOBZ1wBQ/hCAQ5bAQTD02kW4W9tUp/3Qh6J8r9EvntiyCmOOw==}
+
+  hono@4.12.15:
+    resolution: {integrity: sha512-qM0jDhFEaCBb4TxoW7f53Qrpv9RBiayUHo0S52JudprkhvpjIrGoU1mnnr29Fvd1U335ZFPZQY1wlkqgfGXyLg==}
+    engines: {node: '>=16.9.0'}
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
@@ -903,6 +957,10 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
+  '@hono/node-server@2.0.0(hono@4.12.15)':
+    dependencies:
+      hono: 4.12.15
+
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
   '@rollup/rollup-android-arm-eabi@4.60.2':
@@ -1152,6 +1210,8 @@ snapshots:
       resolve-pkg-maps: 1.0.0
 
   github-from-package@0.0.0: {}
+
+  hono@4.12.15: {}
 
   ieee754@1.2.1: {}
 
