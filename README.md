@@ -51,6 +51,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
+- [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
 
 ## Development
 
