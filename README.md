@@ -12,6 +12,12 @@ Current scope:
 
 The product records AI usage and cost. It does not execute LLM calls.
 
+## MVP Checkpoint
+
+The current MVP is a local CLI cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, and task/day cost reports.
+
+Post-MVP scope includes dashboards, HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, and provider SDK collectors with exact usage capture.
+
 ## Currency Policy
 
 ttoksem keeps currency as provenance on cost-bearing usage records:
@@ -40,6 +46,11 @@ Supported unit types are intentionally string-based. Common values are:
 ```text
 input_token
 output_token
+cached_input_token
+cache_write_input_token
+reasoning_output_token
+audio_input_token
+audio_output_token
 total_token
 request
 second
@@ -49,6 +60,7 @@ image
 If a matching rule exists, usage is stored with `pricing_mode=rule_calculated`, `estimated_cost_nanos`, `estimated_currency`, pricing rule ids, pricing source snapshot ids, and `cost_calculated_at`. If no matching rule exists, the usage remains `pricing_mode=unpriced` with `unpriced_reason=missing_pricing_rule`.
 
 Existing unpriced events can be recalculated after rules are added with `pricing reprice`.
+Existing `unpriced` and `rule_calculated` events can be migrated against the current active rules with `pricing migrate-events`. This updates the denormalized pricing projection columns while preserving the original ingest `payload_json` as evidence.
 
 ## Usage Timing Policy
 
@@ -107,13 +119,15 @@ The pricing numbers below are example rules, not provider price guidance.
 pnpm cli workspace init --key ttoksem-dev --root .
 pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
 pnpm cli pricing snapshot upsert --id price_snapshot_example --source-name litellm --raw-sha256 sha256:example --source-commit example --valid-from 2026-01-01T00:00:00.000Z
+pnpm cli pricing import-litellm --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --file .ttoksem/pricing-snapshots/litellm-model-prices.json
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
-pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+pnpm cli usage chat-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
 pnpm cli pricing reprice --workspace ttoksem-dev
+pnpm cli pricing migrate-events --workspace ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev
 ```
 
-If `usage codex-turn` is recorded without `--task`, the event remains unassigned and appears in `inbox list`.
+If `usage chat-turn` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. `usage codex-turn` remains available as the current Codex logging compatibility command.

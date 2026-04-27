@@ -24,6 +24,7 @@ import type {
   UpsertPricingSourceSnapshotInput,
   UpsertPricingRuleInput,
   UsageAssignmentStatus,
+  UsagePricingMigrationMode,
   UsagePricingUpdateInput,
 } from "@ttoksem/storage";
 
@@ -664,6 +665,29 @@ export class SqliteLedgerStore implements LedgerStore {
         `SELECT *
          FROM usage_events
          WHERE workspace_id = ? AND pricing_mode = 'unpriced'
+         ORDER BY occurred_at ASC
+         LIMIT ?`,
+      )
+      .all(workspaceId, limit)
+      .map((row) => UsageEventRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
+  async listUsageEventsForPricingMigration(
+    workspaceId: string,
+    limit: number,
+    mode: UsagePricingMigrationMode,
+  ): Promise<UsageEventRecord[]> {
+    const pricingModeSql =
+      mode === "unpriced"
+        ? "pricing_mode = 'unpriced'"
+        : "(pricing_mode IS NULL OR pricing_mode IN ('unpriced', 'rule_calculated'))";
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM usage_events
+         WHERE workspace_id = ?
+           AND observed_cost_nanos IS NULL
+           AND ${pricingModeSql}
          ORDER BY occurred_at ASC
          LIMIT ?`,
       )

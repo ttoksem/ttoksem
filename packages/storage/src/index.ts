@@ -119,12 +119,14 @@ export interface PricingRuleLookupInput {
 export interface UsagePricingUpdateInput {
   estimated_cost_nanos: number | null;
   estimated_currency: string | null;
-  pricing_mode: "rule_calculated" | "unpriced";
+  pricing_mode: "rule_calculated" | "manual" | "unpriced";
   unpriced_reason: string | null;
   pricing_rule_ids_json?: string[] | null;
   pricing_source_snapshot_ids_json?: string[] | null;
   cost_calculated_at?: string | null;
 }
+
+export type UsagePricingMigrationMode = "unpriced" | "repriceable";
 
 export type UsageAssignmentStatus = "unassigned" | "suggested" | "assigned" | "dismissed";
 
@@ -176,6 +178,11 @@ export interface LedgerStore {
     taskId: string,
   ): Promise<UsageEventRecord>;
   listUnpricedUsageEvents(workspaceId: string, limit: number): Promise<UsageEventRecord[]>;
+  listUsageEventsForPricingMigration(
+    workspaceId: string,
+    limit: number,
+    mode: UsagePricingMigrationMode,
+  ): Promise<UsageEventRecord[]>;
   updateUsageEventPricing(
     workspaceId: string,
     usageEventId: string,

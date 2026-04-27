@@ -9,7 +9,7 @@ import {
   type UsageEventRecord,
   type WorkspaceRecord,
 } from "@ttoksem/schema";
-import type { LedgerReportRow, LedgerStore } from "@ttoksem/storage";
+import type { LedgerReportRow, LedgerStore, UsagePricingUpdateInput } from "@ttoksem/storage";
 import { decimalToNanos, nanosToDecimal } from "./money.js";
 
 export interface Clock {
@@ -58,6 +58,13 @@ export interface PricingSourceSnapshotUpsertInput {
 export interface RepriceResult {
   checked: number;
   repriced: number;
+  still_unpriced: number;
+}
+
+export interface PricingMigrationResult {
+  checked: number;
+  migrated: number;
+  unchanged: number;
   still_unpriced: number;
 }
 
@@ -201,6 +208,10 @@ export class LedgerService {
     return this.store.listPricingSourceSnapshots();
   }
 
+  async getPricingSourceSnapshot(id: string): Promise<PricingSourceSnapshotRecord | null> {
+    return this.store.getPricingSourceSnapshotById(id);
+  }
+
   async listPricingRules(input: { workspace: WorkspaceResolver }): Promise<PricingRuleRecord[]> {
     const workspace = await this.resolveWorkspace(input.workspace);
     return this.store.listPricingRules(workspace.id);
@@ -288,6 +299,53 @@ export class LedgerService {
       }
     }
     return { checked: events.length, repriced, still_unpriced: stillUnpriced };
+  }
+
+  async migrateUsageEventPricing(input: {
+    workspace: WorkspaceResolver;
+    limit?: number;
+    mode?: "unpriced" | "repriceable";
+  }): Promise<PricingMigrationResult> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const events = await this.store.listUsageEventsForPricingMigration(
+      workspace.id,
+      input.limit ?? 100,
+      input.mode ?? "repriceable",
+    );
+    let migrated = 0;
+    let unchanged = 0;
+    let stillUnpriced = 0;
+    for (const event of events) {
+      const message = AiUsageObservedSchema.parse(event.payload_json);
+      const pricing = await this.priceUsage(workspace.id, message);
+      if (pricing.pricingMode === "provider_reported") {
+        unchanged += 1;
+        continue;
+      }
+      const pricingMode =
+        pricing.pricingMode === "rule_calculated" || pricing.pricingMode === "manual"
+          ? pricing.pricingMode
+          : "unpriced";
+      const update: UsagePricingUpdateInput = {
+        estimated_cost_nanos: pricing.estimatedCostNanos,
+        estimated_currency: pricing.estimatedCurrency,
+        pricing_mode: pricingMode,
+        unpriced_reason: pricing.unpricedReason,
+        pricing_rule_ids_json: pricing.pricingRuleIds,
+        pricing_source_snapshot_ids_json: pricing.pricingSourceSnapshotIds,
+        cost_calculated_at: pricing.costCalculatedAt,
+      };
+      if (pricingMode === "unpriced") {
+        stillUnpriced += 1;
+      }
+      if (usagePricingMatches(event, update)) {
+        unchanged += 1;
+        continue;
+      }
+      await this.store.updateUsageEventPricing(workspace.id, event.id, update);
+      migrated += 1;
+    }
+    return { checked: events.length, migrated, unchanged, still_unpriced: stillUnpriced };
   }
 
   async listInbox(input: { workspace: WorkspaceResolver; limit?: number }): Promise<UsageEventRecord[]> {
@@ -465,12 +523,40 @@ export class LedgerService {
 function quantityForRule(unitType: string, usage: AiUsageObserved["payload"]["usage"]): number | null {
   if (unitType === "input_token") return usage.input_tokens ?? null;
   if (unitType === "output_token") return usage.output_tokens ?? null;
+  if (unitType === "cached_input_token") return usage.cached_input_tokens ?? null;
+  if (unitType === "cache_write_input_token") return usage.cache_write_input_tokens ?? null;
+  if (unitType === "reasoning_output_token") return usage.reasoning_output_tokens ?? null;
+  if (unitType === "audio_input_token") return usage.audio_input_tokens ?? null;
+  if (unitType === "audio_output_token") return usage.audio_output_tokens ?? null;
   if (unitType === "total_token") return usage.total_tokens ?? null;
   if (unitType === "request") return usage.request_count ?? null;
   if (unitType === "second") return usage.seconds ?? null;
   if (unitType === "image") return usage.image_count ?? null;
   if (usage.unit_type === unitType) return usage.unit_count ?? null;
   return null;
+}
+
+function usagePricingMatches(
+  event: UsageEventRecord,
+  pricing: {
+    estimated_cost_nanos: number | null;
+    estimated_currency: string | null;
+    pricing_mode: "rule_calculated" | "manual" | "unpriced";
+    unpriced_reason: string | null;
+    pricing_rule_ids_json?: string[] | null;
+    pricing_source_snapshot_ids_json?: string[] | null;
+  },
+): boolean {
+  return (
+    event.estimated_cost_nanos === pricing.estimated_cost_nanos &&
+    event.estimated_currency === pricing.estimated_currency &&
+    event.pricing_mode === pricing.pricing_mode &&
+    event.unpriced_reason === pricing.unpriced_reason &&
+    JSON.stringify(event.pricing_rule_ids_json ?? null) ===
+      JSON.stringify(pricing.pricing_rule_ids_json ?? null) &&
+    JSON.stringify(event.pricing_source_snapshot_ids_json ?? null) ===
+      JSON.stringify(pricing.pricing_source_snapshot_ids_json ?? null)
+  );
 }
 
 function toDailyReport(workspace: WorkspaceRecord, date: string, rows: LedgerReportRow[]): DailyReport {

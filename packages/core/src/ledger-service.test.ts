@@ -185,6 +185,159 @@ describe("LedgerService", () => {
     expect(createdUsage[0]?.pricing_source_snapshot_ids_json).toEqual(["price_snapshot_test"]);
     expect(createdUsage[0]?.cost_calculated_at).toBe("2026-04-27T00:00:10.000Z");
   });
+
+  it("migrates existing rule-calculated event pricing from current rules", async () => {
+    const updates: CreateUsageEventInput[] = [];
+    const workspace = workspaceRecord();
+    const existing = usageEventRecord({
+      ...defaultUsageInput(),
+      id: "usage_existing",
+      workspace_id: workspace.id,
+      input_tokens: 10,
+      output_tokens: 20,
+      total_tokens: 30,
+      estimated_cost_nanos: 1,
+      estimated_currency: "USD",
+      pricing_mode: "rule_calculated",
+      unpriced_reason: null,
+      payload_json: {
+        schema_version: "1.0",
+        message_id: "msg_existing",
+        kind: "ingest_message",
+        type: "ai.usage.observed",
+        occurred_at: "2026-04-27T00:00:00.000Z",
+        source: { system: "codex-chat" },
+        workspace: { key: workspace.key },
+        payload: {
+          usage: {
+            provider: "openai",
+            model: "codex-chat",
+            usage_kind: "conversation_turn",
+            input_tokens: 10,
+            output_tokens: 20,
+            total_tokens: 30,
+            accuracy_mode: "estimated",
+            pricing_mode: "unpriced",
+            unpriced_reason: "missing_pricing_rule",
+          },
+        },
+      },
+    });
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        listUsageEventsForPricingMigration: async () => [existing],
+        listPricingRulesForUsage: async () => [
+          pricingRule({
+            id: "price_input",
+            source_snapshot_id: "price_snapshot_test",
+            unit_type: "input_token",
+            price_nanos_per_unit: 100,
+          }),
+          pricingRule({
+            id: "price_output",
+            source_snapshot_id: "price_snapshot_test",
+            unit_type: "output_token",
+            price_nanos_per_unit: 500,
+          }),
+        ],
+        updateUsageEventPricing: async (_workspaceId, _usageEventId, input) => {
+          updates.push({
+            ...defaultUsageInput(),
+            ...input,
+            pricing_mode: input.pricing_mode,
+          });
+          return usageEventRecord({
+            ...defaultUsageInput(),
+            ...input,
+            pricing_mode: input.pricing_mode,
+          });
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    const result = await service.migrateUsageEventPricing({
+      workspace: { key: workspace.key },
+      mode: "repriceable",
+    });
+
+    expect(result).toEqual({ checked: 1, migrated: 1, unchanged: 0, still_unpriced: 0 });
+    expect(updates[0]?.estimated_cost_nanos).toBe(11_000);
+    expect(updates[0]?.pricing_rule_ids_json).toEqual(["price_input", "price_output"]);
+  });
+
+  it("preserves manual estimated costs during pricing migration", async () => {
+    const updates: CreateUsageEventInput[] = [];
+    const workspace = workspaceRecord();
+    const existing = usageEventRecord({
+      ...defaultUsageInput(),
+      id: "usage_manual_existing",
+      workspace_id: workspace.id,
+      input_tokens: 10,
+      output_tokens: 20,
+      total_tokens: 30,
+      estimated_cost_nanos: null,
+      estimated_currency: null,
+      pricing_mode: null,
+      unpriced_reason: null,
+      payload_json: {
+        schema_version: "1.0",
+        message_id: "msg_manual_existing",
+        kind: "ingest_message",
+        type: "ai.usage.observed",
+        occurred_at: "2026-04-27T00:00:00.000Z",
+        source: { system: "manual-import" },
+        workspace: { key: workspace.key },
+        payload: {
+          usage: {
+            provider: "openai",
+            model: "codex-chat",
+            usage_kind: "conversation_turn",
+            input_tokens: 10,
+            output_tokens: 20,
+            total_tokens: 30,
+            estimated_cost: 0.25,
+            estimated_currency: "USD",
+            accuracy_mode: "manual",
+            pricing_mode: "manual",
+          },
+        },
+      },
+    });
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        listUsageEventsForPricingMigration: async () => [existing],
+        updateUsageEventPricing: async (_workspaceId, _usageEventId, input) => {
+          updates.push({
+            ...defaultUsageInput(),
+            ...input,
+            pricing_mode: input.pricing_mode,
+          });
+          return usageEventRecord({
+            ...defaultUsageInput(),
+            ...input,
+            pricing_mode: input.pricing_mode,
+          });
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    const result = await service.migrateUsageEventPricing({
+      workspace: { key: workspace.key },
+      mode: "repriceable",
+    });
+
+    expect(result).toEqual({ checked: 1, migrated: 1, unchanged: 0, still_unpriced: 0 });
+    expect(updates[0]?.estimated_cost_nanos).toBe(250_000_000);
+    expect(updates[0]?.estimated_currency).toBe("USD");
+    expect(updates[0]?.pricing_mode).toBe("manual");
+    expect(updates[0]?.unpriced_reason).toBeNull();
+  });
 });
 
 function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
@@ -216,6 +369,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     listUsageEventsByAssignment: async () => [],
     moveUsageEventToTask: async () => usageEventRecord(defaultUsageInput()),
     listUnpricedUsageEvents: async () => [],
+    listUsageEventsForPricingMigration: async () => [],
     updateUsageEventPricing: async (_workspaceId, _usageEventId, input) =>
       usageEventRecord({
         ...defaultUsageInput(),

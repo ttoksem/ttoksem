@@ -164,7 +164,8 @@ usage
 
 usage
   .command("codex-turn")
-  .description("Record an estimated Codex conversation turn")
+  .alias("chat-turn")
+  .description("Record an estimated chat conversation turn")
   .option("--workspace <key>", "workspace key", "ttoksem-dev")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--run-id <id>", "existing or explicit run id")
@@ -278,6 +279,51 @@ pricingSnapshot
   });
 
 pricing
+  .command("import-litellm")
+  .requiredOption("--source-snapshot-id <id>", "pricing source snapshot id")
+  .option("--file <path>", "raw LiteLLM model_prices_and_context_window.json file")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--provider <provider>", "only import one LiteLLM provider")
+  .option("--model <model>", "only import one model key")
+  .option("--effective-from <iso>", "UTC ISO timestamp when imported rules take effect")
+  .option("--limit <count>", "maximum normalized rules to import")
+  .description("Import normalized pricing rules from a LiteLLM pricing snapshot")
+  .action(async (options: PricingImportLiteLlmOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const snapshot = await service.getPricingSourceSnapshot(options.sourceSnapshotId);
+    if (!snapshot) throw new Error(`Pricing source snapshot not found: ${options.sourceSnapshotId}`);
+    const rawStorageRef = options.file ?? snapshot.raw_storage_ref;
+    if (!rawStorageRef) throw new Error("Provide --file or store raw_storage_ref on the snapshot.");
+    const raw = JSON.parse(readFileSync(resolveFromCommandCwd(rawStorageRef), "utf8")) as unknown;
+    const normalized = normalizeLiteLlmPricingRules(raw, {
+      provider: options.provider,
+      model: options.model,
+      effectiveFrom: options.effectiveFrom ?? snapshot.valid_from ?? snapshot.source_retrieved_at ?? undefined,
+      limit: options.limit ? parsePositiveInteger(options.limit) : undefined,
+    });
+    for (const rule of normalized.rules) {
+      await service.upsertPricingRule({
+        workspace: workspaceResolver(options),
+        sourceSnapshotId: snapshot.id,
+        provider: rule.provider,
+        model: rule.model,
+        usageKind: rule.usageKind,
+        unitType: rule.unitType,
+        priceNanosPerUnit: rule.priceNanosPerUnit,
+        currency: "USD",
+        effectiveFrom: rule.effectiveFrom,
+        source: "litellm",
+      });
+    }
+    console.log(
+      `pricing import-litellm imported=${normalized.rules.length} skipped=${normalized.skipped} snapshot=${snapshot.id}`,
+    );
+    await close();
+  });
+
+pricing
   .command("upsert")
   .requiredOption("--provider <provider>", "provider name")
   .requiredOption("--model <model>", "model name, or * for wildcard")
@@ -355,6 +401,27 @@ pricing
     });
     console.log(
       `reprice checked=${result.checked} repriced=${result.repriced} still_unpriced=${result.still_unpriced}`,
+    );
+    await close();
+  });
+
+pricing
+  .command("migrate-events")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--limit <count>", "maximum events to migrate", "100")
+  .option("--mode <mode>", "unpriced or repriceable", "repriceable")
+  .description("Recalculate existing usage event pricing from active rules")
+  .action(async (options: PricingMigrateEventsOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await service.migrateUsageEventPricing({
+      workspace: workspaceResolver(options),
+      limit: parsePositiveInteger(options.limit),
+      mode: parsePricingMigrationMode(options.mode),
+    });
+    console.log(
+      `pricing migrate-events checked=${result.checked} migrated=${result.migrated} unchanged=${result.unchanged} still_unpriced=${result.still_unpriced}`,
     );
     await close();
   });
@@ -457,6 +524,17 @@ interface PricingUpsertOptions {
   root?: string;
 }
 
+interface PricingImportLiteLlmOptions {
+  sourceSnapshotId: string;
+  file?: string;
+  workspace?: string;
+  root?: string;
+  provider?: string;
+  model?: string;
+  effectiveFrom?: string;
+  limit?: string;
+}
+
 interface PricingSnapshotUpsertOptions {
   id?: string;
   sourceName: string;
@@ -475,6 +553,13 @@ interface PricingRepriceOptions {
   workspace?: string;
   root?: string;
   limit: string;
+}
+
+interface PricingMigrateEventsOptions {
+  workspace?: string;
+  root?: string;
+  limit: string;
+  mode: string;
 }
 
 async function makeService(): Promise<{
@@ -775,11 +860,95 @@ function priceNanosPerUnit(price: string, per: string): number {
   return Math.round((amount / unitCount) * 1_000_000_000);
 }
 
+interface NormalizedLiteLlmRule {
+  provider: string;
+  model: string;
+  usageKind: string;
+  unitType: string;
+  priceNanosPerUnit: number;
+  effectiveFrom?: string;
+}
+
+interface NormalizeLiteLlmOptions {
+  provider?: string;
+  model?: string;
+  effectiveFrom?: string;
+  limit?: number;
+}
+
+const litellmTokenCostFields: Array<[field: string, unitType: string]> = [
+  ["input_cost_per_token", "input_token"],
+  ["output_cost_per_token", "output_token"],
+  ["cache_read_input_token_cost", "cached_input_token"],
+  ["cache_creation_input_token_cost", "cache_write_input_token"],
+  ["input_cost_per_audio_token", "audio_input_token"],
+  ["output_cost_per_audio_token", "audio_output_token"],
+  ["output_cost_per_reasoning_token", "reasoning_output_token"],
+];
+
+function normalizeLiteLlmPricingRules(
+  raw: unknown,
+  options: NormalizeLiteLlmOptions,
+): { rules: NormalizedLiteLlmRule[]; skipped: number } {
+  if (!isRecord(raw)) throw new Error("LiteLLM pricing source must be a JSON object.");
+  const rules: NormalizedLiteLlmRule[] = [];
+  let skipped = 0;
+  for (const [model, value] of Object.entries(raw)) {
+    if (!isRecord(value)) {
+      skipped += 1;
+      continue;
+    }
+    const provider = typeof value.litellm_provider === "string" ? value.litellm_provider : null;
+    if (!provider) {
+      skipped += 1;
+      continue;
+    }
+    if (options.provider && provider !== options.provider) continue;
+    if (options.model && model !== options.model) continue;
+    const usageKind = usageKindForLiteLlmMode(value.mode);
+    for (const [field, unitType] of litellmTokenCostFields) {
+      const rawPrice = value[field];
+      if (typeof rawPrice !== "number" || !Number.isFinite(rawPrice) || rawPrice < 0) continue;
+      const priceNanosPerUnit = Math.round(rawPrice * 1_000_000_000);
+      if (priceNanosPerUnit <= 0 && rawPrice > 0) {
+        skipped += 1;
+        continue;
+      }
+      rules.push({
+        provider,
+        model,
+        usageKind,
+        unitType,
+        priceNanosPerUnit,
+        effectiveFrom: options.effectiveFrom,
+      });
+      if (options.limit && rules.length >= options.limit) return { rules, skipped };
+    }
+  }
+  return { rules, skipped };
+}
+
+function usageKindForLiteLlmMode(mode: unknown): string {
+  if (mode === "embedding") return "embedding";
+  if (mode === "rerank") return "rerank";
+  if (mode === "image_generation") return "image_generation";
+  if (mode === "image_edit") return "image_edit";
+  if (mode === "audio_transcription") return "audio_transcription";
+  if (mode === "audio_speech") return "speech_generation";
+  if (mode === "search") return "web_search";
+  return "chat_completion";
+}
+
 function parsePricingSourceName(value: string): "litellm" | "manual" | "import" | "openrouter" {
   if (value === "litellm" || value === "manual" || value === "import" || value === "openrouter") {
     return value;
   }
   throw new Error(`Invalid pricing source name: ${value}`);
+}
+
+function parsePricingMigrationMode(value: string): "unpriced" | "repriceable" {
+  if (value === "unpriced" || value === "repriceable") return value;
+  throw new Error(`Invalid pricing migration mode: ${value}`);
 }
 
 function parseOptionalJsonObject(value: string | undefined): Record<string, unknown> | null {

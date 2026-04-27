@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,7 @@ describe("ttoksem CLI workflows", () => {
       const assignedOutput = runCli(
         [
           "usage",
-          "codex-turn",
+          "chat-turn",
           "--workspace",
           "cli-test",
           "--task",
@@ -80,6 +80,18 @@ describe("ttoksem CLI workflows", () => {
         await store.close();
       }
 
+      const litellmPriceFile = join(tempDir, "litellm-prices.json");
+      writeFileSync(
+        litellmPriceFile,
+        JSON.stringify({
+          "gpt-test": {
+            litellm_provider: "openai",
+            mode: "chat",
+            input_cost_per_token: 0.0000001,
+            output_cost_per_token: 0.0000005,
+          },
+        }),
+      );
       const snapshotOutput = runCli(
         [
           "pricing",
@@ -95,6 +107,8 @@ describe("ttoksem CLI workflows", () => {
           "abc123",
           "--valid-from",
           "2026-01-01T00:00:00.000Z",
+          "--raw-storage-ref",
+          litellmPriceFile,
         ],
         env,
       );
@@ -102,6 +116,22 @@ describe("ttoksem CLI workflows", () => {
       expect(snapshotOutput).toContain(snapshotId);
       expect(snapshotId).toBeDefined();
       expect(runCli(["pricing", "snapshot", "list"], env)).toContain(snapshotId);
+      expect(
+        runCli(
+          [
+            "pricing",
+            "import-litellm",
+            "--workspace",
+            "cli-test",
+            "--source-snapshot-id",
+            snapshotId,
+          ],
+          env,
+        ),
+      ).toContain(`pricing import-litellm imported=2 skipped=0 snapshot=${snapshotId}`);
+      const importedRules = runCli(["pricing", "list", "--workspace", "cli-test"], env);
+      expect(importedRules).toContain("openai\tgpt-test\tchat_completion\tinput_token\tnanos=100");
+      expect(importedRules).toContain("openai\tgpt-test\tchat_completion\toutput_token\tnanos=500");
 
       expect(
         runCli(
@@ -160,6 +190,9 @@ describe("ttoksem CLI workflows", () => {
       expect(runCli(["pricing", "list", "--workspace", "cli-test"], env)).toContain("input_token");
       expect(runCli(["pricing", "reprice", "--workspace", "cli-test"], env)).toContain(
         "reprice checked=1 repriced=1 still_unpriced=0",
+      );
+      expect(runCli(["pricing", "migrate-events", "--workspace", "cli-test"], env)).toContain(
+        "pricing migrate-events checked=1 migrated=0 unchanged=1 still_unpriced=0",
       );
       const repricedStore = new SqliteLedgerStore(dbPath);
       try {
