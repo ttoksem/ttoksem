@@ -1,4 +1,5 @@
 import type {
+  RunRecord,
   TaskRecord,
   UsageEventRecord,
   WorkspaceRecord,
@@ -19,6 +20,18 @@ export interface CreateTaskInput {
   key: string;
   name: string;
   source: string;
+  now: string;
+}
+
+export interface CreateRunInput {
+  id: string;
+  workspace_id: string;
+  task_id?: string | null;
+  session_id: string;
+  source: string;
+  started_at?: string | null;
+  external_ref_json?: Record<string, unknown> | null;
+  metadata_json?: Record<string, unknown> | null;
   now: string;
 }
 
@@ -79,6 +92,10 @@ export interface LedgerStore {
   startTask(taskId: string, now: string): Promise<TaskRecord>;
   closeTask(taskId: string, now: string): Promise<TaskRecord>;
   setActiveTask(workspaceId: string, taskId: string | null, now: string): Promise<WorkspaceRecord>;
+
+  createRun(input: CreateRunInput): Promise<RunRecord>;
+  getRunById(id: string): Promise<RunRecord | null>;
+  getRunBySessionId(workspaceId: string, sessionId: string): Promise<RunRecord | null>;
 
   createUsageEvent(input: CreateUsageEventInput): Promise<UsageEventRecord>;
   getUsageEventByIdempotency(

@@ -1,5 +1,5 @@
-import type { TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
-import type { CreateUsageEventInput, LedgerStore } from "@ttoksem/storage";
+import type { RunRecord, TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
+import type { CreateRunInput, CreateUsageEventInput, LedgerStore } from "@ttoksem/storage";
 import { describe, expect, it } from "vitest";
 import { LedgerService } from "./ledger-service.js";
 
@@ -51,6 +51,65 @@ describe("LedgerService", () => {
     expect(createdUsage[0]?.ended_at).toBe("2026-04-27T00:00:03.250Z");
     expect(createdUsage[0]?.duration_ms).toBe(2250);
   });
+
+  it("creates a run from session_id and attaches usage to it", async () => {
+    const createdRuns: CreateRunInput[] = [];
+    const createdUsage: CreateUsageEventInput[] = [];
+    const workspace = workspaceRecord();
+    const task = taskRecord(workspace.id);
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        getTaskByKey: async () => task,
+        getRunBySessionId: async () => null,
+        createRun: async (input) => {
+          createdRuns.push(input);
+          return runRecord(input);
+        },
+        createUsageEvent: async (input) => {
+          createdUsage.push(input);
+          return usageEventRecord(input);
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    await service.recordUsage({
+      schema_version: "1.0",
+      message_id: "msg_test",
+      kind: "ingest_message",
+      type: "ai.usage.observed",
+      occurred_at: "2026-04-27T00:00:00.000Z",
+      source: { system: "codex-chat" },
+      workspace: { key: workspace.key },
+      payload: {
+        task: { key: task.key },
+        run: { session_id: "codex-thread-2026-04-27" },
+        usage: {
+          provider: "openai",
+          model: "codex-chat",
+          usage_kind: "conversation_turn",
+          input_tokens: 10,
+          output_tokens: 20,
+          total_tokens: 30,
+          accuracy_mode: "estimated",
+          pricing_mode: "unpriced",
+          unpriced_reason: "missing_pricing_rule",
+        },
+      },
+    });
+
+    expect(createdRuns[0]).toMatchObject({
+      id: "run_test",
+      workspace_id: workspace.id,
+      task_id: task.id,
+      session_id: "codex-thread-2026-04-27",
+      source: "codex-chat",
+      started_at: "2026-04-27T00:00:00.000Z",
+    });
+    expect(createdUsage[0]?.run_id).toBe("run_test");
+  });
 });
 
 function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
@@ -69,6 +128,9 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     startTask: async () => taskRecord("ws_test"),
     closeTask: async () => taskRecord("ws_test"),
     setActiveTask: async () => workspaceRecord(),
+    createRun: async (input) => runRecord(input),
+    getRunById: async () => null,
+    getRunBySessionId: async () => null,
     createUsageEvent: async (input) => usageEventRecord(input),
     getUsageEventByIdempotency: async () => null,
     listUsageEventsByAssignment: async () => [],
@@ -115,6 +177,23 @@ function taskRecord(workspaceId: string): TaskRecord {
     started_at: "2026-04-27T00:00:00.000Z",
     closed_at: null,
     updated_at: "2026-04-27T00:00:00.000Z",
+  };
+}
+
+function runRecord(input: CreateRunInput): RunRecord {
+  return {
+    id: input.id,
+    workspace_id: input.workspace_id,
+    task_id: input.task_id ?? null,
+    session_id: input.session_id,
+    status: "active",
+    source: input.source,
+    external_ref_json: input.external_ref_json ?? null,
+    metadata_json: input.metadata_json ?? null,
+    started_at: input.started_at ?? input.now,
+    ended_at: null,
+    created_at: input.now,
+    updated_at: input.now,
   };
 }
 

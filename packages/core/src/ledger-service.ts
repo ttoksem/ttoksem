@@ -2,6 +2,7 @@ import {
   AiUsageObservedSchema,
   type AiUsageObserved,
   type DailyReport,
+  type RunRecord,
   type TaskRecord,
   type UsageEventRecord,
   type WorkspaceRecord,
@@ -142,12 +143,13 @@ export class LedgerService {
     }
 
     const task = await this.resolveUsageTask(workspace, parsed);
+    const run = await this.resolveUsageRun(workspace, task, parsed);
     const usage = parsed.payload.usage;
     return this.store.createUsageEvent({
       id: this.idFactory("usage"),
       workspace_id: workspace.id,
       task_id: task?.id ?? null,
-      run_id: null,
+      run_id: run?.id ?? null,
       message_id: parsed.message_id,
       source,
       idempotency_key: parsed.idempotency_key ?? null,
@@ -215,6 +217,43 @@ export class LedgerService {
     if (taskRef?.key) return this.store.getTaskByKey(workspace.id, taskRef.key);
     if (workspace.active_task_id) return this.store.getTaskById(workspace.active_task_id);
     return null;
+  }
+
+  private async resolveUsageRun(
+    workspace: WorkspaceRecord,
+    task: TaskRecord | null,
+    message: AiUsageObserved,
+  ): Promise<RunRecord | null> {
+    if (message.payload.run === null || message.payload.run === undefined) return null;
+    const runRef = message.payload.run;
+    if (runRef.id) {
+      const existing = await this.store.getRunById(runRef.id);
+      if (existing) return existing;
+      if (!runRef.id.startsWith("run_")) throw new Error(`Invalid run id: ${runRef.id}`);
+      return this.store.createRun({
+        id: runRef.id,
+        workspace_id: workspace.id,
+        task_id: task?.id ?? null,
+        session_id: runRef.session_id ?? runRef.id,
+        source: message.source.system,
+        started_at: message.payload.usage.started_at ?? message.occurred_at,
+        external_ref_json: runRef.external_ref ?? null,
+        now: this.clock.now(),
+      });
+    }
+    if (!runRef.session_id) return null;
+    const existing = await this.store.getRunBySessionId(workspace.id, runRef.session_id);
+    if (existing) return existing;
+    return this.store.createRun({
+      id: this.idFactory("run"),
+      workspace_id: workspace.id,
+      task_id: task?.id ?? null,
+      session_id: runRef.session_id,
+      source: message.source.system,
+      started_at: message.payload.usage.started_at ?? message.occurred_at,
+      external_ref_json: runRef.external_ref ?? null,
+      now: this.clock.now(),
+    });
   }
 }
 

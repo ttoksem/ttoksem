@@ -104,6 +104,53 @@ describe("SqliteLedgerStore", () => {
       rmSync(`${dbPath}-wal`, { force: true });
     }
   });
+
+  it("creates and looks up runs by session id", async () => {
+    const dbPath = testDbPath();
+    const store = new SqliteLedgerStore(dbPath);
+    try {
+      await store.migrate();
+      await store.createWorkspace({
+        id: "ws_test",
+        key: "test",
+        name: "Test",
+        root_path: "/tmp/test",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createTask({
+        id: "task_test",
+        workspace_id: "ws_test",
+        key: "task",
+        name: "Task",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+
+      const run = await store.createRun({
+        id: "run_test",
+        workspace_id: "ws_test",
+        task_id: "task_test",
+        session_id: "session-001",
+        source: "test",
+        started_at: "2026-04-27T00:00:01.000Z",
+        external_ref_json: { system: "codex", id: "session-001" },
+        now: "2026-04-27T00:00:00.000Z",
+      });
+
+      expect(run.session_id).toBe("session-001");
+      expect(run.task_id).toBe("task_test");
+      await expect(store.getRunBySessionId("ws_test", "session-001")).resolves.toMatchObject({
+        id: "run_test",
+        external_ref_json: { system: "codex", id: "session-001" },
+      });
+    } finally {
+      await store.close();
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+    }
+  });
 });
 
 function testDbPath(): string {

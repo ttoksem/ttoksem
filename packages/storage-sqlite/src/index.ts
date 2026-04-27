@@ -1,13 +1,16 @@
 import Database from "better-sqlite3";
 import {
+  RunRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
   WorkspaceRecordSchema,
+  type RunRecord,
   type TaskRecord,
   type UsageEventRecord,
   type WorkspaceRecord,
 } from "@ttoksem/schema";
 import type {
+  CreateRunInput,
   CreateTaskInput,
   CreateUsageEventInput,
   CreateWorkspaceInput,
@@ -75,11 +78,30 @@ export class SqliteLedgerStore implements LedgerStore {
       CREATE INDEX IF NOT EXISTS tasks_workspace_status_idx ON tasks(workspace_id, status);
       CREATE INDEX IF NOT EXISTS tasks_workspace_created_idx ON tasks(workspace_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS runs (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+        task_id TEXT REFERENCES tasks(id),
+        session_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        source TEXT NOT NULL,
+        external_ref_json TEXT,
+        metadata_json TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, session_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
+      CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
+
       CREATE TABLE IF NOT EXISTS usage_events (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL REFERENCES workspaces(id),
         task_id TEXT REFERENCES tasks(id),
-        run_id TEXT,
+        run_id TEXT REFERENCES runs(id),
         message_id TEXT NOT NULL,
         source TEXT NOT NULL,
         idempotency_key TEXT,
@@ -140,6 +162,9 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0002_split_usage_event_currency", new Date().toISOString());
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0003_create_runs", new Date().toISOString());
   }
 
   async close(): Promise<void> {
@@ -253,6 +278,39 @@ export class SqliteLedgerStore implements LedgerStore {
     return workspace;
   }
 
+  async createRun(input: CreateRunInput): Promise<RunRecord> {
+    this.db
+      .prepare(
+        `INSERT INTO runs (
+          id, workspace_id, task_id, session_id, status, source,
+          external_ref_json, metadata_json, started_at, ended_at, created_at, updated_at
+        ) VALUES (
+          @id, @workspace_id, @task_id, @session_id, 'active', @source,
+          @external_ref_json, @metadata_json, @started_at, NULL, @now, @now
+        )`,
+      )
+      .run({
+        ...input,
+        task_id: input.task_id ?? null,
+        external_ref_json: JSON.stringify(input.external_ref_json ?? null),
+        metadata_json: JSON.stringify(input.metadata_json ?? null),
+        started_at: input.started_at ?? input.now,
+      });
+    const run = await this.getRunById(input.id);
+    if (!run) throw new Error("Failed to create run.");
+    return run;
+  }
+
+  async getRunById(id: string): Promise<RunRecord | null> {
+    return parseRun(this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id));
+  }
+
+  async getRunBySessionId(workspaceId: string, sessionId: string): Promise<RunRecord | null> {
+    return parseRun(
+      this.db.prepare("SELECT * FROM runs WHERE workspace_id = ? AND session_id = ?").get(workspaceId, sessionId),
+    );
+  }
+
   async createUsageEvent(input: CreateUsageEventInput): Promise<UsageEventRecord> {
     this.db
       .prepare(
@@ -364,6 +422,11 @@ function parseWorkspace(row: unknown): WorkspaceRecord | null {
 function parseTask(row: unknown): TaskRecord | null {
   if (!row) return null;
   return TaskRecordSchema.parse(fromDbJson(row as DbRow));
+}
+
+function parseRun(row: unknown): RunRecord | null {
+  if (!row) return null;
+  return RunRecordSchema.parse(fromDbJson(row as DbRow));
 }
 
 function fromDbJson(row: DbRow): DbRow {

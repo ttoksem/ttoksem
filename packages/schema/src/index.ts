@@ -52,6 +52,23 @@ export const TaskRecordSchema = z.object({
 
 export type TaskRecord = z.infer<typeof TaskRecordSchema>;
 
+export const RunRecordSchema = z.object({
+  id: z.string().startsWith("run_"),
+  workspace_id: z.string().startsWith("ws_"),
+  task_id: z.string().startsWith("task_").nullable().optional(),
+  session_id: z.string().min(1),
+  status: z.enum(["active", "closed", "archived"]),
+  source: z.string(),
+  external_ref_json: z.record(z.string(), z.unknown()).nullable().optional(),
+  metadata_json: z.record(z.string(), z.unknown()).nullable().optional(),
+  started_at: nullableString,
+  ended_at: nullableString,
+  created_at: isoUtc,
+  updated_at: isoUtc,
+});
+
+export type RunRecord = z.infer<typeof RunRecordSchema>;
+
 export const UsageFieldsSchema = z
   .object({
     provider: z.string().min(1),

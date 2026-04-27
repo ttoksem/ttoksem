@@ -33,6 +33,14 @@ In practice, most initial pricing data is expected to be USD. Reports should onl
 
 If `started_at` and `ended_at` are present but `duration_ms` is omitted, the core service derives `duration_ms`. Missing timing fields are allowed so lightweight/manual logging stays simple.
 
+## Run And Session Policy
+
+A run groups multiple usage events from one request, conversation, job, or attempt.
+
+Use `session_id` when the caller has a stable external grouping key, such as a chat thread id, agent run id, or RAG request id. The core service creates or reuses a run for the same workspace/session pair and stores its `run_id` on each usage event.
+
+Usage can still be recorded without a run. That keeps one-off/manual logging simple while allowing RAG, API, and tool workflows to group related events when the caller has enough context.
+
 ## Project Shape
 
 This repo is intentionally a pnpm workspace, not a single `src/` package.
@@ -69,7 +77,7 @@ Use `TTOKSEM_DB=/path/to/ttoksem.db` to select a local SQLite file. Without it, 
 ```bash
 pnpm cli workspace init --key ttoksem-dev --root .
 pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
-pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --session-id codex-thread-2026-04-27 --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev

@@ -122,6 +122,8 @@ usage
   .option("--file <path>", "canonical ai.usage.observed JSON file")
   .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key")
+  .option("--run-id <id>", "existing or explicit run id")
+  .option("--session-id <id>", "run session id")
   .option("--provider <provider>", "provider name")
   .option("--model <model>", "model name")
   .option("--started-at <iso>", "usage start timestamp")
@@ -166,6 +168,8 @@ usage
   .description("Record an estimated Codex conversation turn")
   .option("--workspace <key>", "workspace key", "ttoksem-dev")
   .option("--task <key>", "task key; omit when the goal is not clear")
+  .option("--run-id <id>", "existing or explicit run id")
+  .option("--session-id <id>", "run session id")
   .option("--model <model>", "model label", "codex-chat")
   .option("--started-at <iso>", "turn start timestamp")
   .option("--ended-at <iso>", "turn end timestamp")
@@ -251,6 +255,8 @@ interface UsageAddOptions {
   file?: string;
   workspace?: string;
   task?: string;
+  runId?: string;
+  sessionId?: string;
   provider?: string;
   model?: string;
   startedAt?: string;
@@ -273,6 +279,8 @@ interface UsageMoveOptions {
 interface CodexTurnOptions {
   workspace: string;
   task?: string;
+  runId?: string;
+  sessionId?: string;
   model: string;
   startedAt?: string;
   endedAt?: string;
@@ -344,6 +352,7 @@ function buildUsageMessage(options: UsageAddOptions): AiUsageObserved {
     idempotency_key: options.idempotencyKey,
     payload: {
       task: options.task ? { key: slug(options.task) } : null,
+      run: runRef(options),
       usage: {
         provider: options.provider,
         model: options.model,
@@ -404,6 +413,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
     idempotency_key: options.idempotencyKey,
     payload: {
       task: options.task ? { key: slug(options.task) } : null,
+      run: runRef(options),
       usage: {
         provider: "openai",
         model: options.model,
@@ -444,6 +454,14 @@ function readOptionalText(text: string | undefined, file: string | undefined): s
   if (text != null) return text;
   if (file != null) return readFileSync(resolveFromCommandCwd(file), "utf8");
   return null;
+}
+
+function runRef(options: { runId?: string; sessionId?: string }) {
+  if (!options.runId && !options.sessionId) return null;
+  return {
+    id: options.runId,
+    session_id: options.sessionId,
+  };
 }
 
 function printReport(report: {
