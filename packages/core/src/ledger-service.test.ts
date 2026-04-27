@@ -395,6 +395,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
       currency: null,
     }),
     listDashboardTaskCosts: async () => [],
+    listDashboardTaskInsights: async () => [],
     listRecentUsageEvents: async () => [],
     listDashboardPricingModeBreakdown: async () => [],
     listDashboardAccuracyModeBreakdown: async () => [],

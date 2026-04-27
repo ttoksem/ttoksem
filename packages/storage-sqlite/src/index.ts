@@ -23,6 +23,7 @@ import type {
   DashboardRecentUsageRow,
   DashboardSummaryRow,
   DashboardTaskCostRow,
+  DashboardTaskInsightRow,
   LedgerReportRow,
   LedgerStore,
   PricingRuleLookupInput,
@@ -801,6 +802,68 @@ export class SqliteLedgerStore implements LedgerStore {
          LIMIT ?`,
       )
       .all(workspaceId, limit) as DashboardTaskCostRow[];
+  }
+
+  async listDashboardTaskInsights(
+    workspaceId: string,
+    limit: number,
+  ): Promise<DashboardTaskInsightRow[]> {
+    return this.db
+      .prepare(
+        `WITH task_usage AS (
+           SELECT
+             u.task_id AS task_id,
+             t.key AS task_key,
+             t.name AS task_name,
+             t.status AS task_status,
+             COUNT(*) AS event_count,
+             COUNT(DISTINCT u.run_id) AS run_count,
+             COALESCE(SUM(COALESCE(u.total_tokens, COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0))), 0) AS token_count,
+             COALESCE(SUM(COALESCE(u.estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos,
+             SUM(CASE WHEN u.pricing_mode = 'unpriced' THEN 1 ELSE 0 END) AS unpriced_count,
+             MIN(u.occurred_at) AS first_activity_at,
+             MAX(u.occurred_at) AS last_activity_at
+           FROM usage_events u
+           LEFT JOIN tasks t ON t.id = u.task_id
+           WHERE u.workspace_id = ?
+           GROUP BY u.task_id, t.key, t.name, t.status
+         ),
+         latest_prompt AS (
+           SELECT task_id, prompt_text
+           FROM (
+             SELECT
+               u.task_id AS task_id,
+               json_extract(u.payload_json, '$.payload.prompt_snapshot.prompt_text') AS prompt_text,
+               ROW_NUMBER() OVER (
+                 PARTITION BY u.task_id
+                 ORDER BY u.occurred_at DESC, u.id DESC
+               ) AS rank
+             FROM usage_events u
+             WHERE u.workspace_id = ?
+           )
+           WHERE rank = 1
+         )
+         SELECT
+           task_usage.task_id,
+           task_usage.task_key,
+           task_usage.task_name,
+           task_usage.task_status,
+           task_usage.event_count,
+           task_usage.run_count,
+           task_usage.token_count,
+           task_usage.estimated_cost_nanos,
+           task_usage.unpriced_count,
+           task_usage.first_activity_at,
+           task_usage.last_activity_at,
+           latest_prompt.prompt_text AS latest_prompt
+         FROM task_usage
+         LEFT JOIN latest_prompt
+           ON latest_prompt.task_id = task_usage.task_id
+           OR (latest_prompt.task_id IS NULL AND task_usage.task_id IS NULL)
+         ORDER BY task_usage.estimated_cost_nanos DESC, task_usage.event_count DESC, task_usage.last_activity_at DESC
+         LIMIT ?`,
+      )
+      .all(workspaceId, workspaceId, limit) as DashboardTaskInsightRow[];
   }
 
   async listRecentUsageEvents(workspaceId: string, limit: number): Promise<DashboardRecentUsageRow[]> {

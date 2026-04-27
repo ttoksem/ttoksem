@@ -335,6 +335,19 @@ describe("SqliteLedgerStore", () => {
           estimated_cost_nanos: 1500,
         },
       ]);
+      await expect(store.listDashboardTaskInsights("ws_test", 10)).resolves.toMatchObject([
+        {
+          task_key: "task",
+          task_status: "open",
+          event_count: 1,
+          run_count: 1,
+          token_count: 30,
+          estimated_cost_nanos: 1500,
+          first_activity_at: "2026-04-27T00:00:00.000Z",
+          last_activity_at: "2026-04-27T00:00:00.000Z",
+          latest_prompt: "dashboard prompt",
+        },
+      ]);
       await expect(store.listRecentUsageEvents("ws_test", 10)).resolves.toMatchObject([
         {
           id: "usage_test",

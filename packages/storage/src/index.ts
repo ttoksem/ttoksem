@@ -130,6 +130,21 @@ export interface DashboardTaskCostRow {
   unpriced_count: number;
 }
 
+export interface DashboardTaskInsightRow {
+  task_id: string | null;
+  task_key: string | null;
+  task_name: string | null;
+  task_status: string | null;
+  event_count: number;
+  run_count: number;
+  token_count: number;
+  estimated_cost_nanos: number;
+  unpriced_count: number;
+  first_activity_at: string | null;
+  last_activity_at: string | null;
+  latest_prompt: string | null;
+}
+
 export interface DashboardBreakdownRow {
   key: string;
   event_count: number;
@@ -245,6 +260,7 @@ export interface LedgerStore {
   reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]>;
   getDashboardSummary(workspaceId: string): Promise<DashboardSummaryRow>;
   listDashboardTaskCosts(workspaceId: string, limit: number): Promise<DashboardTaskCostRow[]>;
+  listDashboardTaskInsights(workspaceId: string, limit: number): Promise<DashboardTaskInsightRow[]>;
   listRecentUsageEvents(workspaceId: string, limit: number): Promise<DashboardRecentUsageRow[]>;
   listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;
   listDashboardAccuracyModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;

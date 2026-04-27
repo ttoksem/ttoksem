@@ -150,7 +150,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .layout {
-      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
       align-items: start;
       margin-top: 14px;
     }
@@ -205,6 +205,15 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
     }
     #taskTable, #recentTable {
       overflow-x: auto;
+    }
+    #insightTable {
+      overflow-x: auto;
+    }
+    #taskTable table {
+      min-width: 560px;
+    }
+    #insightTable table {
+      min-width: 920px;
     }
     th, td {
       padding: 10px 12px;
@@ -267,6 +276,88 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
       display: grid;
       gap: 14px;
     }
+    .attention-list {
+      display: grid;
+      padding: 2px 16px;
+    }
+    .attention-row {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 66px;
+      border-bottom: 1px solid #eef1f6;
+    }
+    .attention-row:last-child {
+      border-bottom: 0;
+    }
+    .attention-row .pill {
+      justify-self: start;
+    }
+    .attention-title {
+      font-size: 13px;
+      font-weight: 740;
+    }
+    .attention-body {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .attention-metric {
+      font-size: 18px;
+      font-weight: 780;
+      white-space: nowrap;
+    }
+    .insight-task {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .insight-task strong,
+    .insight-task .muted {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.3;
+    }
+    .muted {
+      color: var(--muted);
+    }
+    .insight-text {
+      white-space: normal;
+      line-height: 1.35;
+    }
+    .signal-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 7px;
+    }
+    .signal {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: #edf4ff;
+      color: #2c5f9e;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .signal.warn {
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+    .signal.bad {
+      background: var(--bad-bg);
+      color: var(--bad);
+    }
+    .prompt-snippet {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: normal;
+    }
     .breakdown {
       display: grid;
       gap: 10px;
@@ -305,6 +396,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
       .toolbar { width: 100%; }
       input { flex: 1; min-width: 0; }
       .kpi-value { font-size: 24px; }
+      .attention-row { grid-template-columns: 1fr; gap: 6px; padding: 12px 0; }
+      .attention-metric { font-size: 16px; }
     }
   </style>
 </head>
@@ -326,8 +419,12 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
     <section class="grid layout">
       <div class="stack">
         <section class="panel">
-          <div class="panel-head"><h2>Task Cost</h2><span class="pill" id="taskCount"></span></div>
-          <div id="taskTable"></div>
+          <div class="panel-head"><h2>Needs Attention</h2><span class="pill" id="attentionCount"></span></div>
+          <div id="attentionPanel"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Task Insight</h2><span class="pill" id="insightCount"></span></div>
+          <div id="insightTable"></div>
         </section>
         <section class="panel">
           <div class="panel-head"><h2>Recent Usage</h2><span class="pill" id="recentCount"></span></div>
@@ -335,6 +432,10 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
         </section>
       </div>
       <aside class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Cost Snapshot</h2><span class="pill" id="taskCount"></span></div>
+          <div id="taskTable"></div>
+        </section>
         <section class="panel">
           <div class="panel-head"><h2>Daily Cost</h2><span class="pill" id="dayCount"></span></div>
           <div class="spark" id="dailySpark"></div>
@@ -386,14 +487,57 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
       if (value === "error") return "bad";
       return "";
     }
+    function severityClass(value) {
+      if (value === "bad") return "bad";
+      if (value === "warn") return "warn";
+      return "";
+    }
+    function signalClass(value) {
+      if (value === "pricing gap" || value === "inbox") return "bad";
+      if (value === "many turns" || value === "single run") return "warn";
+      return "";
+    }
+    function shortDate(value) {
+      if (!value) return "-";
+      return String(value).replace("T", " ").slice(0, 16);
+    }
+    function promptSnippet(value) {
+      const raw = String(value || "").replace(/\\s+/g, " ").trim();
+      if (!raw) return "";
+      return raw.length > 140 ? raw.slice(0, 137) + "..." : raw;
+    }
     function renderKpis(data) {
       const s = data.summary;
+      const gapCount = s.unassigned_count + s.unpriced_count;
       document.getElementById("kpis").innerHTML = [
-        ["Estimated", money(s.estimated_total, s.currency), integer(s.event_count) + " events"],
-        ["Unpriced", integer(s.unpriced_count), "pricing gaps"],
-        ["Inbox", integer(s.unassigned_count), "unassigned usage"],
-        ["Runs", integer(s.run_count), integer(s.task_count) + " tasks"],
+        ["Workload", integer(s.event_count), integer(s.task_count) + " tasks"],
+        ["Task Coverage", integer(s.assigned_count) + "/" + integer(s.event_count), "assigned usage"],
+        ["Attention", integer(data.attention.length), integer(gapCount) + " open gaps"],
+        ["Estimated Cost", money(s.estimated_total, s.currency), integer(s.run_count) + " runs"],
       ].map(([label, value, sub]) => '<article class="panel kpi"><div class="kpi-label">' + text(label) + '</div><div class="kpi-value">' + text(value) + '</div><div class="kpi-sub">' + text(sub) + '</div></article>').join("");
+    }
+    function renderAttention(data) {
+      const items = data.attention || [];
+      document.getElementById("attentionCount").textContent = integer(items.length);
+      document.getElementById("attentionPanel").innerHTML = items.length === 0 ? '<div class="empty">No attention signals.</div>' :
+        '<div class="attention-list">' + items.map((item) =>
+          '<div class="attention-row"><span class="pill ' + severityClass(item.severity) + '">' + text(item.severity) + '</span><div><div class="attention-title">' + text(item.title) + '</div><div class="attention-body">' + text(item.body) + '</div></div><div class="attention-metric">' + text(item.metric) + '</div></div>'
+        ).join("") + '</div>';
+    }
+    function renderTaskInsights(data) {
+      const rows = data.task_insights || [];
+      document.getElementById("insightCount").textContent = integer(rows.length);
+      if (rows.length === 0) {
+        document.getElementById("insightTable").innerHTML = '<div class="empty">No task insight yet.</div>';
+        return;
+      }
+      document.getElementById("insightTable").innerHTML = '<table><thead><tr><th>Task</th><th>Insight</th><th class="num">Turns</th><th class="num">Runs</th><th class="num">Cost</th><th>Last</th></tr></thead><tbody>' +
+        rows.map((row) => {
+          const prompt = promptSnippet(row.latest_prompt);
+          const signals = (row.signals || []).map((signal) => '<span class="signal ' + signalClass(signal) + '">' + text(signal) + '</span>').join("");
+          return '<tr><td><div class="insight-task"><strong>' + text(row.task_key) + '</strong><span class="muted">' + text(row.task_name) + ' · ' + text(row.status) + '</span></div></td><td class="insight-text"><div>' + text(row.insight) + '</div><div class="signal-list">' + signals + '</div>' + (prompt ? '<div class="prompt-snippet">' + text(prompt) + '</div>' : '') + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td>' + text(shortDate(row.last_activity_at)) + '</td></tr>';
+        }).join("") +
+        '</tbody></table>';
     }
     function renderTasks(data) {
       const max = Math.max(...data.tasks.map((row) => row.estimated_total), 0.000001);
@@ -439,6 +583,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string): string {
       }
       const data = await response.json();
       renderKpis(data);
+      renderAttention(data);
+      renderTaskInsights(data);
       renderTasks(data);
       renderRecent(data);
       renderBreakdown("pricingBreakdown", data.pricing_breakdown, data.summary.currency);

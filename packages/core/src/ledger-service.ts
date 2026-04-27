@@ -9,7 +9,13 @@ import {
   type UsageEventRecord,
   type WorkspaceRecord,
 } from "@ttoksem/schema";
-import type { LedgerReportRow, LedgerStore, UsagePricingUpdateInput } from "@ttoksem/storage";
+import type {
+  DashboardSummaryRow,
+  DashboardTaskInsightRow,
+  LedgerReportRow,
+  LedgerStore,
+  UsagePricingUpdateInput,
+} from "@ttoksem/storage";
 import { decimalToNanos, nanosToDecimal } from "./money.js";
 
 export interface Clock {
@@ -84,6 +90,28 @@ export interface DashboardData {
     task_count: number;
     run_count: number;
   };
+  attention: Array<{
+    severity: "info" | "warn" | "bad";
+    title: string;
+    body: string;
+    metric: string;
+    task_key: string | null;
+  }>;
+  task_insights: Array<{
+    task_key: string;
+    task_name: string;
+    status: string;
+    event_count: number;
+    token_count: number;
+    estimated_total: number;
+    unpriced_count: number;
+    run_count: number;
+    first_activity_at: string | null;
+    last_activity_at: string | null;
+    latest_prompt: string | null;
+    signals: string[];
+    insight: string;
+  }>;
   tasks: Array<{
     task_key: string;
     task_name: string;
@@ -441,14 +469,17 @@ export class LedgerService {
     dayLimit?: number;
   }): Promise<DashboardData> {
     const workspace = await this.resolveWorkspace(input.workspace);
-    const [summary, tasks, recent, pricingBreakdown, accuracyBreakdown, daily] = await Promise.all([
-      this.store.getDashboardSummary(workspace.id),
-      this.store.listDashboardTaskCosts(workspace.id, input.taskLimit ?? 20),
-      this.store.listRecentUsageEvents(workspace.id, input.recentLimit ?? 30),
-      this.store.listDashboardPricingModeBreakdown(workspace.id),
-      this.store.listDashboardAccuracyModeBreakdown(workspace.id),
-      this.store.listDashboardDailyCosts(workspace.id, input.dayLimit ?? 14),
-    ]);
+    const [summary, tasks, taskInsightRows, recent, pricingBreakdown, accuracyBreakdown, daily] =
+      await Promise.all([
+        this.store.getDashboardSummary(workspace.id),
+        this.store.listDashboardTaskCosts(workspace.id, input.taskLimit ?? 20),
+        this.store.listDashboardTaskInsights(workspace.id, input.taskLimit ?? 20),
+        this.store.listRecentUsageEvents(workspace.id, input.recentLimit ?? 30),
+        this.store.listDashboardPricingModeBreakdown(workspace.id),
+        this.store.listDashboardAccuracyModeBreakdown(workspace.id),
+        this.store.listDashboardDailyCosts(workspace.id, input.dayLimit ?? 14),
+      ]);
+    const taskInsights = buildTaskInsights(taskInsightRows);
 
     return {
       workspace: {
@@ -466,6 +497,8 @@ export class LedgerService {
         task_count: summary.task_count,
         run_count: summary.run_count,
       },
+      attention: buildAttention(summary, taskInsights),
+      task_insights: taskInsights,
       tasks: tasks.map((task) => ({
         task_key: task.task_key ?? "unassigned",
         task_name: task.task_name ?? "Unassigned",
@@ -645,6 +678,119 @@ export class LedgerService {
       costCalculatedAt: this.clock.now(),
     };
   }
+}
+
+function buildTaskInsights(rows: DashboardTaskInsightRow[]): DashboardData["task_insights"] {
+  const maxCostNanos = Math.max(...rows.map((row) => row.estimated_cost_nanos), 0);
+  return rows.map((row) => {
+    const isUnassigned = row.task_id == null || row.task_key == null;
+    return {
+      task_key: row.task_key ?? "unassigned",
+      task_name: row.task_name ?? "Unassigned",
+      status: row.task_status ?? (isUnassigned ? "unassigned" : "unknown"),
+      event_count: row.event_count,
+      token_count: row.token_count,
+      estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+      unpriced_count: row.unpriced_count,
+      run_count: row.run_count,
+      first_activity_at: row.first_activity_at,
+      last_activity_at: row.last_activity_at,
+      latest_prompt: row.latest_prompt,
+      signals: taskSignals(row, maxCostNanos, isUnassigned),
+      insight: taskInsight(row, maxCostNanos, isUnassigned),
+    };
+  });
+}
+
+function taskSignals(
+  row: DashboardTaskInsightRow,
+  maxCostNanos: number,
+  isUnassigned: boolean,
+): string[] {
+  const signals: string[] = [];
+  if (isUnassigned) signals.push("inbox");
+  if (row.unpriced_count > 0) signals.push("pricing gap");
+  if (row.event_count >= 6) signals.push("many turns");
+  if (row.run_count <= 1 && row.event_count >= 4) signals.push("single run");
+  if (row.estimated_cost_nanos === maxCostNanos && maxCostNanos > 0) signals.push("top cost");
+  if (row.task_status === "active" || row.task_status === "open") signals.push(row.task_status);
+  if (signals.length === 0) signals.push("normal");
+  return signals;
+}
+
+function taskInsight(
+  row: DashboardTaskInsightRow,
+  maxCostNanos: number,
+  isUnassigned: boolean,
+): string {
+  if (isUnassigned) return "Usage is still in the assignment inbox, so task-level spend is incomplete.";
+  if (row.unpriced_count > 0) return "Some usage cannot be priced yet, so this task's cost is partial.";
+  if (row.event_count >= 6 && row.run_count <= 1) {
+    return "Many turns are concentrated in one run; check whether the task is drifting.";
+  }
+  if (row.estimated_cost_nanos === maxCostNanos && maxCostNanos > 0) {
+    return "Largest cost driver in this workspace.";
+  }
+  if (row.run_count === 0) return "Usage is attached to the task but not grouped into runs.";
+  return "No immediate task signal.";
+}
+
+function buildAttention(
+  summary: DashboardSummaryRow,
+  taskInsights: DashboardData["task_insights"],
+): DashboardData["attention"] {
+  const items: DashboardData["attention"] = [];
+  if (summary.unassigned_count > 0) {
+    items.push({
+      severity: "warn",
+      title: "Assignment inbox",
+      body: "Unassigned usage is blocking task-level insight.",
+      metric: `${summary.unassigned_count} event${summary.unassigned_count === 1 ? "" : "s"}`,
+      task_key: null,
+    });
+  }
+  if (summary.unpriced_count > 0) {
+    items.push({
+      severity: "bad",
+      title: "Pricing gap",
+      body: "Cost totals are incomplete until these events are priced.",
+      metric: `${summary.unpriced_count} event${summary.unpriced_count === 1 ? "" : "s"}`,
+      task_key: null,
+    });
+  }
+
+  const highTurnTask = taskInsights.find((task) => task.event_count >= 6);
+  if (highTurnTask) {
+    items.push({
+      severity: "warn",
+      title: "Task drift check",
+      body: `${highTurnTask.task_key} has a high turn count.`,
+      metric: `${highTurnTask.event_count} turns`,
+      task_key: highTurnTask.task_key,
+    });
+  }
+
+  const topCostTask = taskInsights.find((task) => task.estimated_total > 0);
+  if (topCostTask) {
+    items.push({
+      severity: "info",
+      title: "Top cost driver",
+      body: `${topCostTask.task_key} is the largest visible spend source.`,
+      metric: `$${topCostTask.estimated_total.toFixed(6)}`,
+      task_key: topCostTask.task_key,
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      severity: "info",
+      title: "No immediate gaps",
+      body: "Assignment and pricing signals are clear for the current data.",
+      metric: `${summary.event_count} events`,
+      task_key: null,
+    });
+  }
+  return items.slice(0, 4);
 }
 
 function quantityForRule(unitType: string, usage: AiUsageObserved["payload"]["usage"]): number | null {
