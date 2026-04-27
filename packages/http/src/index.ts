@@ -109,7 +109,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       background: var(--panel);
     }
     .wrap {
-      width: min(1720px, calc(100% - 40px));
+      width: min(1880px, calc(100% - 40px));
       margin: 0 auto;
     }
     .topbar {
@@ -175,9 +175,12 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       margin-top: 12px;
     }
     .overview-support {
-      grid-template-columns: 340px minmax(0, 1fr) 360px;
+      grid-template-columns: 360px minmax(0, 1fr);
       align-items: start;
       margin-top: 12px;
+    }
+    .overview-support > aside:last-child {
+      grid-column: 2;
     }
     .detail-layout {
       grid-template-columns: minmax(0, 1fr) 420px;
@@ -261,17 +264,17 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     #insightTable {
       overflow-x: auto;
     }
-    #taskTable table {
-      min-width: 560px;
-    }
     #insightTable table {
-      min-width: 1680px;
+      min-width: 1560px;
+    }
+    #taskTable table {
+      min-width: 680px;
     }
     #recentTable table, #taskEventTable table {
       min-width: 1320px;
     }
     #taskRunTable table {
-      min-width: 1080px;
+      min-width: 1230px;
     }
     th, td {
       padding: 9px 10px;
@@ -295,6 +298,12 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       align-items: center;
       gap: 8px;
       min-width: 0;
+    }
+    .task-cell span {
+      min-width: 0;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
     .bar {
       width: 64px;
@@ -415,6 +424,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       font-size: 12px;
       line-height: 1.35;
       white-space: normal;
+      overflow-wrap: anywhere;
     }
     .breakdown {
       display: grid;
@@ -431,11 +441,12 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .wide-text {
       white-space: normal;
       line-height: 1.35;
+      overflow-wrap: anywhere;
     }
-    .prompt-line {
+    .money-cell,
+    .date-cell {
+      font-variant-numeric: tabular-nums;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
     .row-link {
       display: inline-flex;
@@ -681,13 +692,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         document.getElementById("insightTable").innerHTML = '<div class="empty">No task insight yet.</div>';
         return;
       }
-      document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 210px;">Task</th><th style="width: 76px;">Status</th><th style="width: 230px;">Insight</th><th style="width: 155px;">Signals</th><th class="num" style="width: 64px;">Turns</th><th class="num" style="width: 60px;">Runs</th><th class="num" style="width: 78px;">Tokens</th><th class="num" style="width: 100px;">Cost</th><th class="num" style="width: 76px;">Unpriced</th><th style="width: 126px;">First</th><th style="width: 126px;">Last</th><th>Latest Prompt</th></tr></thead><tbody>' +
+      document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 260px;">Task</th><th style="width: 82px;">Status</th><th style="width: 330px;">Insight</th><th style="width: 162px;">Signals</th><th class="num" style="width: 70px;">Turns</th><th class="num" style="width: 64px;">Runs</th><th class="num" style="width: 88px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 84px;">Unpriced</th><th style="width: 146px;">First</th><th style="width: 146px;">Last</th></tr></thead><tbody>' +
         rows.map((row) => {
           const prompt = promptSnippet(row.latest_prompt);
           const taskLabel = row.task_key === "unassigned"
             ? '<strong>' + text(row.task_key) + '</strong>'
             : '<a class="row-link" href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
-          return '<tr><td><div class="insight-task">' + taskLabel + '<span class="muted">' + text(row.task_name) + '</span></div></td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text">' + text(row.insight) + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td>' + text(shortDate(row.first_activity_at)) + '</td><td>' + text(shortDate(row.last_activity_at)) + '</td><td class="prompt-line">' + text(prompt || "-") + '</td></tr>';
+          const promptHtml = prompt ? '<div class="prompt-snippet">' + text(prompt) + '</div>' : "";
+          return '<tr><td><div class="insight-task">' + taskLabel + '<span class="muted">' + text(row.task_name) + '</span></div></td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text"><div class="insight-text">' + text(row.insight) + '</div>' + promptHtml + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -698,11 +710,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         document.getElementById("taskTable").innerHTML = '<div class="empty">No usage.</div>';
         return;
       }
-      document.getElementById("taskTable").innerHTML = '<table><thead><tr><th>Task</th><th class="num">Events</th><th class="num">Tokens</th><th class="num">Cost</th><th class="num">Unpriced</th></tr></thead><tbody>' +
+      document.getElementById("taskTable").innerHTML = '<table><thead><tr><th style="width: 300px;">Task</th><th class="num" style="width: 76px;">Events</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 80px;">Unpriced</th></tr></thead><tbody>' +
         data.tasks.map((row) => {
           const width = Math.max(4, Math.round((row.estimated_total / max) * 100));
           const label = row.task_key === "unassigned" ? text(row.task_key) : '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
-          return '<tr><td><div class="task-cell"><div class="bar"><span style="width:' + width + '%"></span></div><span>' + label + '</span></div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td></tr>';
+          return '<tr><td><div class="task-cell"><div class="bar"><span style="width:' + width + '%"></span></div><span>' + label + '</span></div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -712,12 +724,12 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         document.getElementById("recentTable").innerHTML = '<div class="empty">No usage.</div>';
         return;
       }
-      document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 154px;">Time</th><th style="width: 220px;">Task</th><th style="width: 210px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 92px;">Tokens</th><th class="num" style="width: 112px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
+      document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 240px;">Task</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
         data.recent.map((row) => {
           const task = row.task_key === "unassigned"
             ? text(row.task_key)
             : '<a class="row-link" href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
-          return '<tr><td>' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
+          return '<tr><td class="date-cell">' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -785,8 +797,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         return;
       }
       const currency = detailCurrency(data);
-      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 230px;">Run</th><th style="width: 90px;">Status</th><th style="width: 120px;">Source</th><th class="num" style="width: 88px;">Events</th><th class="num" style="width: 98px;">Tokens</th><th class="num" style="width: 116px;">Cost</th><th style="width: 150px;">Started</th><th style="width: 150px;">First</th><th style="width: 150px;">Last</th></tr></thead><tbody>' +
-        data.runs.map((row) => '<tr><td>' + text(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td>' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num">' + text(money(row.estimated_total, currency)) + '</td><td>' + text(shortDate(row.started_at)) + '</td><td>' + text(shortDate(row.first_activity_at)) + '</td><td>' + text(shortDate(row.last_activity_at)) + '</td></tr>').join("") +
+      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 230px;">Run</th><th style="width: 90px;">Status</th><th style="width: 120px;">Source</th><th class="num" style="width: 88px;">Events</th><th class="num" style="width: 98px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 158px;">Started</th><th style="width: 158px;">First</th><th style="width: 158px;">Last</th></tr></thead><tbody>' +
+        data.runs.map((row) => '<tr><td>' + text(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td>' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, currency)) + '</td><td class="date-cell">' + text(shortDate(row.started_at)) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>').join("") +
         '</tbody></table>';
     }
     function renderTaskEvents(data) {
@@ -796,8 +808,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         return;
       }
       const currency = detailCurrency(data);
-      document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 154px;">Time</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 92px;">Tokens</th><th class="num" style="width: 112px;">Cost</th><th style="width: 130px;">Confidence</th><th style="width: 130px;">Assignment</th><th>Prompt</th></tr></thead><tbody>' +
-        data.recent.map((row) => '<tr><td>' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td><span class="pill ' + pillClass(row.assignment_status) + '">' + text(row.assignment_status) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
+      document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 230px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th style="width: 130px;">Assignment</th><th>Prompt</th></tr></thead><tbody>' +
+        data.recent.map((row) => '<tr><td class="date-cell">' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td><span class="pill ' + pillClass(row.assignment_status) + '">' + text(row.assignment_status) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
         '</tbody></table>';
     }
     async function loadTaskDetail(workspace, taskKey) {
