@@ -1,5 +1,6 @@
 import type {
   PricingRuleRecord,
+  PricingSourceSnapshotRecord,
   RunRecord,
   TaskRecord,
   UsageEventRecord,
@@ -39,6 +40,7 @@ export interface CreateRunInput {
 export interface UpsertPricingRuleInput {
   id: string;
   workspace_id: string;
+  source_snapshot_id?: string | null;
   provider: string;
   model: string;
   usage_kind: string;
@@ -47,6 +49,21 @@ export interface UpsertPricingRuleInput {
   currency: string;
   effective_from: string;
   source: string;
+  metadata_json?: Record<string, unknown> | null;
+  now: string;
+}
+
+export interface UpsertPricingSourceSnapshotInput {
+  id: string;
+  source_name: "litellm" | "manual" | "import" | "openrouter";
+  source_url?: string | null;
+  source_version?: string | null;
+  source_commit?: string | null;
+  source_retrieved_at?: string | null;
+  bundled_at?: string | null;
+  valid_from?: string | null;
+  raw_sha256: string;
+  raw_storage_ref?: string | null;
   metadata_json?: Record<string, unknown> | null;
   now: string;
 }
@@ -76,6 +93,9 @@ export interface CreateUsageEventInput {
   accuracy_mode: "exact" | "estimated" | "manual";
   pricing_mode?: "provider_reported" | "rule_calculated" | "manual" | "unpriced" | null;
   unpriced_reason?: string | null;
+  pricing_rule_ids_json?: string[] | null;
+  pricing_source_snapshot_ids_json?: string[] | null;
+  cost_calculated_at?: string | null;
   assignment_status: "unassigned" | "suggested" | "assigned" | "dismissed";
   payload_json: Record<string, unknown>;
   now: string;
@@ -102,6 +122,9 @@ export interface UsagePricingUpdateInput {
   estimated_currency: string | null;
   pricing_mode: "rule_calculated" | "unpriced";
   unpriced_reason: string | null;
+  pricing_rule_ids_json?: string[] | null;
+  pricing_source_snapshot_ids_json?: string[] | null;
+  cost_calculated_at?: string | null;
 }
 
 export type UsageAssignmentStatus = "unassigned" | "suggested" | "assigned" | "dismissed";
@@ -127,6 +150,12 @@ export interface LedgerStore {
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRunById(id: string): Promise<RunRecord | null>;
   getRunBySessionId(workspaceId: string, sessionId: string): Promise<RunRecord | null>;
+
+  upsertPricingSourceSnapshot(
+    input: UpsertPricingSourceSnapshotInput,
+  ): Promise<PricingSourceSnapshotRecord>;
+  listPricingSourceSnapshots(): Promise<PricingSourceSnapshotRecord[]>;
+  getPricingSourceSnapshotById(id: string): Promise<PricingSourceSnapshotRecord | null>;
 
   upsertPricingRule(input: UpsertPricingRuleInput): Promise<PricingRuleRecord>;
   listPricingRules(workspaceId: string): Promise<PricingRuleRecord[]>;

@@ -86,6 +86,29 @@ describe("ttoksem CLI workflows", () => {
         await store.close();
       }
 
+      const snapshotOutput = runCli(
+        [
+          "pricing",
+          "snapshot",
+          "upsert",
+          "--id",
+          "price_snapshot_cli_test",
+          "--source-name",
+          "litellm",
+          "--raw-sha256",
+          "sha256:cli-test",
+          "--source-commit",
+          "abc123",
+          "--valid-from",
+          "2026-01-01T00:00:00.000Z",
+        ],
+        env,
+      );
+      const snapshotId = "price_snapshot_cli_test";
+      expect(snapshotOutput).toContain(snapshotId);
+      expect(snapshotId).toBeDefined();
+      expect(runCli(["pricing", "snapshot", "list"], env)).toContain(snapshotId);
+
       expect(
         runCli(
           [
@@ -107,6 +130,8 @@ describe("ttoksem CLI workflows", () => {
             "1000000",
             "--effective-from",
             "2026-01-01T00:00:00.000Z",
+            "--source-snapshot-id",
+            snapshotId ?? "",
           ],
           env,
         ),
@@ -132,6 +157,8 @@ describe("ttoksem CLI workflows", () => {
             "1000000",
             "--effective-from",
             "2026-01-01T00:00:00.000Z",
+            "--source-snapshot-id",
+            snapshotId ?? "",
           ],
           env,
         ),
@@ -140,6 +167,21 @@ describe("ttoksem CLI workflows", () => {
       expect(runCli(["pricing", "reprice", "--workspace", "cli-test"], env)).toContain(
         "reprice checked=1 repriced=1 still_unpriced=0",
       );
+      const repricedStore = new SqliteLedgerStore(dbPath);
+      try {
+        await repricedStore.migrate();
+        const workspace = await repricedStore.getWorkspaceByKey("cli-test");
+        const assigned = await repricedStore.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-chat",
+          "assigned-001",
+        );
+        expect(assigned?.pricing_rule_ids_json).toHaveLength(2);
+        expect(assigned?.pricing_source_snapshot_ids_json).toEqual([snapshotId]);
+        expect(assigned?.cost_calculated_at).toMatch(/Z$/);
+      } finally {
+        await repricedStore.close();
+      }
 
       const unassignedOutput = runCli(
         [

@@ -3,6 +3,7 @@ import {
   type AiUsageObserved,
   type DailyReport,
   type PricingRuleRecord,
+  type PricingSourceSnapshotRecord,
   type RunRecord,
   type TaskRecord,
   type UsageEventRecord,
@@ -29,6 +30,7 @@ export interface WorkspaceResolver {
 
 export interface PricingRuleUpsertInput {
   workspace: WorkspaceResolver;
+  sourceSnapshotId?: string | null;
   provider: string;
   model: string;
   usageKind: string;
@@ -37,6 +39,20 @@ export interface PricingRuleUpsertInput {
   currency: string;
   effectiveFrom?: string;
   source?: string;
+}
+
+export interface PricingSourceSnapshotUpsertInput {
+  id?: string;
+  sourceName: "litellm" | "manual" | "import" | "openrouter";
+  sourceUrl?: string | null;
+  sourceVersion?: string | null;
+  sourceCommit?: string | null;
+  sourceRetrievedAt?: string | null;
+  bundledAt?: string | null;
+  validFrom?: string | null;
+  rawSha256: string;
+  rawStorageRef?: string | null;
+  metadataJson?: Record<string, unknown> | null;
 }
 
 export interface RepriceResult {
@@ -149,6 +165,7 @@ export class LedgerService {
     return this.store.upsertPricingRule({
       id: this.idFactory("price"),
       workspace_id: workspace.id,
+      source_snapshot_id: input.sourceSnapshotId ?? null,
       provider: input.provider,
       model: input.model,
       usage_kind: input.usageKind,
@@ -159,6 +176,29 @@ export class LedgerService {
       source: input.source ?? "cli",
       now: this.clock.now(),
     });
+  }
+
+  async upsertPricingSourceSnapshot(
+    input: PricingSourceSnapshotUpsertInput,
+  ): Promise<PricingSourceSnapshotRecord> {
+    return this.store.upsertPricingSourceSnapshot({
+      id: input.id ?? this.idFactory("price_snapshot"),
+      source_name: input.sourceName,
+      source_url: input.sourceUrl ?? null,
+      source_version: input.sourceVersion ?? null,
+      source_commit: input.sourceCommit ?? null,
+      source_retrieved_at: input.sourceRetrievedAt ?? null,
+      bundled_at: input.bundledAt ?? null,
+      valid_from: input.validFrom ?? null,
+      raw_sha256: input.rawSha256,
+      raw_storage_ref: input.rawStorageRef ?? null,
+      metadata_json: input.metadataJson ?? null,
+      now: this.clock.now(),
+    });
+  }
+
+  async listPricingSourceSnapshots(): Promise<PricingSourceSnapshotRecord[]> {
+    return this.store.listPricingSourceSnapshots();
   }
 
   async listPricingRules(input: { workspace: WorkspaceResolver }): Promise<PricingRuleRecord[]> {
@@ -212,6 +252,9 @@ export class LedgerService {
       accuracy_mode: usage.accuracy_mode,
       pricing_mode: pricing.pricingMode,
       unpriced_reason: pricing.unpricedReason,
+      pricing_rule_ids_json: pricing.pricingRuleIds,
+      pricing_source_snapshot_ids_json: pricing.pricingSourceSnapshotIds,
+      cost_calculated_at: pricing.costCalculatedAt,
       assignment_status: task ? "assigned" : "unassigned",
       payload_json: parsed,
       now: this.clock.now(),
@@ -235,6 +278,9 @@ export class LedgerService {
           estimated_currency: pricing.estimatedCurrency,
           pricing_mode: "rule_calculated",
           unpriced_reason: null,
+          pricing_rule_ids_json: pricing.pricingRuleIds,
+          pricing_source_snapshot_ids_json: pricing.pricingSourceSnapshotIds,
+          cost_calculated_at: pricing.costCalculatedAt,
         });
         repriced += 1;
       } else {
@@ -332,6 +378,9 @@ export class LedgerService {
     estimatedCurrency: string | null;
     pricingMode: "provider_reported" | "rule_calculated" | "manual" | "unpriced";
     unpricedReason: string | null;
+    pricingRuleIds: string[] | null;
+    pricingSourceSnapshotIds: string[] | null;
+    costCalculatedAt: string | null;
   }> {
     const usage = message.payload.usage;
     if (usage.observed_cost != null) {
@@ -340,6 +389,9 @@ export class LedgerService {
         estimatedCurrency: usage.estimated_currency ?? null,
         pricingMode: "provider_reported",
         unpricedReason: null,
+        pricingRuleIds: null,
+        pricingSourceSnapshotIds: null,
+        costCalculatedAt: null,
       };
     }
     if (usage.estimated_cost != null) {
@@ -348,6 +400,9 @@ export class LedgerService {
         estimatedCurrency: usage.estimated_currency ?? null,
         pricingMode: usage.pricing_mode ?? "manual",
         unpricedReason: null,
+        pricingRuleIds: null,
+        pricingSourceSnapshotIds: null,
+        costCalculatedAt: null,
       };
     }
 
@@ -364,17 +419,24 @@ export class LedgerService {
         estimatedCurrency: null,
         pricingMode: "unpriced",
         unpricedReason: usage.unpriced_reason ?? "missing_pricing_rule",
+        pricingRuleIds: null,
+        pricingSourceSnapshotIds: null,
+        costCalculatedAt: null,
       };
     }
 
     let total = 0;
     const currencies = new Set<string>();
+    const pricingRuleIds: string[] = [];
+    const pricingSourceSnapshotIds = new Set<string>();
     let appliedRules = 0;
     for (const rule of rules) {
       const quantity = quantityForRule(rule.unit_type, usage);
       if (quantity == null) continue;
       total += Math.round(quantity * rule.price_nanos_per_unit);
       currencies.add(rule.currency);
+      pricingRuleIds.push(rule.id);
+      if (rule.source_snapshot_id) pricingSourceSnapshotIds.add(rule.source_snapshot_id);
       appliedRules += 1;
     }
 
@@ -384,6 +446,9 @@ export class LedgerService {
         estimatedCurrency: null,
         pricingMode: "unpriced",
         unpricedReason: "missing_usage_units",
+        pricingRuleIds: null,
+        pricingSourceSnapshotIds: null,
+        costCalculatedAt: null,
       };
     }
     if (currencies.size !== 1) {
@@ -392,6 +457,9 @@ export class LedgerService {
         estimatedCurrency: null,
         pricingMode: "unpriced",
         unpricedReason: "mixed_currency",
+        pricingRuleIds: null,
+        pricingSourceSnapshotIds: null,
+        costCalculatedAt: null,
       };
     }
 
@@ -400,6 +468,9 @@ export class LedgerService {
       estimatedCurrency: [...currencies][0],
       pricingMode: "rule_calculated",
       unpricedReason: null,
+      pricingRuleIds,
+      pricingSourceSnapshotIds: [...pricingSourceSnapshotIds],
+      costCalculatedAt: this.clock.now(),
     };
   }
 }

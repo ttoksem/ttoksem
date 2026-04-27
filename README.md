@@ -25,6 +25,10 @@ In practice, most initial pricing data is expected to be USD. Reports should onl
 
 ## Pricing Rule Policy
 
+Pricing source snapshots record where a provider price catalog came from. Pricing rules are normalized rows imported from, or manually tied to, those snapshots. This keeps cost calculations auditable without parsing raw provider files during reports.
+
+Snapshot metadata includes source name, source URL/version/commit, retrieval/bundle timestamps, `raw_sha256`, optional raw storage reference, and metadata JSON. Pricing rules can reference a snapshot through `source_snapshot_id`.
+
 Pricing rules convert usage units into estimated cost when provider-observed cost is missing. Rules are scoped to a workspace and matched by:
 
 ```text
@@ -42,7 +46,7 @@ second
 image
 ```
 
-If a matching rule exists, usage is stored with `pricing_mode=rule_calculated`, `estimated_cost_nanos`, and `estimated_currency`. If no matching rule exists, the usage remains `pricing_mode=unpriced` with `unpriced_reason=missing_pricing_rule`.
+If a matching rule exists, usage is stored with `pricing_mode=rule_calculated`, `estimated_cost_nanos`, `estimated_currency`, pricing rule ids, pricing source snapshot ids, and `cost_calculated_at`. If no matching rule exists, the usage remains `pricing_mode=unpriced` with `unpriced_reason=missing_pricing_rule`.
 
 Existing unpriced events can be recalculated after rules are added with `pricing reprice`.
 
@@ -102,8 +106,9 @@ The pricing numbers below are example rules, not provider price guidance.
 ```bash
 pnpm cli workspace init --key ttoksem-dev --root .
 pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
-pnpm cli pricing upsert --workspace ttoksem-dev --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
-pnpm cli pricing upsert --workspace ttoksem-dev --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
+pnpm cli pricing snapshot upsert --id price_snapshot_example --source-name litellm --raw-sha256 sha256:example --source-commit example --valid-from 2026-01-01T00:00:00.000Z
+pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
+pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --session-id codex-thread-2026-04-27 --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev

@@ -166,9 +166,21 @@ describe("SqliteLedgerStore", () => {
         now: "2026-04-27T00:00:00.000Z",
       });
 
+      const snapshot = await store.upsertPricingSourceSnapshot({
+        id: "price_snapshot_test",
+        source_name: "litellm",
+        source_commit: "abc123",
+        raw_sha256: "sha256:test",
+        raw_storage_ref: "package:pricing/test.json",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      expect(snapshot.id).toBe("price_snapshot_test");
+      await expect(store.listPricingSourceSnapshots()).resolves.toHaveLength(1);
+
       const rule = await store.upsertPricingRule({
         id: "price_test",
         workspace_id: "ws_test",
+        source_snapshot_id: "price_snapshot_test",
         provider: "openai",
         model: "codex-chat",
         usage_kind: "conversation_turn",
@@ -180,6 +192,7 @@ describe("SqliteLedgerStore", () => {
         now: "2026-04-27T00:00:00.000Z",
       });
       expect(rule.price_nanos_per_unit).toBe(100);
+      expect(rule.source_snapshot_id).toBe("price_snapshot_test");
 
       await expect(
         store.listPricingRulesForUsage({
@@ -227,9 +240,15 @@ describe("SqliteLedgerStore", () => {
         estimated_currency: "USD",
         pricing_mode: "rule_calculated",
         unpriced_reason: null,
+        pricing_rule_ids_json: ["price_test"],
+        pricing_source_snapshot_ids_json: ["price_snapshot_test"],
+        cost_calculated_at: "2026-04-27T00:00:01.000Z",
       });
       expect(repriced.estimated_cost_nanos).toBe(1000);
       expect(repriced.pricing_mode).toBe("rule_calculated");
+      expect(repriced.pricing_rule_ids_json).toEqual(["price_test"]);
+      expect(repriced.pricing_source_snapshot_ids_json).toEqual(["price_snapshot_test"]);
+      expect(repriced.cost_calculated_at).toBe("2026-04-27T00:00:01.000Z");
     } finally {
       await store.close();
       rmSync(dbPath, { force: true });

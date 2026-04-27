@@ -219,6 +219,65 @@ inbox
   });
 
 const pricing = program.command("pricing").description("Pricing commands");
+const pricingSnapshot = pricing.command("snapshot").description("Pricing source snapshot commands");
+
+pricingSnapshot
+  .command("upsert")
+  .option("--id <id>", "snapshot id, defaults to generated price_snapshot_*")
+  .requiredOption("--source-name <name>", "pricing source name: litellm, manual, import, openrouter")
+  .requiredOption("--raw-sha256 <hash>", "raw source snapshot sha256")
+  .option("--source-url <url>", "source URL")
+  .option("--source-version <version>", "source version")
+  .option("--source-commit <commit>", "source commit")
+  .option("--source-retrieved-at <iso>", "UTC ISO timestamp when source was retrieved")
+  .option("--bundled-at <iso>", "UTC ISO timestamp when snapshot was bundled")
+  .option("--valid-from <iso>", "UTC ISO timestamp when snapshot becomes the known pricing basis")
+  .option("--raw-storage-ref <ref>", "raw snapshot storage reference")
+  .option("--metadata <json>", "metadata JSON object")
+  .description("Create or reuse a pricing source snapshot")
+  .action(async (options: PricingSnapshotUpsertOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const snapshot = await service.upsertPricingSourceSnapshot({
+      id: options.id,
+      sourceName: parsePricingSourceName(options.sourceName),
+      sourceUrl: options.sourceUrl,
+      sourceVersion: options.sourceVersion,
+      sourceCommit: options.sourceCommit,
+      sourceRetrievedAt: options.sourceRetrievedAt,
+      bundledAt: options.bundledAt,
+      validFrom: options.validFrom,
+      rawSha256: options.rawSha256,
+      rawStorageRef: options.rawStorageRef,
+      metadataJson: parseOptionalJsonObject(options.metadata),
+    });
+    console.log(
+      `pricing snapshot ${snapshot.id} ${snapshot.source_name} ${snapshot.raw_sha256}`,
+    );
+    await close();
+  });
+
+pricingSnapshot
+  .command("list")
+  .description("List pricing source snapshots")
+  .action(async () => {
+    const { service, close } = await makeService();
+    await service.init();
+    for (const snapshot of await service.listPricingSourceSnapshots()) {
+      console.log(
+        [
+          snapshot.id,
+          snapshot.source_name,
+          `sha256=${snapshot.raw_sha256}`,
+          snapshot.source_commit ? `commit=${snapshot.source_commit}` : "",
+          snapshot.valid_from ? `valid_from=${snapshot.valid_from}` : "",
+        ]
+          .filter(Boolean)
+          .join("\t"),
+      );
+    }
+    await close();
+  });
 
 pricing
   .command("upsert")
@@ -230,6 +289,7 @@ pricing
   .option("--per <count>", "unit count represented by --price", "1")
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--effective-from <iso>", "UTC ISO timestamp when this rule takes effect")
+  .option("--source-snapshot-id <id>", "pricing source snapshot id")
   .option("--source <source>", "pricing source", "manual")
   .option("--workspace <key>", "workspace key")
   .option("--root <path>", "workspace root path")
@@ -239,6 +299,7 @@ pricing
     await service.init();
     const rule = await service.upsertPricingRule({
       workspace: workspaceResolver(options),
+      sourceSnapshotId: options.sourceSnapshotId,
       provider: options.provider,
       model: options.model,
       usageKind: options.usageKind,
@@ -272,7 +333,10 @@ pricing
           `nanos=${rule.price_nanos_per_unit}`,
           rule.currency,
           `from=${rule.effective_from}`,
-        ].join("\t"),
+          rule.source_snapshot_id ? `snapshot=${rule.source_snapshot_id}` : "",
+        ]
+          .filter(Boolean)
+          .join("\t"),
       );
     }
     await close();
@@ -391,9 +455,24 @@ interface PricingUpsertOptions {
   per: string;
   currency: string;
   effectiveFrom?: string;
+  sourceSnapshotId?: string;
   source: string;
   workspace?: string;
   root?: string;
+}
+
+interface PricingSnapshotUpsertOptions {
+  id?: string;
+  sourceName: string;
+  sourceUrl?: string;
+  sourceVersion?: string;
+  sourceCommit?: string;
+  sourceRetrievedAt?: string;
+  bundledAt?: string;
+  validFrom?: string;
+  rawSha256: string;
+  rawStorageRef?: string;
+  metadata?: string;
 }
 
 interface PricingRepriceOptions {
@@ -699,6 +778,20 @@ function priceNanosPerUnit(price: string, per: string): number {
     throw new Error(`Invalid price/per: ${price}/${per}`);
   }
   return Math.round((amount / unitCount) * 1_000_000_000);
+}
+
+function parsePricingSourceName(value: string): "litellm" | "manual" | "import" | "openrouter" {
+  if (value === "litellm" || value === "manual" || value === "import" || value === "openrouter") {
+    return value;
+  }
+  throw new Error(`Invalid pricing source name: ${value}`);
+}
+
+function parseOptionalJsonObject(value: string | undefined): Record<string, unknown> | null {
+  if (value == null) return null;
+  const parsed = JSON.parse(value) as unknown;
+  if (!isRecord(parsed)) throw new Error("--metadata must be a JSON object");
+  return parsed;
 }
 
 function slug(value: string): string {

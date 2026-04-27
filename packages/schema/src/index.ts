@@ -69,9 +69,29 @@ export const RunRecordSchema = z.object({
 
 export type RunRecord = z.infer<typeof RunRecordSchema>;
 
+const PricingSourceNameSchema = z.enum(["litellm", "manual", "import", "openrouter"]);
+
+export const PricingSourceSnapshotRecordSchema = z.object({
+  id: z.string().startsWith("price_snapshot_"),
+  source_name: PricingSourceNameSchema,
+  source_url: nullableString,
+  source_version: nullableString,
+  source_commit: nullableString,
+  source_retrieved_at: nullableString,
+  bundled_at: nullableString,
+  valid_from: nullableString,
+  raw_sha256: z.string().min(1),
+  raw_storage_ref: nullableString,
+  metadata_json: z.record(z.string(), z.unknown()).nullable().optional(),
+  created_at: isoUtc,
+});
+
+export type PricingSourceSnapshotRecord = z.infer<typeof PricingSourceSnapshotRecordSchema>;
+
 export const PricingRuleRecordSchema = z.object({
   id: z.string().startsWith("price_"),
   workspace_id: z.string().startsWith("ws_"),
+  source_snapshot_id: z.string().startsWith("price_snapshot_").nullable().optional(),
   provider: z.string().min(1),
   model: z.string().min(1),
   usage_kind: z.string().min(1),
@@ -221,6 +241,9 @@ export const UsageEventRecordSchema = z.object({
     .nullable()
     .optional(),
   unpriced_reason: nullableString,
+  pricing_rule_ids_json: z.array(z.string()).nullable().optional(),
+  pricing_source_snapshot_ids_json: z.array(z.string()).nullable().optional(),
+  cost_calculated_at: nullableString,
   assignment_status: z.enum(["unassigned", "suggested", "assigned", "dismissed"]),
   payload_json: z.record(z.string(), z.unknown()),
   created_at: isoUtc,

@@ -1,5 +1,6 @@
 import type {
   PricingRuleRecord,
+  PricingSourceSnapshotRecord,
   RunRecord,
   TaskRecord,
   UsageEventRecord,
@@ -9,6 +10,7 @@ import type {
   CreateRunInput,
   CreateUsageEventInput,
   LedgerStore,
+  UpsertPricingSourceSnapshotInput,
   UpsertPricingRuleInput,
 } from "@ttoksem/storage";
 import { describe, expect, it } from "vitest";
@@ -131,8 +133,18 @@ describe("LedgerService", () => {
         getWorkspaceByKey: async () => workspace,
         getTaskByKey: async () => task,
         listPricingRulesForUsage: async () => [
-          pricingRule({ unit_type: "input_token", price_nanos_per_unit: 100 }),
-          pricingRule({ unit_type: "output_token", price_nanos_per_unit: 500 }),
+          pricingRule({
+            id: "price_input",
+            source_snapshot_id: "price_snapshot_test",
+            unit_type: "input_token",
+            price_nanos_per_unit: 100,
+          }),
+          pricingRule({
+            id: "price_output",
+            source_snapshot_id: "price_snapshot_test",
+            unit_type: "output_token",
+            price_nanos_per_unit: 500,
+          }),
         ],
         createUsageEvent: async (input) => {
           createdUsage.push(input);
@@ -171,6 +183,9 @@ describe("LedgerService", () => {
     expect(createdUsage[0]?.estimated_currency).toBe("USD");
     expect(createdUsage[0]?.pricing_mode).toBe("rule_calculated");
     expect(createdUsage[0]?.unpriced_reason).toBeNull();
+    expect(createdUsage[0]?.pricing_rule_ids_json).toEqual(["price_input", "price_output"]);
+    expect(createdUsage[0]?.pricing_source_snapshot_ids_json).toEqual(["price_snapshot_test"]);
+    expect(createdUsage[0]?.cost_calculated_at).toBe("2026-04-27T00:00:10.000Z");
   });
 });
 
@@ -193,6 +208,9 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
     getRunBySessionId: async () => null,
+    upsertPricingSourceSnapshot: async (input) => pricingSourceSnapshot(input),
+    listPricingSourceSnapshots: async () => [],
+    getPricingSourceSnapshotById: async () => null,
     upsertPricingRule: async (input) => pricingRule(input),
     listPricingRules: async () => [],
     listPricingRulesForUsage: async () => [],
@@ -208,6 +226,9 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
         estimated_currency: input.estimated_currency,
         pricing_mode: input.pricing_mode,
         unpriced_reason: input.unpriced_reason,
+        pricing_rule_ids_json: input.pricing_rule_ids_json,
+        pricing_source_snapshot_ids_json: input.pricing_source_snapshot_ids_json,
+        cost_calculated_at: input.cost_calculated_at,
       }),
     reportUsageByDay: async () => [],
     reportUsageByTask: async () => [],
@@ -258,6 +279,7 @@ function pricingRule(input: Partial<UpsertPricingRuleInput> = {}): PricingRuleRe
   return {
     id: input.id ?? "price_test",
     workspace_id: input.workspace_id ?? "ws_test",
+    source_snapshot_id: input.source_snapshot_id ?? null,
     provider: input.provider ?? "openai",
     model: input.model ?? "codex-chat",
     usage_kind: input.usage_kind ?? "conversation_turn",
@@ -270,6 +292,25 @@ function pricingRule(input: Partial<UpsertPricingRuleInput> = {}): PricingRuleRe
     metadata_json: input.metadata_json ?? null,
     created_at: input.now ?? "2026-04-27T00:00:00.000Z",
     updated_at: input.now ?? "2026-04-27T00:00:00.000Z",
+  };
+}
+
+function pricingSourceSnapshot(
+  input: Partial<UpsertPricingSourceSnapshotInput> = {},
+): PricingSourceSnapshotRecord {
+  return {
+    id: input.id ?? "price_snapshot_test",
+    source_name: input.source_name ?? "litellm",
+    source_url: input.source_url ?? null,
+    source_version: input.source_version ?? null,
+    source_commit: input.source_commit ?? "abc123",
+    source_retrieved_at: input.source_retrieved_at ?? null,
+    bundled_at: input.bundled_at ?? null,
+    valid_from: input.valid_from ?? null,
+    raw_sha256: input.raw_sha256 ?? "sha256:test",
+    raw_storage_ref: input.raw_storage_ref ?? null,
+    metadata_json: input.metadata_json ?? null,
+    created_at: input.now ?? "2026-04-27T00:00:00.000Z",
   };
 }
 
@@ -316,6 +357,9 @@ function usageEventRecord(input: CreateUsageEventInput): UsageEventRecord {
     accuracy_mode: input.accuracy_mode,
     pricing_mode: input.pricing_mode ?? null,
     unpriced_reason: input.unpriced_reason ?? null,
+    pricing_rule_ids_json: input.pricing_rule_ids_json ?? null,
+    pricing_source_snapshot_ids_json: input.pricing_source_snapshot_ids_json ?? null,
+    cost_calculated_at: input.cost_calculated_at ?? null,
     assignment_status: input.assignment_status,
     payload_json: input.payload_json,
     created_at: input.now,
@@ -345,6 +389,9 @@ function defaultUsageInput(): CreateUsageEventInput {
     accuracy_mode: "estimated",
     pricing_mode: "unpriced",
     unpriced_reason: "missing_pricing_rule",
+    pricing_rule_ids_json: null,
+    pricing_source_snapshot_ids_json: null,
+    cost_calculated_at: null,
     assignment_status: "unassigned",
     payload_json: {},
     now: "2026-04-27T00:00:00.000Z",

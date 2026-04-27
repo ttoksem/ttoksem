@@ -1,11 +1,13 @@
 import Database from "better-sqlite3";
 import {
   PricingRuleRecordSchema,
+  PricingSourceSnapshotRecordSchema,
   RunRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
   WorkspaceRecordSchema,
   type PricingRuleRecord,
+  type PricingSourceSnapshotRecord,
   type RunRecord,
   type TaskRecord,
   type UsageEventRecord,
@@ -19,6 +21,7 @@ import type {
   LedgerReportRow,
   LedgerStore,
   PricingRuleLookupInput,
+  UpsertPricingSourceSnapshotInput,
   UpsertPricingRuleInput,
   UsageAssignmentStatus,
   UsagePricingUpdateInput,
@@ -102,9 +105,26 @@ export class SqliteLedgerStore implements LedgerStore {
       CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
       CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
 
+      CREATE TABLE IF NOT EXISTS pricing_source_snapshots (
+        id TEXT PRIMARY KEY,
+        source_name TEXT NOT NULL,
+        source_url TEXT,
+        source_version TEXT,
+        source_commit TEXT,
+        source_retrieved_at TEXT,
+        bundled_at TEXT,
+        valid_from TEXT,
+        raw_sha256 TEXT NOT NULL,
+        raw_storage_ref TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(source_name, source_commit, raw_sha256)
+      );
+
       CREATE TABLE IF NOT EXISTS pricing_rules (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+        source_snapshot_id TEXT REFERENCES pricing_source_snapshots(id),
         provider TEXT NOT NULL,
         model TEXT NOT NULL,
         usage_kind TEXT NOT NULL,
@@ -151,6 +171,9 @@ export class SqliteLedgerStore implements LedgerStore {
         accuracy_mode TEXT NOT NULL,
         pricing_mode TEXT,
         unpriced_reason TEXT,
+        pricing_rule_ids_json TEXT,
+        pricing_source_snapshot_ids_json TEXT,
+        cost_calculated_at TEXT,
         assignment_status TEXT NOT NULL,
         payload_json TEXT NOT NULL,
         created_at TEXT NOT NULL
@@ -178,6 +201,14 @@ export class SqliteLedgerStore implements LedgerStore {
     addColumnIfMissing(this.db, "usage_events", "started_at", "TEXT");
     addColumnIfMissing(this.db, "usage_events", "ended_at", "TEXT");
     addColumnIfMissing(this.db, "usage_events", "duration_ms", "INTEGER");
+    addColumnIfMissing(this.db, "usage_events", "pricing_rule_ids_json", "TEXT");
+    addColumnIfMissing(this.db, "usage_events", "pricing_source_snapshot_ids_json", "TEXT");
+    addColumnIfMissing(this.db, "usage_events", "cost_calculated_at", "TEXT");
+    addColumnIfMissing(this.db, "pricing_rules", "source_snapshot_id", "TEXT");
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS pricing_rules_source_snapshot_idx
+        ON pricing_rules(source_snapshot_id);
+    `);
     if (hasColumn(this.db, "usage_events", "currency")) {
       this.db
         .prepare(
@@ -197,6 +228,9 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0004_pricing_rules", new Date().toISOString());
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0005_pricing_source_snapshots", new Date().toISOString());
   }
 
   async close(): Promise<void> {
@@ -343,6 +377,64 @@ export class SqliteLedgerStore implements LedgerStore {
     );
   }
 
+  async upsertPricingSourceSnapshot(
+    input: UpsertPricingSourceSnapshotInput,
+  ): Promise<PricingSourceSnapshotRecord> {
+    const normalized = {
+      ...input,
+      source_url: input.source_url ?? null,
+      source_version: input.source_version ?? null,
+      source_commit: input.source_commit ?? null,
+      source_retrieved_at: input.source_retrieved_at ?? null,
+      bundled_at: input.bundled_at ?? null,
+      valid_from: input.valid_from ?? null,
+      raw_storage_ref: input.raw_storage_ref ?? null,
+      metadata_json: JSON.stringify(input.metadata_json ?? null),
+    };
+    const existing = this.db
+      .prepare(
+        `SELECT *
+         FROM pricing_source_snapshots
+         WHERE source_name = @source_name
+           AND COALESCE(source_commit, '') = COALESCE(@source_commit, '')
+           AND raw_sha256 = @raw_sha256`,
+      )
+      .get(normalized);
+    if (existing) {
+      return PricingSourceSnapshotRecordSchema.parse(fromDbJson(existing as DbRow));
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO pricing_source_snapshots (
+          id, source_name, source_url, source_version, source_commit,
+          source_retrieved_at, bundled_at, valid_from, raw_sha256,
+          raw_storage_ref, metadata_json, created_at
+        ) VALUES (
+          @id, @source_name, @source_url, @source_version, @source_commit,
+          @source_retrieved_at, @bundled_at, @valid_from, @raw_sha256,
+          @raw_storage_ref, @metadata_json, @now
+        )`,
+      )
+      .run(normalized);
+    const snapshot = await this.getPricingSourceSnapshotById(input.id);
+    if (!snapshot) throw new Error("Failed to create pricing source snapshot.");
+    return snapshot;
+  }
+
+  async listPricingSourceSnapshots(): Promise<PricingSourceSnapshotRecord[]> {
+    return this.db
+      .prepare("SELECT * FROM pricing_source_snapshots ORDER BY created_at DESC, source_name ASC")
+      .all()
+      .map((row) => PricingSourceSnapshotRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
+  async getPricingSourceSnapshotById(id: string): Promise<PricingSourceSnapshotRecord | null> {
+    const row = this.db.prepare("SELECT * FROM pricing_source_snapshots WHERE id = ?").get(id);
+    if (!row) return null;
+    return PricingSourceSnapshotRecordSchema.parse(fromDbJson(row as DbRow));
+  }
+
   async upsertPricingRule(input: UpsertPricingRuleInput): Promise<PricingRuleRecord> {
     const existing = this.db
       .prepare(
@@ -364,6 +456,7 @@ export class SqliteLedgerStore implements LedgerStore {
            SET price_nanos_per_unit = @price_nanos_per_unit,
                currency = @currency,
                effective_from = @effective_from,
+               source_snapshot_id = @source_snapshot_id,
                source = @source,
                metadata_json = @metadata_json,
                updated_at = @now
@@ -371,6 +464,7 @@ export class SqliteLedgerStore implements LedgerStore {
         )
         .run({
           ...input,
+          source_snapshot_id: input.source_snapshot_id ?? null,
           existingId,
           metadata_json: JSON.stringify(input.metadata_json ?? null),
         });
@@ -382,17 +476,18 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare(
         `INSERT INTO pricing_rules (
-          id, workspace_id, provider, model, usage_kind, unit_type,
+          id, workspace_id, source_snapshot_id, provider, model, usage_kind, unit_type,
           price_nanos_per_unit, currency, effective_from, effective_to, source,
           metadata_json, created_at, updated_at
         ) VALUES (
-          @id, @workspace_id, @provider, @model, @usage_kind, @unit_type,
+          @id, @workspace_id, @source_snapshot_id, @provider, @model, @usage_kind, @unit_type,
           @price_nanos_per_unit, @currency, @effective_from, NULL, @source,
           @metadata_json, @now, @now
         )`,
       )
       .run({
         ...input,
+        source_snapshot_id: input.source_snapshot_id ?? null,
         metadata_json: JSON.stringify(input.metadata_json ?? null),
       });
     const rule = await this.getPricingRuleById(input.id);
@@ -449,14 +544,16 @@ export class SqliteLedgerStore implements LedgerStore {
           provider, model, usage_kind, input_tokens, output_tokens, total_tokens,
           observed_cost_nanos, estimated_cost_nanos, observed_currency, estimated_currency,
           accuracy_mode, pricing_mode,
-          unpriced_reason, assignment_status, payload_json, created_at
+          unpriced_reason, pricing_rule_ids_json, pricing_source_snapshot_ids_json, cost_calculated_at,
+          assignment_status, payload_json, created_at
         ) VALUES (
           @id, @workspace_id, @task_id, @run_id, @message_id, @source, @idempotency_key, @occurred_at,
           @started_at, @ended_at, @duration_ms,
           @provider, @model, @usage_kind, @input_tokens, @output_tokens, @total_tokens,
           @observed_cost_nanos, @estimated_cost_nanos, @observed_currency, @estimated_currency,
           @accuracy_mode, @pricing_mode,
-          @unpriced_reason, @assignment_status, @payload_json, @now
+          @unpriced_reason, @pricing_rule_ids_json, @pricing_source_snapshot_ids_json, @cost_calculated_at,
+          @assignment_status, @payload_json, @now
         )`,
       )
       .run({
@@ -464,6 +561,9 @@ export class SqliteLedgerStore implements LedgerStore {
         started_at: input.started_at ?? null,
         ended_at: input.ended_at ?? null,
         duration_ms: input.duration_ms ?? null,
+        pricing_rule_ids_json: JSON.stringify(input.pricing_rule_ids_json ?? null),
+        pricing_source_snapshot_ids_json: JSON.stringify(input.pricing_source_snapshot_ids_json ?? null),
+        cost_calculated_at: input.cost_calculated_at ?? null,
         payload_json: JSON.stringify(input.payload_json),
       });
     const event = this.db.prepare("SELECT * FROM usage_events WHERE id = ?").get(input.id);
@@ -544,10 +644,20 @@ export class SqliteLedgerStore implements LedgerStore {
          SET estimated_cost_nanos = @estimated_cost_nanos,
              estimated_currency = @estimated_currency,
              pricing_mode = @pricing_mode,
-             unpriced_reason = @unpriced_reason
+             unpriced_reason = @unpriced_reason,
+             pricing_rule_ids_json = @pricing_rule_ids_json,
+             pricing_source_snapshot_ids_json = @pricing_source_snapshot_ids_json,
+             cost_calculated_at = @cost_calculated_at
          WHERE workspace_id = @workspaceId AND id = @usageEventId`,
       )
-      .run({ ...input, workspaceId, usageEventId });
+      .run({
+        ...input,
+        pricing_rule_ids_json: JSON.stringify(input.pricing_rule_ids_json ?? null),
+        pricing_source_snapshot_ids_json: JSON.stringify(input.pricing_source_snapshot_ids_json ?? null),
+        cost_calculated_at: input.cost_calculated_at ?? null,
+        workspaceId,
+        usageEventId,
+      });
     if (result.changes === 0) throw new Error(`Usage event not found: ${usageEventId}`);
     const row = this.db
       .prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
