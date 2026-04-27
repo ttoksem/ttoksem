@@ -102,14 +102,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       background: var(--bg);
       color: var(--text);
       letter-spacing: 0;
-      min-width: 1180px;
+      min-width: 1040px;
     }
     header {
       border-bottom: 1px solid var(--line);
       background: var(--panel);
     }
     .wrap {
-      width: min(1880px, calc(100% - 40px));
+      width: min(1600px, calc(100% - 40px));
       margin: 0 auto;
     }
     .topbar {
@@ -166,21 +166,31 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     .kpis {
       grid-template-columns: repeat(6, minmax(0, 1fr));
     }
-    .layout {
-      grid-template-columns: 330px minmax(0, 1fr) 360px;
+    .workspace-stage {
+      grid-template-columns: minmax(0, 1fr) 400px;
+      grid-template-rows: auto auto;
+      align-items: stretch;
+      margin-top: 12px;
+    }
+    .workspace-stage > .panel:first-child {
+      grid-column: 1;
+      grid-row: 1 / span 2;
+    }
+    .workspace-stage > .panel:nth-child(2) {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .workspace-stage > .panel:nth-child(3) {
+      grid-column: 2;
+      grid-row: 2;
+    }
+    .overview-board {
+      grid-template-columns: minmax(0, 1fr) 460px;
       align-items: start;
       margin-top: 12px;
     }
     .overview-primary {
       margin-top: 12px;
-    }
-    .overview-support {
-      grid-template-columns: 360px minmax(0, 1fr);
-      align-items: start;
-      margin-top: 12px;
-    }
-    .overview-support > aside:last-child {
-      grid-column: 2;
     }
     .detail-layout {
       grid-template-columns: minmax(0, 1fr) 420px;
@@ -250,6 +260,437 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       margin-top: 8px;
       color: var(--muted);
       font-size: 13px;
+    }
+    .workspace-pulse {
+      display: grid;
+      gap: 16px;
+      padding: 16px;
+    }
+    .pulse-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: start;
+    }
+    .pulse-title {
+      font-size: 18px;
+      font-weight: 780;
+      line-height: 1.2;
+    }
+    .pulse-sub {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .pulse-total {
+      text-align: right;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .pulse-total span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .chart-panel {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfe;
+    }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+    .chart-title {
+      font-size: 13px;
+      font-weight: 760;
+    }
+    .chart-sub {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .chart-total {
+      color: var(--ink);
+      font-size: 18px;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .chart-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      overflow: visible;
+    }
+    .chart-grid {
+      stroke: #e7ebf2;
+      stroke-width: 1;
+    }
+    .chart-axis {
+      fill: var(--muted);
+      font-size: 10px;
+      font-weight: 650;
+    }
+    .chart-label {
+      fill: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .chart-value {
+      fill: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .chart-bar {
+      fill: var(--accent);
+      opacity: .86;
+    }
+    .chart-bar.soft {
+      fill: #9eb8db;
+      opacity: .95;
+    }
+    .chart-line {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .chart-dot {
+      fill: #fff;
+      stroke: var(--accent);
+      stroke-width: 2;
+    }
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .legend-item {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+    }
+    .legend-swatch {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .legend-swatch.soft {
+      background: #9eb8db;
+    }
+    .chart-empty {
+      min-height: 118px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      border: 1px dashed #d7deea;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .portfolio-view {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .portfolio-readout {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .readout-card {
+      min-width: 0;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      padding: 10px 11px;
+      background: #fbfcfe;
+    }
+    .readout-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+    .readout-card strong {
+      display: block;
+      margin-top: 5px;
+      overflow-wrap: anywhere;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .readout-card small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .portfolio-dot {
+      fill: var(--accent);
+      fill-opacity: .82;
+      stroke: #fff;
+      stroke-width: 2;
+    }
+    .portfolio-dot.warn {
+      fill: var(--warn);
+    }
+    .portfolio-dot.bad {
+      fill: var(--bad);
+    }
+    .portfolio-dot.open {
+      fill: var(--accent-2);
+    }
+    .quadrant-label {
+      fill: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .work-progress {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .lifecycle-list {
+      display: grid;
+      gap: 10px;
+    }
+    .lifecycle-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 142px;
+      gap: 10px;
+      align-items: center;
+    }
+    .lifecycle-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .lifecycle-track {
+      position: relative;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8ecf4;
+    }
+    .lifecycle-segment {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      min-width: 4px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .cost-intel {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .mix-list {
+      display: grid;
+      gap: 10px;
+    }
+    .mix-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+    }
+    .mix-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 760;
+    }
+    .mix-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .mix-cost {
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .mix-row .progress-track {
+      grid-column: 1 / span 2;
+      height: 8px;
+    }
+    .intel-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric-box {
+      min-width: 0;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      padding: 10px 11px;
+      background: #fbfcfe;
+    }
+    .metric-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .metric-value {
+      margin-top: 5px;
+      font-size: 18px;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .metric-sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .progress-track {
+      display: flex;
+      height: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8ecf4;
+    }
+    .progress-segment {
+      min-width: 0;
+      height: 100%;
+    }
+    .progress-segment.assigned,
+    .progress-segment.active {
+      background: var(--accent);
+    }
+    .progress-segment.open {
+      background: #2c5f9e;
+    }
+    .progress-segment.closed {
+      background: #8b95a6;
+    }
+    .progress-segment.unassigned,
+    .progress-segment.warn {
+      background: var(--warn);
+    }
+    .progress-segment.gap,
+    .progress-segment.bad {
+      background: var(--bad);
+    }
+    .progress-caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .task-flow {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+    .flow-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 150px) minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .flow-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .flow-value {
+      font-size: 18px;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .driver-list {
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px 16px;
+    }
+    .driver-row {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #eef1f6;
+    }
+    .driver-row:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+    .driver-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .driver-cost {
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .driver-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .driver-meta span {
+      white-space: nowrap;
+    }
+    .mini-table {
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px;
+    }
+    .mini-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .mini-row strong {
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
     table {
       width: 100%;
@@ -537,14 +978,33 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       font-size: 14px;
     }
     .error { color: var(--bad); }
-    @media (max-width: 1px) {
-      .kpis, .layout { grid-template-columns: 1fr; }
-      .topbar { align-items: flex-start; flex-direction: column; padding: 14px 0; }
-      .toolbar { width: 100%; }
-      input { flex: 1; min-width: 0; }
-      .kpi-value { font-size: 24px; }
-      .attention-row { grid-template-columns: 1fr; gap: 6px; padding: 12px 0; }
-      .attention-metric { font-size: 16px; }
+    @media (max-width: 1220px) {
+      body { min-width: 1040px; }
+      .kpis {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .workspace-stage,
+      .overview-board,
+      .detail-layout {
+        grid-template-columns: 1fr;
+      }
+      .workspace-stage > .panel:first-child,
+      .workspace-stage > .panel:nth-child(2),
+      .workspace-stage > .panel:nth-child(3) {
+        grid-column: auto;
+        grid-row: auto;
+      }
+      .portfolio-readout {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    @media (min-width: 1500px) {
+      .workspace-stage {
+        grid-template-columns: minmax(0, 1fr) 420px;
+      }
+      .overview-board {
+        grid-template-columns: minmax(0, 1fr) 480px;
+      }
     }
   </style>
 </head>
@@ -562,43 +1022,47 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     </div>
   </header>
   <main class="wrap" id="overviewPage">
-    <section class="grid kpis" id="kpis"></section>
-    <section class="overview-primary">
+    <section class="grid workspace-stage">
       <section class="panel">
-        <div class="panel-head">
-          <h2>Task Insight</h2>
-          <div class="section-tabs"><span class="pill" id="insightCount"></span></div>
-        </div>
-        <div id="insightTable"></div>
+        <div class="panel-head"><h2>Workspace Pulse</h2><span class="pill" id="pulseState"></span></div>
+        <div class="workspace-pulse" id="workspacePulse"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Work Progress</h2><span class="pill" id="flowCount"></span></div>
+        <div class="task-flow" id="taskFlow"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Decision Queue</h2><span class="pill" id="attentionCount"></span></div>
+        <div id="attentionPanel"></div>
       </section>
     </section>
-    <section class="grid overview-support">
+    <section class="grid kpis overview-primary" id="kpis"></section>
+    <section class="grid overview-board">
+      <section class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Task Portfolio</h2><span class="pill" id="taskCount"></span></div>
+          <div id="taskTable"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Task Insight</h2>
+            <div class="section-tabs"><span class="pill" id="insightCount"></span></div>
+          </div>
+          <div id="insightTable"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Recent Usage</h2><span class="pill" id="recentCount"></span></div>
+          <div id="recentTable"></div>
+        </section>
+      </section>
       <aside class="stack">
         <section class="panel">
-          <div class="panel-head"><h2>Needs Attention</h2><span class="pill" id="attentionCount"></span></div>
-          <div id="attentionPanel"></div>
+          <div class="panel-head"><h2>Cost Intelligence</h2><span class="pill" id="modelCount"></span></div>
+          <div id="costIntelligence"></div>
         </section>
         <section class="panel">
           <div class="panel-head"><h2>Daily Cost</h2><span class="pill" id="dayCount"></span></div>
           <div class="spark" id="dailySpark"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Pricing Mode</h2></div>
-          <div class="breakdown" id="pricingBreakdown"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Accuracy</h2></div>
-          <div class="breakdown" id="accuracyBreakdown"></div>
-        </section>
-      </aside>
-      <section class="panel">
-        <div class="panel-head"><h2>Recent Usage</h2><span class="pill" id="recentCount"></span></div>
-        <div id="recentTable"></div>
-      </section>
-      <aside class="stack">
-        <section class="panel">
-          <div class="panel-head"><h2>Cost Snapshot</h2><span class="pill" id="taskCount"></span></div>
-          <div id="taskTable"></div>
         </section>
       </aside>
     </section>
@@ -616,11 +1080,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     <section class="grid detail-layout">
       <div class="stack">
         <section class="panel">
-          <div class="panel-head"><h2>Task Signal</h2><span class="pill" id="taskSignalCount"></span></div>
+          <div class="panel-head"><h2>Task Health</h2><span class="pill" id="taskSignalCount"></span></div>
           <div id="taskSignalPanel"></div>
         </section>
         <section class="panel">
-          <div class="panel-head"><h2>Runs</h2><span class="pill" id="taskRunCount"></span></div>
+          <div class="panel-head"><h2>Run Timeline</h2><span class="pill" id="taskRunCount"></span></div>
           <div id="taskRunTable"></div>
         </section>
       </div>
@@ -644,7 +1108,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       </aside>
     </section>
     <section class="panel" style="margin-top: 12px;">
-      <div class="panel-head"><h2>Event Log</h2><span class="pill" id="taskEventCount"></span></div>
+      <div class="panel-head"><h2>Usage Events</h2><span class="pill" id="taskEventCount"></span></div>
       <div id="taskEventTable"></div>
     </section>
   </main>
@@ -727,6 +1191,262 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     function renderSignals(signals) {
       return (signals || []).map((signal) => '<span class="signal ' + signalClass(signal) + '">' + text(signal) + '</span>').join("");
     }
+    function percent(value, total) {
+      if (!total || total <= 0) return 0;
+      return Math.round((value / total) * 100);
+    }
+    function plural(value, singular, pluralValue) {
+      return integer(value) + " " + (value === 1 ? singular : (pluralValue || singular + "s"));
+    }
+    function truncate(value, max) {
+      const raw = String(value || "");
+      if (raw.length <= max) return raw;
+      return raw.slice(0, Math.max(0, max - 3)) + "...";
+    }
+    function bucketHourLabel(key, compact) {
+      const date = key.slice(5, 10);
+      const hour = key.slice(11, 13) + ":00";
+      return compact ? hour : date + " " + hour;
+    }
+    function renderUsageMomentumChart(data) {
+      const events = (data.recent || [])
+        .filter((row) => row.occurred_at)
+        .slice()
+        .sort((a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)));
+      if (events.length === 0) {
+        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Usage momentum</div><div class="chart-sub">Recent event volume and estimated cost</div></div></div><div class="chart-empty">No recent usage events.</div></div>';
+      }
+      const bucketMap = new Map();
+      events.forEach((row) => {
+        const key = String(row.occurred_at).slice(0, 13);
+        const current = bucketMap.get(key) || { key, event_count: 0, cost: 0 };
+        current.event_count += 1;
+        current.cost += Number(row.cost || 0);
+        bucketMap.set(key, current);
+      });
+      const buckets = Array.from(bucketMap.values()).slice(-12);
+      const totalCost = buckets.reduce((sum, row) => sum + row.cost, 0);
+      const totalEvents = buckets.reduce((sum, row) => sum + row.event_count, 0);
+      const maxEvents = Math.max(...buckets.map((row) => row.event_count), 1);
+      const maxCost = Math.max(...buckets.map((row) => row.cost), 0.000001);
+      const width = 640;
+      const height = 220;
+      const left = 42;
+      const top = 18;
+      const right = 22;
+      const bottom = 34;
+      const plotWidth = width - left - right;
+      const plotHeight = height - top - bottom;
+      const step = buckets.length > 1 ? plotWidth / (buckets.length - 1) : 0;
+      const barWidth = Math.max(10, Math.min(34, plotWidth / Math.max(buckets.length, 1) * 0.48));
+      const xAt = (index) => buckets.length === 1 ? left + plotWidth / 2 : left + index * step;
+      const eventY = (value) => top + plotHeight - (value / maxEvents) * plotHeight;
+      const costY = (value) => top + plotHeight - (value / maxCost) * plotHeight;
+      const costPoints = buckets.map((row, index) => xAt(index).toFixed(1) + "," + costY(row.cost).toFixed(1)).join(" ");
+      const sameDay = buckets.every((row) => row.key.slice(0, 10) === buckets[0].key.slice(0, 10));
+      const grid = [0, 0.5, 1].map((ratio) => {
+        const y = top + plotHeight - plotHeight * ratio;
+        return '<line class="chart-grid" x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (width - right) + '" y2="' + y.toFixed(1) + '"></line>';
+      }).join("");
+      const bars = buckets.map((row, index) => {
+        const x = xAt(index) - barWidth / 2;
+        const y = eventY(row.event_count);
+        const barHeight = top + plotHeight - y;
+        const label = bucketHourLabel(row.key, sameDay) + " · " + plural(row.event_count, "event") + " · " + money(row.cost, data.summary.currency);
+        return '<rect class="chart-bar soft" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + Math.max(2, barHeight).toFixed(1) + '" rx="4"><title>' + text(label) + '</title></rect>';
+      }).join("");
+      const dots = buckets.map((row, index) => '<circle class="chart-dot" cx="' + xAt(index).toFixed(1) + '" cy="' + costY(row.cost).toFixed(1) + '" r="3.7"><title>' + text(money(row.cost, data.summary.currency)) + '</title></circle>').join("");
+      const labels = buckets.map((row, index) => {
+        if (buckets.length > 7 && index % 2 === 1) return "";
+        return '<text class="chart-axis" x="' + xAt(index).toFixed(1) + '" y="' + (height - 11) + '" text-anchor="middle">' + text(bucketHourLabel(row.key, sameDay)) + '</text>';
+      }).join("");
+      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Usage momentum</div><div class="chart-sub">Recent event volume with hourly cost overlay</div></div><div class="chart-total">' + text(money(totalCost, data.summary.currency)) + '</div></div>' +
+        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Usage momentum chart">' +
+          grid +
+          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + 4) + '" text-anchor="end">' + text(integer(maxEvents)) + '</text>' +
+          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + plotHeight + 4) + '" text-anchor="end">0</text>' +
+          bars +
+          '<polyline class="chart-line" points="' + costPoints + '"></polyline>' +
+          dots +
+          labels +
+        '</svg><div class="chart-legend"><span class="legend-item"><span class="legend-swatch soft"></span>' + text(plural(totalEvents, "usage event")) + '</span><span class="legend-item"><span class="legend-swatch"></span>estimated cost</span></div></div>';
+    }
+    function renderTaskCostChart(data, workspace) {
+      const rows = (data.tasks || []).slice(0, 8);
+      if (rows.length === 0) {
+        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task cost distribution</div><div class="chart-sub">Top task spend by estimated cost</div></div></div><div class="chart-empty">No task cost data.</div></div>';
+      }
+      const max = Math.max(...rows.map((row) => row.estimated_total || 0), 0.000001);
+      const total = data.summary.estimated_total || 0;
+      const width = 660;
+      const rowHeight = 30;
+      const top = 18;
+      const left = 188;
+      const right = 126;
+      const height = top + rows.length * rowHeight + 20;
+      const plotWidth = width - left - right;
+      const bars = rows.map((row, index) => {
+        const y = top + index * rowHeight + 5;
+        const barWidth = Math.max(3, ((row.estimated_total || 0) / max) * plotWidth);
+        const share = percent(row.estimated_total, total);
+        const label = truncate(taskTitle(row), 27);
+        const value = money(row.estimated_total, data.summary.currency) + " · " + share + "%";
+        const title = taskTitle(row) + " · " + value;
+        const labelText = '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end">' + text(label) + '</text>';
+        const linkedLabel = row.task_key && row.task_key !== "unassigned"
+          ? '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + labelText + '</a>'
+          : labelText;
+        return linkedLabel +
+          '<rect class="chart-bar" x="' + left + '" y="' + y + '" width="' + barWidth.toFixed(1) + '" height="16" rx="5"><title>' + text(title) + '</title></rect>' +
+          '<text class="chart-value" x="' + (left + plotWidth + 10) + '" y="' + (y + 14) + '">' + text(value) + '</text>';
+      }).join("");
+      const grid = [0.25, 0.5, 0.75, 1].map((ratio) => {
+        const x = left + plotWidth * ratio;
+        return '<line class="chart-grid" x1="' + x.toFixed(1) + '" y1="' + top + '" x2="' + x.toFixed(1) + '" y2="' + (height - 14) + '"></line>';
+      }).join("");
+      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task cost distribution</div><div class="chart-sub">Largest task cost drivers, with detail links in labels</div></div><div class="chart-total">' + text(money(total, data.summary.currency)) + '</div></div>' +
+        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Task cost distribution chart">' + grid + bars + '</svg></div>';
+    }
+    function portfolioTone(row) {
+      const signals = row.signals || [];
+      if (signals.includes("pricing gap")) return "warn";
+      if (signals.includes("top cost")) return "bad";
+      if (signals.includes("many turns")) return "open";
+      return "";
+    }
+    function renderTaskPortfolioChart(data, workspace) {
+      const rows = (data.task_insights || [])
+        .filter((row) => row.task_key !== "unassigned")
+        .slice()
+        .sort((a, b) => (b.estimated_total || 0) - (a.estimated_total || 0))
+        .slice(0, 22);
+      if (rows.length === 0) {
+        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task portfolio</div><div class="chart-sub">Cost, turns, and token weight by task</div></div></div><div class="chart-empty">No task portfolio data.</div></div>';
+      }
+      const width = 860;
+      const height = 360;
+      const left = 58;
+      const top = 28;
+      const right = 26;
+      const bottom = 46;
+      const plotWidth = width - left - right;
+      const plotHeight = height - top - bottom;
+      const maxCost = Math.max(...rows.map((row) => row.estimated_total || 0), 0.000001);
+      const maxTurns = Math.max(...rows.map((row) => row.event_count || 0), 1);
+      const maxTokens = Math.max(...rows.map((row) => row.token_count || 0), 1);
+      const xAt = (value) => left + (value / maxCost) * plotWidth;
+      const yAt = (value) => top + plotHeight - (value / maxTurns) * plotHeight;
+      const radiusAt = (value) => 5 + Math.sqrt((value || 0) / maxTokens) * 12;
+      const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const x = left + plotWidth * ratio;
+        const y = top + plotHeight - plotHeight * ratio;
+        return '<line class="chart-grid" x1="' + x.toFixed(1) + '" y1="' + top + '" x2="' + x.toFixed(1) + '" y2="' + (top + plotHeight) + '"></line>' +
+          '<line class="chart-grid" x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (left + plotWidth) + '" y2="' + y.toFixed(1) + '"></line>';
+      }).join("");
+      const dots = rows.map((row, index) => {
+        const cx = xAt(row.estimated_total || 0);
+        const cy = yAt(row.event_count || 0);
+        const r = radiusAt(row.token_count || 0);
+        const title = taskTitle(row) + " · " + money(row.estimated_total, data.summary.currency) + " · " + plural(row.event_count, "turn") + " · " + integer(row.token_count) + " tokens";
+        const circle = '<circle class="portfolio-dot ' + portfolioTone(row) + '" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1) + '"><title>' + text(title) + '</title></circle>';
+        const label = index < 3
+          ? '<text class="chart-label" x="' + Math.min(cx + r + 7, width - 180).toFixed(1) + '" y="' + Math.max(top + 13, cy + 4).toFixed(1) + '">' + text(truncate(taskTitle(row), 24)) + '</text>'
+          : "";
+        return row.task_key
+          ? '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + circle + label + '</a>'
+          : circle + label;
+      }).join("");
+      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task portfolio</div><div class="chart-sub">X = cost, Y = turns, bubble = tokens</div></div><div class="chart-total">' + text(plural(rows.length, "task")) + '</div></div>' +
+        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Task portfolio scatter chart">' +
+          grid +
+          '<text class="quadrant-label" x="' + (left + 10) + '" y="' + (top + 18) + '">many turns</text>' +
+          '<text class="quadrant-label" x="' + (left + plotWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">higher cost</text>' +
+          '<text class="chart-axis" x="' + left + '" y="' + (top + plotHeight + 18) + '">0</text>' +
+          '<text class="chart-axis" x="' + (width - right) + '" y="' + (top + plotHeight + 18) + '" text-anchor="end">' + text(money(maxCost, data.summary.currency)) + '</text>' +
+          '<text class="chart-axis" x="' + (left - 10) + '" y="' + (top + 5) + '" text-anchor="end">' + text(integer(maxTurns)) + '</text>' +
+          '<text class="chart-axis" x="' + (left - 10) + '" y="' + (top + plotHeight + 4) + '" text-anchor="end">0</text>' +
+          dots +
+        '</svg><div class="chart-legend"><span class="legend-item"><span class="legend-swatch"></span>normal</span><span class="legend-item"><span class="legend-swatch soft"></span>high-turn</span><span class="legend-item"><span class="legend-swatch" style="background: var(--bad);"></span>top cost</span></div></div>';
+    }
+    function renderPortfolioReadout(data, workspace) {
+      const rows = (data.task_insights || []).filter((row) => row.task_key !== "unassigned");
+      const top = rows.slice().sort((a, b) => (b.estimated_total || 0) - (a.estimated_total || 0))[0];
+      const highTurn = rows.filter((row) => (row.signals || []).includes("many turns") || row.event_count >= 5);
+      const cleanup = (data.summary.unassigned_count || 0) + (data.summary.unpriced_count || 0);
+      const topShare = top ? percent(top.estimated_total, data.summary.estimated_total) : 0;
+      const topLabel = top ? '<a href="' + text(taskHref(top.task_key, workspace)) + '">' + text(truncate(taskTitle(top), 34)) + '</a>' : "No task";
+      return '<div class="portfolio-readout">' +
+        '<div class="readout-card"><span>Largest outlier</span><strong>' + topLabel + '</strong><small>' + text(top ? money(top.estimated_total, data.summary.currency) + " · " + topShare + "% of workspace" : "No cost driver yet") + '</small></div>' +
+        '<div class="readout-card"><span>Work drag</span><strong>' + text(plural(highTurn.length, "high-turn task")) + '</strong><small>Review scope or split long conversations.</small></div>' +
+        '<div class="readout-card"><span>Data hygiene</span><strong>' + text(plural(cleanup, "cleanup item")) + '</strong><small>Unassigned or unpriced rows blocking cleaner insight.</small></div>' +
+      '</div>';
+    }
+    function renderWorkspacePulse(data, workspace) {
+      const s = data.summary;
+      const unresolved = s.unassigned_count + s.unpriced_count;
+      const assignedPct = percent(s.assigned_count, s.event_count);
+      const topTask = (data.task_insights || []).find((row) => row.task_key !== "unassigned") || null;
+      const topShare = topTask ? percent(topTask.estimated_total, s.estimated_total) : 0;
+      const pulseState = document.getElementById("pulseState");
+      pulseState.textContent = unresolved > 0 ? plural(unresolved, "gap") : "clear";
+      pulseState.className = "pill " + (unresolved > 0 ? "warn" : "");
+      const topTaskHtml = topTask
+        ? renderTaskLabel(topTask, workspace)
+        : '<div class="task-label"><strong class="task-title">No task usage</strong></div>';
+      document.getElementById("workspacePulse").innerHTML =
+        '<div class="pulse-head"><div><div class="pulse-title">' + text(data.workspace.name || data.workspace.key) + '</div><div class="pulse-sub">' + text(plural(s.task_count, "tracked task") + " · " + plural(s.event_count, "usage event") + " · " + plural(s.run_count, "run")) + '</div></div><div class="pulse-total">' + text(money(s.estimated_total, s.currency)) + '<span>estimated</span></div></div>' +
+        '<div><div class="progress-track"><div class="progress-segment assigned" style="width:' + assignedPct + '%"></div><div class="progress-segment unassigned" style="width:' + percent(s.unassigned_count, s.event_count) + '%"></div></div><div class="progress-caption"><span>' + text(assignedPct + "% assigned") + '</span><span>' + text(plural(s.unassigned_count, "inbox event")) + '</span></div></div>' +
+        renderUsageMomentumChart(data) +
+        '<div class="metric-strip">' +
+          '<div class="metric-box"><div class="metric-label">Task coverage</div><div class="metric-value">' + text(integer(s.assigned_count) + "/" + integer(s.event_count)) + '</div><div class="metric-sub">assigned usage</div></div>' +
+          '<div class="metric-box"><div class="metric-label">Pricing gaps</div><div class="metric-value">' + text(integer(s.unpriced_count)) + '</div><div class="metric-sub">unpriced usage</div></div>' +
+          '<div class="metric-box"><div class="metric-label">Top share</div><div class="metric-value">' + text(topShare + "%") + '</div><div class="metric-sub">largest task cost</div></div>' +
+          '<div class="metric-box"><div class="metric-label">Daily rows</div><div class="metric-value">' + text(integer(data.daily.length)) + '</div><div class="metric-sub">cost timeline</div></div>' +
+        '</div>' +
+        '<div class="driver-row"><div class="driver-top">' + topTaskHtml + '<div class="driver-cost">' + text(topTask ? money(topTask.estimated_total, s.currency) : money(0, s.currency)) + '</div></div><div class="driver-meta"><span>top cost driver</span><span>' + text(topTask ? plural(topTask.event_count, "turn") : "0 turns") + '</span><span>' + text(topTask ? plural(topTask.run_count, "run") : "0 runs") + '</span></div></div>';
+    }
+    function renderTaskFlow(data) {
+      const rows = data.task_insights || [];
+      const statusCounts = rows.reduce((acc, row) => {
+        const key = row.status || "unknown";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      const activeCount = (statusCounts.active || 0) + (statusCounts.open || 0);
+      const closedCount = (statusCounts.closed || 0) + (statusCounts.archived || 0);
+      const unknownCount = rows.length - activeCount - closedCount;
+      const manyTurns = rows.filter((row) => (row.signals || []).includes("many turns")).length;
+      const pricingGaps = rows.filter((row) => (row.signals || []).includes("pricing gap")).length;
+      const topCost = rows.filter((row) => (row.signals || []).includes("top cost")).length;
+      const datedRows = rows
+        .filter((row) => row.task_key !== "unassigned" && row.first_activity_at && row.last_activity_at)
+        .slice()
+        .sort((a, b) => String(b.last_activity_at).localeCompare(String(a.last_activity_at)))
+        .slice(0, 6);
+      const minMs = Math.min(...datedRows.map((row) => Date.parse(row.first_activity_at)));
+      const maxMs = Math.max(...datedRows.map((row) => Date.parse(row.last_activity_at)));
+      const spanMs = Math.max(1, maxMs - minMs);
+      const lifecycle = datedRows.length === 0 ? '<div class="empty">No task activity window.</div>' :
+        '<div class="lifecycle-list">' + datedRows.map((row) => {
+          const start = Math.max(0, Math.round(((Date.parse(row.first_activity_at) - minMs) / spanMs) * 100));
+          const end = Math.min(100, Math.round(((Date.parse(row.last_activity_at) - minMs) / spanMs) * 100));
+          const width = Math.max(4, end - start);
+          return '<div class="lifecycle-row"><div class="lifecycle-title" title="' + text(taskTitle(row)) + '">' + text(truncate(taskTitle(row), 34)) + '</div><div class="lifecycle-track"><div class="lifecycle-segment" style="left:' + start + '%;width:' + width + '%"></div></div></div>';
+        }).join("") + '</div>';
+      document.getElementById("flowCount").textContent = plural(rows.length, "task");
+      document.getElementById("taskFlow").innerHTML =
+        '<div class="flow-row"><div class="flow-label">Task status</div><div><div class="progress-track">' +
+          '<div class="progress-segment active" style="width:' + percent(activeCount, rows.length) + '%"></div>' +
+          '<div class="progress-segment closed" style="width:' + percent(closedCount, rows.length) + '%"></div>' +
+          '<div class="progress-segment warn" style="width:' + percent(unknownCount, rows.length) + '%"></div>' +
+        '</div><div class="progress-caption"><span>' + text(plural(activeCount, "active/open task", "active/open tasks")) + '</span><span>' + text(plural(closedCount, "closed task", "closed tasks")) + '</span></div></div><div class="flow-value">' + text(integer(rows.length)) + '</div></div>' +
+        '<div class="metric-strip">' +
+          '<div class="metric-box"><div class="metric-label">High-turn</div><div class="metric-value">' + text(integer(manyTurns)) + '</div><div class="metric-sub">drift check</div></div>' +
+          '<div class="metric-box"><div class="metric-label">Top cost</div><div class="metric-value">' + text(integer(topCost)) + '</div><div class="metric-sub">cost driver</div></div>' +
+          '<div class="metric-box"><div class="metric-label">Pricing</div><div class="metric-value">' + text(integer(pricingGaps)) + '</div><div class="metric-sub">gaps</div></div>' +
+          '<div class="metric-box"><div class="metric-label">Inbox</div><div class="metric-value">' + text(integer(data.summary.unassigned_count)) + '</div><div class="metric-sub">usage rows</div></div>' +
+        '</div><div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Recent task windows</div><div class="chart-sub">First to last activity for visible tasks</div></div></div>' + lifecycle + '</div>';
+    }
     function renderKpis(data) {
       const s = data.summary;
       const gapCount = s.unassigned_count + s.unpriced_count;
@@ -739,12 +1459,12 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         ["Estimated Cost", money(s.estimated_total, s.currency), integer(s.run_count) + " runs"],
       ].map(([label, value, sub]) => '<article class="panel kpi"><div class="kpi-label">' + text(label) + '</div><div class="kpi-value">' + text(value) + '</div><div class="kpi-sub">' + text(sub) + '</div></article>').join("");
     }
-    function renderAttention(data) {
+    function renderAttention(data, workspace) {
       const items = data.attention || [];
       document.getElementById("attentionCount").textContent = integer(items.length);
       document.getElementById("attentionPanel").innerHTML = items.length === 0 ? '<div class="empty">No attention signals.</div>' :
         '<div class="attention-list">' + items.map((item) =>
-          '<div class="attention-row"><span class="pill ' + severityClass(item.severity) + '">' + text(item.severity) + '</span><div><div class="attention-title">' + text(item.title) + '</div><div class="attention-body">' + text(item.body) + '</div></div><div class="attention-metric">' + text(item.metric) + '</div></div>'
+          '<div class="attention-row"><span class="pill ' + severityClass(item.severity) + '">' + text(item.severity) + '</span><div><div class="attention-title">' + (item.task_key ? '<a href="' + text(taskHref(item.task_key, workspace)) + '">' + text(item.title) + '</a>' : text(item.title)) + '</div><div class="attention-body">' + text(item.body) + '</div></div><div class="attention-metric">' + text(item.metric) + '</div></div>'
         ).join("") + '</div>';
     }
     function renderTaskInsights(data, workspace) {
@@ -769,13 +1489,15 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         document.getElementById("taskTable").innerHTML = '<div class="empty">No usage.</div>';
         return;
       }
-      document.getElementById("taskTable").innerHTML = '<table><thead><tr><th style="width: 300px;">Task</th><th class="num" style="width: 76px;">Events</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 80px;">Unpriced</th></tr></thead><tbody>' +
-        data.tasks.map((row) => {
+      const rows = data.tasks.slice(0, 12);
+      document.getElementById("taskTable").innerHTML = '<div class="portfolio-view">' + renderTaskPortfolioChart(data, workspace) + renderPortfolioReadout(data, workspace) + '</div><div class="driver-list">' +
+        rows.map((row) => {
           const width = Math.max(4, Math.round((row.estimated_total / max) * 100));
           const label = renderTaskLabel(row, workspace);
-          return '<tr><td><div class="task-cell"><div class="bar"><span style="width:' + width + '%"></span></div>' + label + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td></tr>';
+          const share = percent(row.estimated_total, data.summary.estimated_total);
+          return '<div class="driver-row"><div class="driver-top">' + label + '<div class="driver-cost">' + text(money(row.estimated_total, data.summary.currency)) + '</div></div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div><div class="driver-meta"><span>' + text(plural(row.event_count, "usage row")) + '</span><span>' + text(integer(row.token_count) + " tokens") + '</span><span>' + text(share + "% of workspace") + '</span><span>' + text(integer(row.unpriced_count) + " unpriced") + '</span></div></div>';
         }).join("") +
-        '</tbody></table>';
+        '</div>';
     }
     function renderRecent(data, workspace) {
       document.getElementById("recentCount").textContent = integer(data.recent.length);
@@ -794,6 +1516,42 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       const max = Math.max(...rows.map((row) => row.event_count), 1);
       document.getElementById(id).innerHTML = rows.length === 0 ? '<div class="empty">No data.</div>' :
         rows.map((row) => '<div class="break-row"><span class="pill ' + pillClass(row.key) + '">' + text(row.key) + '</span><div class="bar"><span style="width:' + Math.max(4, Math.round((row.event_count / max) * 100)) + '%"></span></div><span class="num">' + integer(row.event_count) + '</span></div>').join("");
+    }
+    function renderCostIntelligence(data) {
+      const byModel = new Map();
+      (data.recent || []).forEach((row) => {
+        const key = row.provider_model || "unknown";
+        const current = byModel.get(key) || { key, event_count: 0, token_count: 0, estimated_total: 0 };
+        current.event_count += 1;
+        current.token_count += Number(row.tokens || 0);
+        current.estimated_total += Number(row.cost || 0);
+        byModel.set(key, current);
+      });
+      const models = Array.from(byModel.values()).sort((a, b) => b.estimated_total - a.estimated_total).slice(0, 6);
+      const maxCost = Math.max(...models.map((row) => row.estimated_total), 0.000001);
+      const modelTotal = models.reduce((sum, row) => sum + row.estimated_total, 0);
+      const avgTokens = data.summary.event_count ? Math.round((data.recent || []).reduce((sum, row) => sum + Number(row.tokens || 0), 0) / Math.max(1, (data.recent || []).length)) : 0;
+      document.getElementById("modelCount").textContent = models.length === 0 ? "0 models" : plural(models.length, "model");
+      const modelRows = models.length === 0 ? '<div class="empty">No model usage.</div>' :
+        '<div class="mix-list">' + models.map((row) => {
+          const width = Math.max(4, Math.round((row.estimated_total / maxCost) * 100));
+          return '<div class="mix-row"><div><div class="mix-title">' + text(row.key) + '</div><div class="mix-meta">' + text(plural(row.event_count, "request") + " · " + integer(row.token_count) + " tokens") + '</div></div><div class="mix-cost">' + text(money(row.estimated_total, data.summary.currency)) + '</div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div></div>';
+        }).join("") + '</div>';
+      const pricingRows = (data.pricing_breakdown || []).map((row) =>
+        '<div class="readout-card"><span>' + text(row.key) + '</span><strong>' + text(plural(row.event_count, "row")) + '</strong><small>' + text(money(row.estimated_total, data.summary.currency)) + '</small></div>'
+      ).join("");
+      const accuracyRows = (data.accuracy_breakdown || []).map((row) =>
+        '<div class="readout-card"><span>' + text(row.key) + '</span><strong>' + text(plural(row.event_count, "row")) + '</strong><small>' + text(money(row.estimated_total, data.summary.currency)) + '</small></div>'
+      ).join("");
+      document.getElementById("costIntelligence").innerHTML =
+        '<div class="cost-intel">' +
+          '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Model spend mix</div><div class="chart-sub">Recent usage grouped by provider/model</div></div><div class="chart-total">' + text(money(modelTotal, data.summary.currency)) + '</div></div>' + modelRows + '</div>' +
+          '<div class="intel-grid">' +
+            '<div class="readout-card"><span>Average tokens</span><strong>' + text(integer(avgTokens)) + '</strong><small>per recent usage event</small></div>' +
+            '<div class="readout-card"><span>Cost basis</span><strong>' + text(data.summary.observed_total > 0 ? "observed" : "estimated") + '</strong><small>' + text(data.summary.observed_total > 0 ? money(data.summary.observed_total, data.summary.currency) : "pricing rules") + '</small></div>' +
+          '</div>' +
+          '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Pricing and accuracy</div><div class="chart-sub">Whether cost is calculated, observed, or estimated</div></div></div><div class="intel-grid">' + (pricingRows || '<div class="empty">No pricing rows.</div>') + (accuracyRows || '<div class="empty">No accuracy rows.</div>') + '</div></div>' +
+        '</div>';
     }
     function renderSpark(data) {
       renderSparkTo("dailySpark", "dayCount", data.daily, data.summary.currency);
@@ -826,13 +1584,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         return;
       }
       const data = await response.json();
+      renderWorkspacePulse(data, workspace);
+      renderTaskFlow(data);
       renderKpis(data);
-      renderAttention(data);
+      renderAttention(data, workspace);
       renderTaskInsights(data, workspace);
       renderTasks(data, workspace);
       renderRecent(data, workspace);
-      renderBreakdown("pricingBreakdown", data.pricing_breakdown, data.summary.currency);
-      renderBreakdown("accuracyBreakdown", data.accuracy_breakdown, data.summary.currency);
+      renderCostIntelligence(data);
       renderSpark(data);
     }
     function showPage(mode) {
@@ -847,7 +1606,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       const insight = data.insight;
       const currency = detailCurrency(data);
       document.getElementById("taskKpis").innerHTML = [
-        ["Events", integer(insight.event_count), "usage rows"],
+        ["Usage", integer(insight.event_count), "events"],
         ["Runs", integer(insight.run_count), integer(data.runs.length) + " visible"],
         ["Tokens", integer(insight.token_count), "tracked usage"],
         ["Estimated Cost", money(insight.estimated_total, currency), "task total"],
