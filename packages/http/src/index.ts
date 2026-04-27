@@ -171,6 +171,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       align-items: start;
       margin-top: 12px;
     }
+    .overview-primary {
+      margin-top: 12px;
+    }
+    .overview-support {
+      grid-template-columns: 340px minmax(0, 1fr) 360px;
+      align-items: start;
+      margin-top: 12px;
+    }
     .detail-layout {
       grid-template-columns: minmax(0, 1fr) 420px;
       align-items: start;
@@ -257,7 +265,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       min-width: 560px;
     }
     #insightTable table {
-      min-width: 1480px;
+      min-width: 1680px;
     }
     #recentTable table, #taskEventTable table {
       min-width: 1320px;
@@ -424,6 +432,11 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       white-space: normal;
       line-height: 1.35;
     }
+    .prompt-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .row-link {
       display: inline-flex;
       max-width: 100%;
@@ -489,7 +502,16 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
   </header>
   <main class="wrap" id="overviewPage">
     <section class="grid kpis" id="kpis"></section>
-    <section class="grid layout">
+    <section class="overview-primary">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Task Insight</h2>
+          <div class="section-tabs"><span class="pill" id="insightCount"></span></div>
+        </div>
+        <div id="insightTable"></div>
+      </section>
+    </section>
+    <section class="grid overview-support">
       <aside class="stack">
         <section class="panel">
           <div class="panel-head"><h2>Needs Attention</h2><span class="pill" id="attentionCount"></span></div>
@@ -503,28 +525,19 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
           <div class="panel-head"><h2>Pricing Mode</h2></div>
           <div class="breakdown" id="pricingBreakdown"></div>
         </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Accuracy</h2></div>
+          <div class="breakdown" id="accuracyBreakdown"></div>
+        </section>
       </aside>
-      <div class="stack">
-        <section class="panel">
-          <div class="panel-head">
-            <h2>Task Insight</h2>
-            <div class="section-tabs"><span class="pill" id="insightCount"></span></div>
-          </div>
-          <div id="insightTable"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Recent Usage</h2><span class="pill" id="recentCount"></span></div>
-          <div id="recentTable"></div>
-        </section>
-      </div>
+      <section class="panel">
+        <div class="panel-head"><h2>Recent Usage</h2><span class="pill" id="recentCount"></span></div>
+        <div id="recentTable"></div>
+      </section>
       <aside class="stack">
         <section class="panel">
           <div class="panel-head"><h2>Cost Snapshot</h2><span class="pill" id="taskCount"></span></div>
           <div id="taskTable"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Accuracy</h2></div>
-          <div class="breakdown" id="accuracyBreakdown"></div>
         </section>
       </aside>
     </section>
@@ -668,13 +681,13 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         document.getElementById("insightTable").innerHTML = '<div class="empty">No task insight yet.</div>';
         return;
       }
-      document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 210px;">Task</th><th style="width: 90px;">Status</th><th style="width: 260px;">Insight</th><th style="width: 180px;">Signals</th><th class="num" style="width: 78px;">Turns</th><th class="num" style="width: 72px;">Runs</th><th class="num" style="width: 92px;">Tokens</th><th class="num" style="width: 112px;">Cost</th><th class="num" style="width: 88px;">Unpriced</th><th style="width: 138px;">First</th><th style="width: 138px;">Last</th><th>Latest Prompt</th></tr></thead><tbody>' +
+      document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 210px;">Task</th><th style="width: 76px;">Status</th><th style="width: 230px;">Insight</th><th style="width: 155px;">Signals</th><th class="num" style="width: 64px;">Turns</th><th class="num" style="width: 60px;">Runs</th><th class="num" style="width: 78px;">Tokens</th><th class="num" style="width: 100px;">Cost</th><th class="num" style="width: 76px;">Unpriced</th><th style="width: 126px;">First</th><th style="width: 126px;">Last</th><th>Latest Prompt</th></tr></thead><tbody>' +
         rows.map((row) => {
           const prompt = promptSnippet(row.latest_prompt);
           const taskLabel = row.task_key === "unassigned"
             ? '<strong>' + text(row.task_key) + '</strong>'
             : '<a class="row-link" href="' + text(taskHref(row.task_key, workspace)) + '">' + text(row.task_key) + '</a>';
-          return '<tr><td><div class="insight-task">' + taskLabel + '<span class="muted">' + text(row.task_name) + '</span></div></td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text">' + text(row.insight) + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td>' + text(shortDate(row.first_activity_at)) + '</td><td>' + text(shortDate(row.last_activity_at)) + '</td><td class="wide-text">' + text(prompt || "-") + '</td></tr>';
+          return '<tr><td><div class="insight-task">' + taskLabel + '<span class="muted">' + text(row.task_name) + '</span></div></td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text">' + text(row.insight) + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td>' + text(shortDate(row.first_activity_at)) + '</td><td>' + text(shortDate(row.last_activity_at)) + '</td><td class="prompt-line">' + text(prompt || "-") + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
