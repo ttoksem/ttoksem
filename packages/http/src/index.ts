@@ -468,18 +468,53 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       display: none;
     }
     .spark {
+      display: grid;
+      gap: 12px;
+      min-height: 118px;
+      padding: 14px 16px 16px;
+    }
+    .spark .empty {
+      padding: 0;
+    }
+    .daily-summary {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .daily-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .daily-sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .daily-total {
+      font-size: 18px;
+      font-weight: 780;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .daily-bars {
       display: flex;
       align-items: end;
       gap: 4px;
-      height: 74px;
-      padding: 14px 16px 16px;
+      height: 52px;
     }
-    .spark > div {
+    .daily-bars > div {
       flex: 1;
       min-width: 10px;
       background: var(--accent-2);
       border-radius: 3px 3px 0 0;
       opacity: 0.84;
+    }
+    .daily-bars.single > div {
+      flex: 0 0 30px;
     }
     .empty, .error {
       padding: 18px 16px;
@@ -743,9 +778,23 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     function renderSparkTo(sparkId, countId, rows, currency) {
       const max = Math.max(...rows.map((row) => row.estimated_total), 0.000001);
-      document.getElementById(countId).textContent = integer(rows.length);
-      document.getElementById(sparkId).innerHTML = rows.length === 0 ? '<div class="empty">No data.</div>' :
-        rows.map((row) => '<div title="' + text(row.date + " " + money(row.estimated_total, currency)) + '" style="height:' + Math.max(6, Math.round((row.estimated_total / max) * 64)) + 'px"></div>').join("");
+      document.getElementById(countId).textContent = integer(rows.length) + (rows.length === 1 ? " day" : " days");
+      if (rows.length === 0) {
+        document.getElementById(sparkId).innerHTML = '<div class="empty">No daily cost data.</div>';
+        return;
+      }
+      const total = rows.reduce((sum, row) => sum + (row.estimated_total || 0), 0);
+      const events = rows.reduce((sum, row) => sum + (row.event_count || 0), 0);
+      const first = rows[0];
+      const last = rows[rows.length - 1];
+      const range = rows.length === 1 ? first.date : first.date + " - " + last.date;
+      const dayLabel = integer(rows.length) + (rows.length === 1 ? " day" : " days");
+      const eventLabel = integer(events) + (events === 1 ? " event" : " events");
+      document.getElementById(sparkId).innerHTML =
+        '<div class="daily-summary"><div><div class="daily-label">' + text(range) + '</div><div class="daily-sub">' + text(eventLabel + " across " + dayLabel) + '</div></div><div class="daily-total">' + text(money(total, currency)) + '</div></div>' +
+        '<div class="daily-bars ' + (rows.length === 1 ? "single" : "") + '">' +
+        rows.map((row) => '<div title="' + text(row.date + " " + money(row.estimated_total, currency)) + '" style="height:' + Math.max(6, Math.round((row.estimated_total / max) * 48)) + 'px"></div>').join("") +
+        '</div>';
     }
     async function loadDashboard(workspace) {
       workspaceLabel.textContent = workspace;
