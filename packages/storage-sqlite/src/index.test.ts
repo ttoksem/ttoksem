@@ -6,7 +6,7 @@ import { SqliteLedgerStore } from "./index.js";
 
 describe("SqliteLedgerStore", () => {
   it("creates a workspace and preserves root path lookup", async () => {
-    const dbPath = join(tmpdir(), `ttoksem-test-${Date.now()}.db`);
+    const dbPath = testDbPath();
     const store = new SqliteLedgerStore(dbPath);
     try {
       await store.migrate();
@@ -30,5 +30,78 @@ describe("SqliteLedgerStore", () => {
       rmSync(`${dbPath}-wal`, { force: true });
     }
   });
+
+  it("lists unassigned usage and moves it to a task", async () => {
+    const dbPath = testDbPath();
+    const store = new SqliteLedgerStore(dbPath);
+    try {
+      await store.migrate();
+      await store.createWorkspace({
+        id: "ws_test",
+        key: "test",
+        name: "Test",
+        root_path: "/tmp/test",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createTask({
+        id: "task_test",
+        workspace_id: "ws_test",
+        key: "task",
+        name: "Task",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createUsageEvent({
+        id: "usage_test",
+        workspace_id: "ws_test",
+        task_id: null,
+        run_id: null,
+        message_id: "msg_test",
+        source: "test",
+        idempotency_key: "test:usage",
+        occurred_at: "2026-04-27T00:00:00.000Z",
+        provider: "openai",
+        model: "codex-chat",
+        usage_kind: "conversation_turn",
+        input_tokens: 10,
+        output_tokens: 20,
+        total_tokens: 30,
+        observed_cost_nanos: null,
+        estimated_cost_nanos: null,
+        observed_currency: null,
+        estimated_currency: null,
+        accuracy_mode: "estimated",
+        pricing_mode: "unpriced",
+        unpriced_reason: "missing_pricing_rule",
+        assignment_status: "unassigned",
+        payload_json: {
+          schema_version: "1.0",
+          payload: { task: null },
+        },
+        now: "2026-04-27T00:00:00.000Z",
+      });
+
+      await expect(store.listUsageEventsByAssignment("ws_test", "unassigned", 10)).resolves.toHaveLength(
+        1,
+      );
+
+      const moved = await store.moveUsageEventToTask("ws_test", "usage_test", "task_test");
+
+      expect(moved.task_id).toBe("task_test");
+      expect(moved.assignment_status).toBe("assigned");
+      await expect(store.listUsageEventsByAssignment("ws_test", "unassigned", 10)).resolves.toHaveLength(
+        0,
+      );
+    } finally {
+      await store.close();
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+    }
+  });
 });
 
+function testDbPath(): string {
+  return join(tmpdir(), `ttoksem-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+}

@@ -57,6 +57,8 @@ export interface LedgerReportRow {
   pricing_mode: string | null;
 }
 
+export type UsageAssignmentStatus = "unassigned" | "suggested" | "assigned" | "dismissed";
+
 export interface LedgerStore {
   migrate(): Promise<void>;
   close(): Promise<void>;
@@ -81,6 +83,16 @@ export interface LedgerStore {
     source: string,
     idempotencyKey: string,
   ): Promise<UsageEventRecord | null>;
+  listUsageEventsByAssignment(
+    workspaceId: string,
+    assignmentStatus: UsageAssignmentStatus,
+    limit: number,
+  ): Promise<UsageEventRecord[]>;
+  moveUsageEventToTask(
+    workspaceId: string,
+    usageEventId: string,
+    taskId: string,
+  ): Promise<UsageEventRecord>;
   reportUsageByDay(workspaceId: string, date: string): Promise<LedgerReportRow[]>;
   reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]>;
 }

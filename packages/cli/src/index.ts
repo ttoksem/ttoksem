@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Command } from "commander";
 import { LedgerService } from "@ttoksem/core";
-import { AiUsageObservedSchema, type AiUsageObserved } from "@ttoksem/schema";
+import { AiUsageObservedSchema, type AiUsageObserved, type UsageEventRecord } from "@ttoksem/schema";
 import { SqliteLedgerStore } from "@ttoksem/storage-sqlite";
 
 const program = new Command();
@@ -140,10 +140,29 @@ usage
   });
 
 usage
+  .command("move")
+  .argument("<usage-id>", "usage event id")
+  .requiredOption("--task <key>", "destination task key")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("Assign an existing usage event to a task")
+  .action(async (usageEventId: string, options: UsageMoveOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const event = await service.moveUsage({
+      workspace: workspaceResolver(options),
+      usageEventId,
+      taskKey: slug(options.task),
+    });
+    console.log(`usage ${event.id} moved task_id=${event.task_id ?? ""}`);
+    await close();
+  });
+
+usage
   .command("codex-turn")
   .description("Record an estimated Codex conversation turn")
   .option("--workspace <key>", "workspace key", "ttoksem-dev")
-  .option("--task <key>", "task key", "codex-current-conversation")
+  .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--model <model>", "model label", "codex-chat")
   .option("--input-tokens <count>", "estimated input token count")
   .option("--output-tokens <count>", "estimated output token count")
@@ -161,6 +180,31 @@ usage
     const message = buildCodexTurnMessage(options);
     const event = await service.recordUsage(message);
     console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    await close();
+  });
+
+const inbox = program.command("inbox").description("Inbox commands");
+
+inbox
+  .command("list")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--limit <count>", "maximum events to show", "20")
+  .description("List unassigned usage events")
+  .action(async (options: InboxListOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const events = await service.listInbox({
+      workspace: workspaceResolver(options),
+      limit: parsePositiveInteger(options.limit),
+    });
+    if (events.length === 0) {
+      console.log("No unassigned usage events.");
+    } else {
+      for (const event of events) {
+        printUsageEventLine(event);
+      }
+    }
     await close();
   });
 
@@ -211,9 +255,15 @@ interface UsageAddOptions {
   idempotencyKey?: string;
 }
 
+interface UsageMoveOptions {
+  task: string;
+  workspace?: string;
+  root?: string;
+}
+
 interface CodexTurnOptions {
   workspace: string;
-  task: string;
+  task?: string;
   model: string;
   inputTokens?: string;
   outputTokens?: string;
@@ -225,6 +275,12 @@ interface CodexTurnOptions {
   responseFile?: string;
   promptMode: "none" | "hash" | "redacted" | "full";
   idempotencyKey?: string;
+}
+
+interface InboxListOptions {
+  workspace?: string;
+  root?: string;
+  limit: string;
 }
 
 async function makeService(): Promise<{
@@ -311,7 +367,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
     workspace: { key: options.workspace },
     idempotency_key: options.idempotencyKey,
     payload: {
-      task: { key: slug(options.task) },
+      task: options.task ? { key: slug(options.task) } : null,
       usage: {
         provider: "openai",
         model: options.model,
@@ -362,10 +418,51 @@ function printReport(report: {
   console.log(`Unpriced usage: ${report.unpriced_count} event(s)`);
 }
 
+function printUsageEventLine(event: UsageEventRecord): void {
+  const prompt = extractPromptText(event.payload_json);
+  const tokens = event.total_tokens ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0);
+  console.log(
+    [
+      event.id,
+      event.occurred_at,
+      `${event.provider}/${event.model}`,
+      `tokens=${tokens}`,
+      `pricing=${event.pricing_mode ?? "unknown"}`,
+      prompt ? `prompt=${truncate(prompt, 80)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\t"),
+  );
+}
+
+function extractPromptText(payload: Record<string, unknown>): string | null {
+  const payloadObject = payload.payload;
+  if (!isRecord(payloadObject)) return null;
+  const promptSnapshot = payloadObject.prompt_snapshot;
+  if (!isRecord(promptSnapshot)) return null;
+  const promptText = promptSnapshot.prompt_text;
+  return typeof promptText === "string" && promptText.length > 0 ? promptText : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function truncate(value: string, maxLength: number): string {
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  return oneLine.length <= maxLength ? oneLine : `${oneLine.slice(0, maxLength - 3)}...`;
+}
+
 function parseOptionalInteger(value: string | undefined): number | null {
   if (value == null) return null;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid integer: ${value}`);
+  return parsed;
+}
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) throw new Error(`Invalid positive integer: ${value}`);
   return parsed;
 }
 

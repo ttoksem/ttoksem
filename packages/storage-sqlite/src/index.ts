@@ -13,6 +13,7 @@ import type {
   CreateWorkspaceInput,
   LedgerReportRow,
   LedgerStore,
+  UsageAssignmentStatus,
 } from "@ttoksem/storage";
 
 export class SqliteLedgerStore implements LedgerStore {
@@ -279,6 +280,42 @@ export class SqliteLedgerStore implements LedgerStore {
       )
       .get(workspaceId, source, idempotencyKey);
     if (!row) return null;
+    return UsageEventRecordSchema.parse(fromDbJson(row as DbRow));
+  }
+
+  async listUsageEventsByAssignment(
+    workspaceId: string,
+    assignmentStatus: UsageAssignmentStatus,
+    limit: number,
+  ): Promise<UsageEventRecord[]> {
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM usage_events
+         WHERE workspace_id = ? AND assignment_status = ?
+         ORDER BY occurred_at DESC
+         LIMIT ?`,
+      )
+      .all(workspaceId, assignmentStatus, limit)
+      .map((row) => UsageEventRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
+  async moveUsageEventToTask(
+    workspaceId: string,
+    usageEventId: string,
+    taskId: string,
+  ): Promise<UsageEventRecord> {
+    const result = this.db
+      .prepare(
+        `UPDATE usage_events
+         SET task_id = @taskId, assignment_status = 'assigned'
+         WHERE workspace_id = @workspaceId AND id = @usageEventId`,
+      )
+      .run({ workspaceId, usageEventId, taskId });
+    if (result.changes === 0) throw new Error(`Usage event not found: ${usageEventId}`);
+    const row = this.db
+      .prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
+      .get(workspaceId, usageEventId);
     return UsageEventRecordSchema.parse(fromDbJson(row as DbRow));
   }
 

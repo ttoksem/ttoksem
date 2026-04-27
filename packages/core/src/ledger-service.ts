@@ -171,6 +171,22 @@ export class LedgerService {
     });
   }
 
+  async listInbox(input: { workspace: WorkspaceResolver; limit?: number }): Promise<UsageEventRecord[]> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    return this.store.listUsageEventsByAssignment(workspace.id, "unassigned", input.limit ?? 20);
+  }
+
+  async moveUsage(input: {
+    workspace: WorkspaceResolver;
+    usageEventId: string;
+    taskKey: string;
+  }): Promise<UsageEventRecord> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const task = await this.store.getTaskByKey(workspace.id, input.taskKey);
+    if (!task) throw new Error(`Task not found: ${input.taskKey}`);
+    return this.store.moveUsageEventToTask(workspace.id, input.usageEventId, task.id);
+  }
+
   async reportToday(input: { workspace: WorkspaceResolver; date?: string }): Promise<DailyReport> {
     const workspace = await this.resolveWorkspace(input.workspace);
     const date = input.date ?? this.clock.now().slice(0, 10);
@@ -190,6 +206,7 @@ export class LedgerService {
     workspace: WorkspaceRecord,
     message: AiUsageObserved,
   ): Promise<TaskRecord | null> {
+    if (message.payload.task === null) return null;
     const taskRef = message.payload.task;
     if (taskRef?.id) return this.store.getTaskById(taskRef.id);
     if (taskRef?.key) return this.store.getTaskByKey(workspace.id, taskRef.key);
