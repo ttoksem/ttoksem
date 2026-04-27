@@ -60,11 +60,11 @@ Existing unpriced events can be recalculated after rules are added with `pricing
 
 If `started_at` and `ended_at` are present but `duration_ms` is omitted, the core service derives `duration_ms`. Missing timing fields are allowed so lightweight/manual logging stays simple.
 
-## Run And Session Policy
+## Run Policy
 
-A run groups multiple usage events from one request, conversation, job, or attempt.
+A run groups multiple usage events from one explicit request, job, or attempt.
 
-Use `session_id` when the caller has a stable external grouping key, such as a chat thread id, agent run id, or RAG request id. The core service creates or reuses a run for the same workspace/session pair and stores its `run_id` on each usage event.
+Inputs do not require a session concept. For ordinary one-off usage records, omit run fields and record the usage directly to a task or inbox. When an integration needs to group several measurable events, pass an explicit `run_id`; the core service creates or reuses that run and stores its `run_id` on each usage event.
 
 Usage can still be recorded without a run. That keeps one-off/manual logging simple while allowing RAG, API, and tool workflows to group related events when the caller has enough context.
 
@@ -109,7 +109,7 @@ pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
 pnpm cli pricing snapshot upsert --id price_snapshot_example --source-name litellm --raw-sha256 sha256:example --source-commit example --valid-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
-pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --session-id codex-thread-2026-04-27 --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging

@@ -6,7 +6,7 @@ The important rule:
 
 ```text
 task = user goal
-run = one request, conversation, job, or attempt
+run = one explicit request, job, or attempt
 usage_event = one cost-bearing or usage-measured operation
 ```
 
@@ -72,7 +72,7 @@ A user asks a question against a document collection. One assistant answer might
 
 ```text
 task: answer-doc-question
-run.session_id: chat-2026-04-27-001
+run: run_rag_answer_001
 
 1. embedding
 2. vector_search
@@ -101,7 +101,7 @@ run.session_id: chat-2026-04-27-001
       "key": "answer-doc-question"
     },
     "run": {
-      "session_id": "chat-2026-04-27-001"
+      "id": "run_rag_answer_001"
     },
     "usage": {
       "provider": "openai",
@@ -143,7 +143,7 @@ run.session_id: chat-2026-04-27-001
       "key": "answer-doc-question"
     },
     "run": {
-      "session_id": "chat-2026-04-27-001"
+      "id": "run_rag_answer_001"
     },
     "usage": {
       "provider": "pinecone",
@@ -189,7 +189,7 @@ run.session_id: chat-2026-04-27-001
       "key": "answer-doc-question"
     },
     "run": {
-      "session_id": "chat-2026-04-27-001"
+      "id": "run_rag_answer_001"
     },
     "usage": {
       "provider": "cohere",
@@ -230,7 +230,7 @@ run.session_id: chat-2026-04-27-001
       "key": "answer-doc-question"
     },
     "run": {
-      "session_id": "chat-2026-04-27-001"
+      "id": "run_rag_answer_001"
     },
     "usage": {
       "provider": "openai",
@@ -282,7 +282,7 @@ If an agent calls a paid API such as search, maps, OCR, payment enrichment, or m
       "key": "research-vendor-pricing"
     },
     "run": {
-      "session_id": "agent-run-2026-04-27-001"
+      "id": "run_vendor_pricing_001"
     },
     "usage": {
       "provider": "tavily",
@@ -314,7 +314,7 @@ An agent run should usually avoid a single huge event. Record each measurable st
 
 ```text
 task: migrate-repo-to-new-api
-run.session_id: agent-run-2026-04-27-002
+run: run_agent_migrate_api_001
 
 usage_event 1: chat_completion       plan
 usage_event 2: external_api_call     GitHub issue lookup
@@ -332,7 +332,7 @@ How much did the user goal cost?
   group by task
 
 How much did this run cost?
-  group by run.session_id
+  group by run_id
 
 Where did money go?
   group by provider and usage_kind
@@ -340,6 +340,37 @@ Where did money go?
 Which steps are still vague?
   filter pricing_mode=unpriced or accuracy_mode=estimated
 ```
+
+## Repeated Task Example
+
+A repeated task keeps one task key and creates one run per execution when the execution groups several measurable events.
+
+```text
+task: refresh-pricing-catalog
+
+run: run_refresh_pricing_20260427
+  usage_event 1: web_search             check upstream pricing source
+  usage_event 2: external_api_call      fetch pricing snapshot
+  usage_event 3: local_compute          normalize snapshot, unpriced
+  usage_event 4: local_compute          reprice local ledger, unpriced
+
+run: run_refresh_pricing_20260428
+  usage_event 1: external_api_call      fetch pricing snapshot
+  usage_event 2: local_compute          normalize snapshot, unpriced
+  usage_event 3: local_compute          reprice local ledger, unpriced
+```
+
+This lets reports answer:
+
+```text
+How much has this repeated goal cost overall?
+  group by task
+
+How much did the latest execution cost?
+  filter by run_id
+```
+
+If a repetition is just one simple model call and no one needs execution-level reporting, recording `task -> usage_event` without a run is acceptable.
 
 ## Dashboard Defaults
 
@@ -354,7 +385,7 @@ time | task | provider/model | kind | tokens/units | cost | confidence
 Expanded detail:
 
 ```text
-run/session
+run
 source_context.pipeline
 source_context.step
 raw_usage

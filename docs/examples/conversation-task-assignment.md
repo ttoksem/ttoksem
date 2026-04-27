@@ -9,7 +9,6 @@ Different teams may define tasks differently:
 ```text
 issue-sized tasks
 milestone-sized tasks
-session-sized tasks
 cost-center tasks
 research vs implementation tasks
 ```
@@ -23,13 +22,11 @@ One useful default is:
 ```text
 workspace = project or repo
 task      = user goal
-run       = one conversation, session, or attempt
+run       = one explicit execution, request, job, or attempt
 event     = one model call, response, or logged turn
 ```
 
 For task-level cost reporting, the task is usually most useful when it means "the user goal I want to price later."
-
-However, session-sized tasks can be valid for teams that only need rough per-conversation cost tracking.
 
 Good task names:
 
@@ -54,7 +51,7 @@ The user starts by asking to implement a new repo from the design source.
 ```text
 workspace: ttoksem
 task: initialize-implementation-repo
-run: codex-thread-2026-04-27
+usage_event: codex conversation_turn
 ```
 
 Later the user asks to record the chat itself into the ledger.
@@ -64,7 +61,7 @@ That is a new user goal, so the assistant should switch task:
 ```text
 workspace: ttoksem
 task: implement-chat-usage-logging
-run: codex-thread-2026-04-27
+usage_event: codex conversation_turn
 ```
 
 This could be one task, but it may become too broad as the work grows:
@@ -94,6 +91,40 @@ task: build-inbox-assignment-tools
   usage_event: add inbox list
   usage_event: add usage move
 ```
+
+## Repeated Work Example
+
+When the same user goal repeats, keep the same task and create a new run for each execution only when a run is useful.
+
+Example: refresh a pricing catalog every day.
+
+```text
+task: refresh-pricing-catalog
+
+run: run_refresh_pricing_20260427
+  usage_event: fetch LiteLLM snapshot
+  usage_event: normalize pricing rules
+  usage_event: reprice unpriced usage
+
+run: run_refresh_pricing_20260428
+  usage_event: fetch LiteLLM snapshot
+  usage_event: normalize pricing rules
+  usage_event: reprice unpriced usage
+```
+
+Do not create a new task for every repeated execution if the accounting question is still the same:
+
+```text
+less useful:
+  refresh-pricing-catalog-20260427
+  refresh-pricing-catalog-20260428
+
+more useful:
+  task: refresh-pricing-catalog
+  runs: one per execution
+```
+
+Create separate tasks only when each repetition is a distinct user-facing deliverable that should be reported independently.
 
 ## Default Behavior
 

@@ -90,7 +90,6 @@ export class SqliteLedgerStore implements LedgerStore {
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL REFERENCES workspaces(id),
         task_id TEXT REFERENCES tasks(id),
-        session_id TEXT NOT NULL,
         status TEXT NOT NULL,
         source TEXT NOT NULL,
         external_ref_json TEXT,
@@ -98,8 +97,7 @@ export class SqliteLedgerStore implements LedgerStore {
         started_at TEXT,
         ended_at TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(workspace_id, session_id)
+        updated_at TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
@@ -231,6 +229,52 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0005_pricing_source_snapshots", new Date().toISOString());
+    this.dropRunSessionIdIfPresent();
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0006_remove_run_session_id", new Date().toISOString());
+  }
+
+  private dropRunSessionIdIfPresent(): void {
+    if (!hasColumn(this.db, "runs", "session_id")) return;
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.exec(`
+        DROP INDEX IF EXISTS runs_workspace_status_idx;
+        DROP INDEX IF EXISTS runs_workspace_task_idx;
+
+        CREATE TABLE runs_new (
+          id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+          task_id TEXT REFERENCES tasks(id),
+          status TEXT NOT NULL,
+          source TEXT NOT NULL,
+          external_ref_json TEXT,
+          metadata_json TEXT,
+          started_at TEXT,
+          ended_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT INTO runs_new (
+          id, workspace_id, task_id, status, source,
+          external_ref_json, metadata_json, started_at, ended_at, created_at, updated_at
+        )
+        SELECT
+          id, workspace_id, task_id, status, source,
+          external_ref_json, metadata_json, started_at, ended_at, created_at, updated_at
+        FROM runs;
+
+        DROP TABLE runs;
+        ALTER TABLE runs_new RENAME TO runs;
+
+        CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
+        CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
+      `);
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
   }
 
   async close(): Promise<void> {
@@ -348,10 +392,10 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare(
         `INSERT INTO runs (
-          id, workspace_id, task_id, session_id, status, source,
+          id, workspace_id, task_id, status, source,
           external_ref_json, metadata_json, started_at, ended_at, created_at, updated_at
         ) VALUES (
-          @id, @workspace_id, @task_id, @session_id, 'active', @source,
+          @id, @workspace_id, @task_id, 'active', @source,
           @external_ref_json, @metadata_json, @started_at, NULL, @now, @now
         )`,
       )
@@ -369,12 +413,6 @@ export class SqliteLedgerStore implements LedgerStore {
 
   async getRunById(id: string): Promise<RunRecord | null> {
     return parseRun(this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id));
-  }
-
-  async getRunBySessionId(workspaceId: string, sessionId: string): Promise<RunRecord | null> {
-    return parseRun(
-      this.db.prepare("SELECT * FROM runs WHERE workspace_id = ? AND session_id = ?").get(workspaceId, sessionId),
-    );
   }
 
   async upsertPricingSourceSnapshot(

@@ -123,7 +123,6 @@ usage
   .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key")
   .option("--run-id <id>", "existing or explicit run id")
-  .option("--session-id <id>", "run session id")
   .option("--provider <provider>", "provider name")
   .option("--model <model>", "model name")
   .option("--started-at <iso>", "usage start timestamp")
@@ -169,7 +168,6 @@ usage
   .option("--workspace <key>", "workspace key", "ttoksem-dev")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--run-id <id>", "existing or explicit run id")
-  .option("--session-id <id>", "run session id")
   .option("--model <model>", "model label", "codex-chat")
   .option("--started-at <iso>", "turn start timestamp")
   .option("--ended-at <iso>", "turn end timestamp")
@@ -399,7 +397,6 @@ interface UsageAddOptions {
   workspace?: string;
   task?: string;
   runId?: string;
-  sessionId?: string;
   provider?: string;
   model?: string;
   startedAt?: string;
@@ -423,7 +420,6 @@ interface CodexTurnOptions {
   workspace: string;
   task?: string;
   runId?: string;
-  sessionId?: string;
   model: string;
   startedAt?: string;
   endedAt?: string;
@@ -634,11 +630,10 @@ function readOptionalText(text: string | undefined, file: string | undefined): s
   return null;
 }
 
-function runRef(options: { runId?: string; sessionId?: string }) {
-  if (!options.runId && !options.sessionId) return null;
+function runRef(options: { runId?: string }) {
+  if (!options.runId) return null;
   return {
     id: options.runId,
-    session_id: options.sessionId,
   };
 }
 

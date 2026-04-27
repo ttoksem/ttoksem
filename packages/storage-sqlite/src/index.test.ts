@@ -105,7 +105,7 @@ describe("SqliteLedgerStore", () => {
     }
   });
 
-  it("creates and looks up runs by session id", async () => {
+  it("creates and looks up runs by id", async () => {
     const dbPath = testDbPath();
     const store = new SqliteLedgerStore(dbPath);
     try {
@@ -131,18 +131,16 @@ describe("SqliteLedgerStore", () => {
         id: "run_test",
         workspace_id: "ws_test",
         task_id: "task_test",
-        session_id: "session-001",
         source: "test",
         started_at: "2026-04-27T00:00:01.000Z",
-        external_ref_json: { system: "codex", id: "session-001" },
+        external_ref_json: { system: "codex", id: "run-001" },
         now: "2026-04-27T00:00:00.000Z",
       });
 
-      expect(run.session_id).toBe("session-001");
       expect(run.task_id).toBe("task_test");
-      await expect(store.getRunBySessionId("ws_test", "session-001")).resolves.toMatchObject({
+      await expect(store.getRunById("run_test")).resolves.toMatchObject({
         id: "run_test",
-        external_ref_json: { system: "codex", id: "session-001" },
+        external_ref_json: { system: "codex", id: "run-001" },
       });
     } finally {
       await store.close();

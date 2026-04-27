@@ -65,7 +65,7 @@ describe("LedgerService", () => {
     expect(createdUsage[0]?.duration_ms).toBe(2250);
   });
 
-  it("creates a run from session_id and attaches usage to it", async () => {
+  it("creates an explicit run and attaches usage to it", async () => {
     const createdRuns: CreateRunInput[] = [];
     const createdUsage: CreateUsageEventInput[] = [];
     const workspace = workspaceRecord();
@@ -74,7 +74,6 @@ describe("LedgerService", () => {
       store: fakeStore({
         getWorkspaceByKey: async () => workspace,
         getTaskByKey: async () => task,
-        getRunBySessionId: async () => null,
         createRun: async (input) => {
           createdRuns.push(input);
           return runRecord(input);
@@ -98,7 +97,7 @@ describe("LedgerService", () => {
       workspace: { key: workspace.key },
       payload: {
         task: { key: task.key },
-        run: { session_id: "codex-thread-2026-04-27" },
+        run: { id: "run_explicit" },
         usage: {
           provider: "openai",
           model: "codex-chat",
@@ -114,14 +113,13 @@ describe("LedgerService", () => {
     });
 
     expect(createdRuns[0]).toMatchObject({
-      id: "run_test",
+      id: "run_explicit",
       workspace_id: workspace.id,
       task_id: task.id,
-      session_id: "codex-thread-2026-04-27",
       source: "codex-chat",
       started_at: "2026-04-27T00:00:00.000Z",
     });
-    expect(createdUsage[0]?.run_id).toBe("run_test");
+    expect(createdUsage[0]?.run_id).toBe("run_explicit");
   });
 
   it("calculates estimated cost from active pricing rules", async () => {
@@ -207,7 +205,6 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     setActiveTask: async () => workspaceRecord(),
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
-    getRunBySessionId: async () => null,
     upsertPricingSourceSnapshot: async (input) => pricingSourceSnapshot(input),
     listPricingSourceSnapshots: async () => [],
     getPricingSourceSnapshotById: async () => null,
@@ -319,7 +316,6 @@ function runRecord(input: CreateRunInput): RunRecord {
     id: input.id,
     workspace_id: input.workspace_id,
     task_id: input.task_id ?? null,
-    session_id: input.session_id,
     status: "active",
     source: input.source,
     external_ref_json: input.external_ref_json ?? null,

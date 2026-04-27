@@ -29,7 +29,6 @@ export interface CreateRunInput {
   id: string;
   workspace_id: string;
   task_id?: string | null;
-  session_id: string;
   source: string;
   started_at?: string | null;
   external_ref_json?: Record<string, unknown> | null;
@@ -149,7 +148,6 @@ export interface LedgerStore {
 
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRunById(id: string): Promise<RunRecord | null>;
-  getRunBySessionId(workspaceId: string, sessionId: string): Promise<RunRecord | null>;
 
   upsertPricingSourceSnapshot(
     input: UpsertPricingSourceSnapshotInput,

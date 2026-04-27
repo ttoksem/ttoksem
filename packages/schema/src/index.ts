@@ -56,7 +56,6 @@ export const RunRecordSchema = z.object({
   id: z.string().startsWith("run_"),
   workspace_id: z.string().startsWith("ws_"),
   task_id: z.string().startsWith("task_").nullable().optional(),
-  session_id: z.string().min(1),
   status: z.enum(["active", "closed", "archived"]),
   source: z.string(),
   external_ref_json: z.record(z.string(), z.unknown()).nullable().optional(),
@@ -200,7 +199,6 @@ export const AiUsageObservedSchema = z.object({
     run: z
       .object({
         id: z.string().optional(),
-        session_id: z.string().optional(),
         external_ref: ExternalRefSchema.optional(),
       })
       .nullable()

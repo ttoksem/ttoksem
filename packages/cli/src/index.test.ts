@@ -40,8 +40,6 @@ describe("ttoksem CLI workflows", () => {
           "cli-test",
           "--task",
           "implement-cli-workflow-tests",
-          "--session-id",
-          "codex-thread-test",
           "--prompt-text",
           "abcd",
           "--response-text",
@@ -76,12 +74,8 @@ describe("ttoksem CLI workflows", () => {
           assignment_status: "assigned",
           pricing_mode: "unpriced",
         });
-        expect(assigned?.run_id).toMatch(/^run_/);
+        expect(assigned?.run_id).toBeNull();
         expect(tokenEstimationInputMode(assigned?.payload_json)).toBe("estimated");
-        await expect(store.getRunBySessionId(workspace?.id ?? "", "codex-thread-test")).resolves.toMatchObject({
-          id: assigned?.run_id,
-          session_id: "codex-thread-test",
-        });
       } finally {
         await store.close();
       }

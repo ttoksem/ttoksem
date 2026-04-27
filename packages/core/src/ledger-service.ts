@@ -348,26 +348,13 @@ export class LedgerService {
         id: runRef.id,
         workspace_id: workspace.id,
         task_id: task?.id ?? null,
-        session_id: runRef.session_id ?? runRef.id,
         source: message.source.system,
         started_at: message.payload.usage.started_at ?? message.occurred_at,
         external_ref_json: runRef.external_ref ?? null,
         now: this.clock.now(),
       });
     }
-    if (!runRef.session_id) return null;
-    const existing = await this.store.getRunBySessionId(workspace.id, runRef.session_id);
-    if (existing) return existing;
-    return this.store.createRun({
-      id: this.idFactory("run"),
-      workspace_id: workspace.id,
-      task_id: task?.id ?? null,
-      session_id: runRef.session_id,
-      source: message.source.system,
-      started_at: message.payload.usage.started_at ?? message.occurred_at,
-      external_ref_json: runRef.external_ref ?? null,
-      now: this.clock.now(),
-    });
+    return null;
   }
 
   private async priceUsage(
