@@ -614,9 +614,11 @@ function defaultDbPath(): string {
 async function waitForShutdown(close: () => Promise<void>): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let closing = false;
+    const keepAlive = setInterval(() => {}, 2_147_483_647);
     const shutdown = () => {
       if (closing) return;
       closing = true;
+      clearInterval(keepAlive);
       close().then(resolve, reject);
     };
     process.once("SIGINT", shutdown);
