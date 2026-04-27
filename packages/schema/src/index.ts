@@ -171,7 +171,8 @@ export const UsageEventRecordSchema = z.object({
   total_tokens: z.number().int().nullable().optional(),
   observed_cost_nanos: z.number().int().nullable().optional(),
   estimated_cost_nanos: z.number().int().nullable().optional(),
-  currency: nullableString,
+  observed_currency: nullableString,
+  estimated_currency: nullableString,
   accuracy_mode: z.enum(["exact", "estimated", "manual"]),
   pricing_mode: z
     .enum(["provider_reported", "rule_calculated", "manual", "unpriced"])
@@ -196,4 +197,3 @@ export const DailyReportSchema = z.object({
 });
 
 export type DailyReport = z.infer<typeof DailyReportSchema>;
-

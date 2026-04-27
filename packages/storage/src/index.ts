@@ -39,7 +39,8 @@ export interface CreateUsageEventInput {
   total_tokens?: number | null;
   observed_cost_nanos?: number | null;
   estimated_cost_nanos?: number | null;
-  currency?: string | null;
+  observed_currency?: string | null;
+  estimated_currency?: string | null;
   accuracy_mode: "exact" | "estimated" | "manual";
   pricing_mode?: "provider_reported" | "rule_calculated" | "manual" | "unpriced" | null;
   unpriced_reason?: string | null;
@@ -51,7 +52,8 @@ export interface CreateUsageEventInput {
 export interface LedgerReportRow {
   estimated_cost_nanos: number | null;
   observed_cost_nanos: number | null;
-  currency: string | null;
+  observed_currency: string | null;
+  estimated_currency: string | null;
   pricing_mode: string | null;
 }
 
@@ -82,4 +84,3 @@ export interface LedgerStore {
   reportUsageByDay(workspaceId: string, date: string): Promise<LedgerReportRow[]>;
   reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]>;
 }
-

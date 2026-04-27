@@ -91,7 +91,8 @@ export class SqliteLedgerStore implements LedgerStore {
         total_tokens INTEGER,
         observed_cost_nanos INTEGER,
         estimated_cost_nanos INTEGER,
-        currency TEXT,
+        observed_currency TEXT,
+        estimated_currency TEXT,
         accuracy_mode TEXT NOT NULL,
         pricing_mode TEXT,
         unpriced_reason TEXT,
@@ -117,6 +118,21 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0001_initial", new Date().toISOString());
+    addColumnIfMissing(this.db, "usage_events", "observed_currency", "TEXT");
+    addColumnIfMissing(this.db, "usage_events", "estimated_currency", "TEXT");
+    if (hasColumn(this.db, "usage_events", "currency")) {
+      this.db
+        .prepare(
+          `UPDATE usage_events
+           SET observed_currency = COALESCE(observed_currency, currency),
+               estimated_currency = COALESCE(estimated_currency, currency)
+           WHERE currency IS NOT NULL`,
+        )
+        .run();
+    }
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0002_split_usage_event_currency", new Date().toISOString());
   }
 
   async close(): Promise<void> {
@@ -236,12 +252,14 @@ export class SqliteLedgerStore implements LedgerStore {
         `INSERT INTO usage_events (
           id, workspace_id, task_id, run_id, message_id, source, idempotency_key, occurred_at,
           provider, model, usage_kind, input_tokens, output_tokens, total_tokens,
-          observed_cost_nanos, estimated_cost_nanos, currency, accuracy_mode, pricing_mode,
+          observed_cost_nanos, estimated_cost_nanos, observed_currency, estimated_currency,
+          accuracy_mode, pricing_mode,
           unpriced_reason, assignment_status, payload_json, created_at
         ) VALUES (
           @id, @workspace_id, @task_id, @run_id, @message_id, @source, @idempotency_key, @occurred_at,
           @provider, @model, @usage_kind, @input_tokens, @output_tokens, @total_tokens,
-          @observed_cost_nanos, @estimated_cost_nanos, @currency, @accuracy_mode, @pricing_mode,
+          @observed_cost_nanos, @estimated_cost_nanos, @observed_currency, @estimated_currency,
+          @accuracy_mode, @pricing_mode,
           @unpriced_reason, @assignment_status, @payload_json, @now
         )`,
       )
@@ -267,7 +285,7 @@ export class SqliteLedgerStore implements LedgerStore {
   async reportUsageByDay(workspaceId: string, date: string): Promise<LedgerReportRow[]> {
     return this.db
       .prepare(
-        `SELECT estimated_cost_nanos, observed_cost_nanos, currency, pricing_mode
+        `SELECT estimated_cost_nanos, observed_cost_nanos, observed_currency, estimated_currency, pricing_mode
          FROM usage_events
          WHERE workspace_id = ? AND occurred_at >= ? AND occurred_at < ?`,
       )
@@ -277,7 +295,7 @@ export class SqliteLedgerStore implements LedgerStore {
   async reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]> {
     return this.db
       .prepare(
-        `SELECT estimated_cost_nanos, observed_cost_nanos, currency, pricing_mode
+        `SELECT estimated_cost_nanos, observed_cost_nanos, observed_currency, estimated_currency, pricing_mode
          FROM usage_events
          WHERE workspace_id = ? AND task_id = ?`,
       )
@@ -308,3 +326,19 @@ function fromDbJson(row: DbRow): DbRow {
   );
 }
 
+function addColumnIfMissing(
+  db: Database.Database,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string,
+): void {
+  if (hasColumn(db, tableName, columnName)) return;
+  db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`).run();
+}
+
+function hasColumn(db: Database.Database, tableName: string, columnName: string): boolean {
+  return db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all()
+    .some((row) => (row as { name: string }).name === columnName);
+}

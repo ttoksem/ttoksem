@@ -143,8 +143,6 @@ export class LedgerService {
 
     const task = await this.resolveUsageTask(workspace, parsed);
     const usage = parsed.payload.usage;
-    const currency = usage.observed_currency ?? usage.estimated_currency ?? null;
-
     return this.store.createUsageEvent({
       id: this.idFactory("usage"),
       workspace_id: workspace.id,
@@ -162,7 +160,8 @@ export class LedgerService {
       total_tokens: usage.total_tokens ?? null,
       observed_cost_nanos: decimalToNanos(usage.observed_cost),
       estimated_cost_nanos: decimalToNanos(usage.estimated_cost),
-      currency,
+      observed_currency: usage.observed_currency ?? null,
+      estimated_currency: usage.estimated_currency ?? null,
       accuracy_mode: usage.accuracy_mode,
       pricing_mode: usage.pricing_mode ?? inferPricingMode(usage.observed_cost, usage.estimated_cost),
       unpriced_reason: usage.unpriced_reason ?? null,
@@ -202,7 +201,11 @@ export class LedgerService {
 function toDailyReport(workspace: WorkspaceRecord, date: string, rows: LedgerReportRow[]): DailyReport {
   const estimatedTotal = rows.reduce((sum, row) => sum + nanosToDecimal(row.estimated_cost_nanos), 0);
   const observedTotal = rows.reduce((sum, row) => sum + nanosToDecimal(row.observed_cost_nanos), 0);
-  const currencies = new Set(rows.map((row) => row.currency).filter((value): value is string => Boolean(value)));
+  const currencies = new Set(
+    rows
+      .flatMap((row) => [row.observed_currency, row.estimated_currency])
+      .filter((value): value is string => Boolean(value)),
+  );
   return {
     workspace,
     date,
@@ -227,4 +230,3 @@ function defaultIdFactory(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   return `${prefix}_${random.replaceAll("-", "").slice(0, 24)}`;
 }
-
