@@ -1,0 +1,20 @@
+{
+  "name": "ttoksem",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "cli": "pnpm --filter @ttoksem/cli dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
+
