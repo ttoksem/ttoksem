@@ -2,6 +2,7 @@ import {
   AiUsageObservedSchema,
   type AiUsageObserved,
   type DailyReport,
+  type PricingRuleRecord,
   type RunRecord,
   type TaskRecord,
   type UsageEventRecord,
@@ -24,6 +25,24 @@ export interface WorkspaceResolver {
   key?: string;
   id?: string;
   rootPath?: string;
+}
+
+export interface PricingRuleUpsertInput {
+  workspace: WorkspaceResolver;
+  provider: string;
+  model: string;
+  usageKind: string;
+  unitType: string;
+  priceNanosPerUnit: number;
+  currency: string;
+  effectiveFrom?: string;
+  source?: string;
+}
+
+export interface RepriceResult {
+  checked: number;
+  repriced: number;
+  still_unpriced: number;
 }
 
 export class LedgerService {
@@ -125,6 +144,28 @@ export class LedgerService {
     return this.store.listTasks(workspace.id);
   }
 
+  async upsertPricingRule(input: PricingRuleUpsertInput): Promise<PricingRuleRecord> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    return this.store.upsertPricingRule({
+      id: this.idFactory("price"),
+      workspace_id: workspace.id,
+      provider: input.provider,
+      model: input.model,
+      usage_kind: input.usageKind,
+      unit_type: input.unitType,
+      price_nanos_per_unit: input.priceNanosPerUnit,
+      currency: input.currency,
+      effective_from: input.effectiveFrom ?? this.clock.now(),
+      source: input.source ?? "cli",
+      now: this.clock.now(),
+    });
+  }
+
+  async listPricingRules(input: { workspace: WorkspaceResolver }): Promise<PricingRuleRecord[]> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    return this.store.listPricingRules(workspace.id);
+  }
+
   async recordUsage(message: AiUsageObserved): Promise<UsageEventRecord> {
     const parsed = AiUsageObservedSchema.parse(message);
     const workspace = await this.resolveWorkspace({
@@ -145,6 +186,7 @@ export class LedgerService {
     const task = await this.resolveUsageTask(workspace, parsed);
     const run = await this.resolveUsageRun(workspace, task, parsed);
     const usage = parsed.payload.usage;
+    const pricing = await this.priceUsage(workspace.id, parsed);
     return this.store.createUsageEvent({
       id: this.idFactory("usage"),
       workspace_id: workspace.id,
@@ -164,16 +206,42 @@ export class LedgerService {
       output_tokens: usage.output_tokens ?? null,
       total_tokens: usage.total_tokens ?? null,
       observed_cost_nanos: decimalToNanos(usage.observed_cost),
-      estimated_cost_nanos: decimalToNanos(usage.estimated_cost),
+      estimated_cost_nanos: pricing.estimatedCostNanos,
       observed_currency: usage.observed_currency ?? null,
-      estimated_currency: usage.estimated_currency ?? null,
+      estimated_currency: pricing.estimatedCurrency,
       accuracy_mode: usage.accuracy_mode,
-      pricing_mode: usage.pricing_mode ?? inferPricingMode(usage.observed_cost, usage.estimated_cost),
-      unpriced_reason: usage.unpriced_reason ?? null,
+      pricing_mode: pricing.pricingMode,
+      unpriced_reason: pricing.unpricedReason,
       assignment_status: task ? "assigned" : "unassigned",
       payload_json: parsed,
       now: this.clock.now(),
     });
+  }
+
+  async repriceUnpricedUsage(input: {
+    workspace: WorkspaceResolver;
+    limit?: number;
+  }): Promise<RepriceResult> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const events = await this.store.listUnpricedUsageEvents(workspace.id, input.limit ?? 100);
+    let repriced = 0;
+    let stillUnpriced = 0;
+    for (const event of events) {
+      const message = AiUsageObservedSchema.parse(event.payload_json);
+      const pricing = await this.priceUsage(workspace.id, message);
+      if (pricing.pricingMode === "rule_calculated") {
+        await this.store.updateUsageEventPricing(workspace.id, event.id, {
+          estimated_cost_nanos: pricing.estimatedCostNanos,
+          estimated_currency: pricing.estimatedCurrency,
+          pricing_mode: "rule_calculated",
+          unpriced_reason: null,
+        });
+        repriced += 1;
+      } else {
+        stillUnpriced += 1;
+      }
+    }
+    return { checked: events.length, repriced, still_unpriced: stillUnpriced };
   }
 
   async listInbox(input: { workspace: WorkspaceResolver; limit?: number }): Promise<UsageEventRecord[]> {
@@ -255,6 +323,96 @@ export class LedgerService {
       now: this.clock.now(),
     });
   }
+
+  private async priceUsage(
+    workspaceId: string,
+    message: AiUsageObserved,
+  ): Promise<{
+    estimatedCostNanos: number | null;
+    estimatedCurrency: string | null;
+    pricingMode: "provider_reported" | "rule_calculated" | "manual" | "unpriced";
+    unpricedReason: string | null;
+  }> {
+    const usage = message.payload.usage;
+    if (usage.observed_cost != null) {
+      return {
+        estimatedCostNanos: decimalToNanos(usage.estimated_cost),
+        estimatedCurrency: usage.estimated_currency ?? null,
+        pricingMode: "provider_reported",
+        unpricedReason: null,
+      };
+    }
+    if (usage.estimated_cost != null) {
+      return {
+        estimatedCostNanos: decimalToNanos(usage.estimated_cost),
+        estimatedCurrency: usage.estimated_currency ?? null,
+        pricingMode: usage.pricing_mode ?? "manual",
+        unpricedReason: null,
+      };
+    }
+
+    const rules = await this.store.listPricingRulesForUsage({
+      workspaceId,
+      provider: usage.provider,
+      model: usage.model,
+      usageKind: usage.usage_kind,
+      occurredAt: message.occurred_at,
+    });
+    if (rules.length === 0) {
+      return {
+        estimatedCostNanos: null,
+        estimatedCurrency: null,
+        pricingMode: "unpriced",
+        unpricedReason: usage.unpriced_reason ?? "missing_pricing_rule",
+      };
+    }
+
+    let total = 0;
+    const currencies = new Set<string>();
+    let appliedRules = 0;
+    for (const rule of rules) {
+      const quantity = quantityForRule(rule.unit_type, usage);
+      if (quantity == null) continue;
+      total += Math.round(quantity * rule.price_nanos_per_unit);
+      currencies.add(rule.currency);
+      appliedRules += 1;
+    }
+
+    if (appliedRules === 0) {
+      return {
+        estimatedCostNanos: null,
+        estimatedCurrency: null,
+        pricingMode: "unpriced",
+        unpricedReason: "missing_usage_units",
+      };
+    }
+    if (currencies.size !== 1) {
+      return {
+        estimatedCostNanos: null,
+        estimatedCurrency: null,
+        pricingMode: "unpriced",
+        unpricedReason: "mixed_currency",
+      };
+    }
+
+    return {
+      estimatedCostNanos: total,
+      estimatedCurrency: [...currencies][0],
+      pricingMode: "rule_calculated",
+      unpricedReason: null,
+    };
+  }
+}
+
+function quantityForRule(unitType: string, usage: AiUsageObserved["payload"]["usage"]): number | null {
+  if (unitType === "input_token") return usage.input_tokens ?? null;
+  if (unitType === "output_token") return usage.output_tokens ?? null;
+  if (unitType === "total_token") return usage.total_tokens ?? null;
+  if (unitType === "request") return usage.request_count ?? null;
+  if (unitType === "second") return usage.seconds ?? null;
+  if (unitType === "image") return usage.image_count ?? null;
+  if (usage.unit_type === unitType) return usage.unit_count ?? null;
+  return null;
 }
 
 function toDailyReport(workspace: WorkspaceRecord, date: string, rows: LedgerReportRow[]): DailyReport {

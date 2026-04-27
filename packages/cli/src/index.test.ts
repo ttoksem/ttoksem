@@ -74,6 +74,7 @@ describe("ttoksem CLI workflows", () => {
           duration_ms: 2250,
           accuracy_mode: "estimated",
           assignment_status: "assigned",
+          pricing_mode: "unpriced",
         });
         expect(assigned?.run_id).toMatch(/^run_/);
         expect(tokenEstimationInputMode(assigned?.payload_json)).toBe("estimated");
@@ -84,6 +85,61 @@ describe("ttoksem CLI workflows", () => {
       } finally {
         await store.close();
       }
+
+      expect(
+        runCli(
+          [
+            "pricing",
+            "upsert",
+            "--workspace",
+            "cli-test",
+            "--provider",
+            "openai",
+            "--model",
+            "codex-chat",
+            "--usage-kind",
+            "conversation_turn",
+            "--unit-type",
+            "input_token",
+            "--price",
+            "0.10",
+            "--per",
+            "1000000",
+            "--effective-from",
+            "2026-01-01T00:00:00.000Z",
+          ],
+          env,
+        ),
+      ).toContain("pricing openai/codex-chat conversation_turn input_token 100 nanos USD");
+      expect(
+        runCli(
+          [
+            "pricing",
+            "upsert",
+            "--workspace",
+            "cli-test",
+            "--provider",
+            "openai",
+            "--model",
+            "codex-chat",
+            "--usage-kind",
+            "conversation_turn",
+            "--unit-type",
+            "output_token",
+            "--price",
+            "0.50",
+            "--per",
+            "1000000",
+            "--effective-from",
+            "2026-01-01T00:00:00.000Z",
+          ],
+          env,
+        ),
+      ).toContain("pricing openai/codex-chat conversation_turn output_token 500 nanos USD");
+      expect(runCli(["pricing", "list", "--workspace", "cli-test"], env)).toContain("input_token");
+      expect(runCli(["pricing", "reprice", "--workspace", "cli-test"], env)).toContain(
+        "reprice checked=1 repriced=1 still_unpriced=0",
+      );
 
       const unassignedOutput = runCli(
         [

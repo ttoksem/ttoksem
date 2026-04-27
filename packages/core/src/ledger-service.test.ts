@@ -1,5 +1,16 @@
-import type { RunRecord, TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
-import type { CreateRunInput, CreateUsageEventInput, LedgerStore } from "@ttoksem/storage";
+import type {
+  PricingRuleRecord,
+  RunRecord,
+  TaskRecord,
+  UsageEventRecord,
+  WorkspaceRecord,
+} from "@ttoksem/schema";
+import type {
+  CreateRunInput,
+  CreateUsageEventInput,
+  LedgerStore,
+  UpsertPricingRuleInput,
+} from "@ttoksem/storage";
 import { describe, expect, it } from "vitest";
 import { LedgerService } from "./ledger-service.js";
 
@@ -110,6 +121,57 @@ describe("LedgerService", () => {
     });
     expect(createdUsage[0]?.run_id).toBe("run_test");
   });
+
+  it("calculates estimated cost from active pricing rules", async () => {
+    const createdUsage: CreateUsageEventInput[] = [];
+    const workspace = workspaceRecord();
+    const task = taskRecord(workspace.id);
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        getTaskByKey: async () => task,
+        listPricingRulesForUsage: async () => [
+          pricingRule({ unit_type: "input_token", price_nanos_per_unit: 100 }),
+          pricingRule({ unit_type: "output_token", price_nanos_per_unit: 500 }),
+        ],
+        createUsageEvent: async (input) => {
+          createdUsage.push(input);
+          return usageEventRecord(input);
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    await service.recordUsage({
+      schema_version: "1.0",
+      message_id: "msg_test",
+      kind: "ingest_message",
+      type: "ai.usage.observed",
+      occurred_at: "2026-04-27T00:00:00.000Z",
+      source: { system: "codex-chat" },
+      workspace: { key: workspace.key },
+      payload: {
+        task: { key: task.key },
+        usage: {
+          provider: "openai",
+          model: "codex-chat",
+          usage_kind: "conversation_turn",
+          input_tokens: 10,
+          output_tokens: 20,
+          total_tokens: 30,
+          accuracy_mode: "estimated",
+          pricing_mode: "unpriced",
+          unpriced_reason: "missing_pricing_rule",
+        },
+      },
+    });
+
+    expect(createdUsage[0]?.estimated_cost_nanos).toBe(11_000);
+    expect(createdUsage[0]?.estimated_currency).toBe("USD");
+    expect(createdUsage[0]?.pricing_mode).toBe("rule_calculated");
+    expect(createdUsage[0]?.unpriced_reason).toBeNull();
+  });
 });
 
 function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
@@ -131,10 +193,22 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
     getRunBySessionId: async () => null,
+    upsertPricingRule: async (input) => pricingRule(input),
+    listPricingRules: async () => [],
+    listPricingRulesForUsage: async () => [],
     createUsageEvent: async (input) => usageEventRecord(input),
     getUsageEventByIdempotency: async () => null,
     listUsageEventsByAssignment: async () => [],
     moveUsageEventToTask: async () => usageEventRecord(defaultUsageInput()),
+    listUnpricedUsageEvents: async () => [],
+    updateUsageEventPricing: async (_workspaceId, _usageEventId, input) =>
+      usageEventRecord({
+        ...defaultUsageInput(),
+        estimated_cost_nanos: input.estimated_cost_nanos,
+        estimated_currency: input.estimated_currency,
+        pricing_mode: input.pricing_mode,
+        unpriced_reason: input.unpriced_reason,
+      }),
     reportUsageByDay: async () => [],
     reportUsageByTask: async () => [],
     ...overrides,
@@ -177,6 +251,25 @@ function taskRecord(workspaceId: string): TaskRecord {
     started_at: "2026-04-27T00:00:00.000Z",
     closed_at: null,
     updated_at: "2026-04-27T00:00:00.000Z",
+  };
+}
+
+function pricingRule(input: Partial<UpsertPricingRuleInput> = {}): PricingRuleRecord {
+  return {
+    id: input.id ?? "price_test",
+    workspace_id: input.workspace_id ?? "ws_test",
+    provider: input.provider ?? "openai",
+    model: input.model ?? "codex-chat",
+    usage_kind: input.usage_kind ?? "conversation_turn",
+    unit_type: input.unit_type ?? "input_token",
+    price_nanos_per_unit: input.price_nanos_per_unit ?? 1,
+    currency: input.currency ?? "USD",
+    effective_from: input.effective_from ?? "2026-04-27T00:00:00.000Z",
+    effective_to: null,
+    source: input.source ?? "test",
+    metadata_json: input.metadata_json ?? null,
+    created_at: input.now ?? "2026-04-27T00:00:00.000Z",
+    updated_at: input.now ?? "2026-04-27T00:00:00.000Z",
   };
 }
 

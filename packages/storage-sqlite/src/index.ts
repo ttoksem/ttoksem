@@ -1,9 +1,11 @@
 import Database from "better-sqlite3";
 import {
+  PricingRuleRecordSchema,
   RunRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
   WorkspaceRecordSchema,
+  type PricingRuleRecord,
   type RunRecord,
   type TaskRecord,
   type UsageEventRecord,
@@ -16,7 +18,10 @@ import type {
   CreateWorkspaceInput,
   LedgerReportRow,
   LedgerStore,
+  PricingRuleLookupInput,
+  UpsertPricingRuleInput,
   UsageAssignmentStatus,
+  UsagePricingUpdateInput,
 } from "@ttoksem/storage";
 
 export class SqliteLedgerStore implements LedgerStore {
@@ -97,6 +102,30 @@ export class SqliteLedgerStore implements LedgerStore {
       CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
       CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
 
+      CREATE TABLE IF NOT EXISTS pricing_rules (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        usage_kind TEXT NOT NULL,
+        unit_type TEXT NOT NULL,
+        price_nanos_per_unit INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        effective_from TEXT NOT NULL,
+        effective_to TEXT,
+        source TEXT NOT NULL,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS pricing_rules_active_unit_idx
+        ON pricing_rules(workspace_id, provider, model, usage_kind, unit_type)
+        WHERE effective_to IS NULL;
+
+      CREATE INDEX IF NOT EXISTS pricing_rules_lookup_idx
+        ON pricing_rules(workspace_id, provider, model, usage_kind, effective_from);
+
       CREATE TABLE IF NOT EXISTS usage_events (
         id TEXT PRIMARY KEY,
         workspace_id TEXT NOT NULL REFERENCES workspaces(id),
@@ -165,6 +194,9 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0003_create_runs", new Date().toISOString());
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0004_pricing_rules", new Date().toISOString());
   }
 
   async close(): Promise<void> {
@@ -311,6 +343,103 @@ export class SqliteLedgerStore implements LedgerStore {
     );
   }
 
+  async upsertPricingRule(input: UpsertPricingRuleInput): Promise<PricingRuleRecord> {
+    const existing = this.db
+      .prepare(
+        `SELECT *
+         FROM pricing_rules
+         WHERE workspace_id = @workspace_id
+           AND provider = @provider
+           AND model = @model
+           AND usage_kind = @usage_kind
+           AND unit_type = @unit_type
+           AND effective_to IS NULL`,
+      )
+      .get(input);
+    if (existing) {
+      const existingId = (existing as { id: string }).id;
+      this.db
+        .prepare(
+          `UPDATE pricing_rules
+           SET price_nanos_per_unit = @price_nanos_per_unit,
+               currency = @currency,
+               effective_from = @effective_from,
+               source = @source,
+               metadata_json = @metadata_json,
+               updated_at = @now
+           WHERE id = @existingId`,
+        )
+        .run({
+          ...input,
+          existingId,
+          metadata_json: JSON.stringify(input.metadata_json ?? null),
+        });
+      const rule = await this.getPricingRuleById(existingId);
+      if (!rule) throw new Error("Failed to update pricing rule.");
+      return rule;
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO pricing_rules (
+          id, workspace_id, provider, model, usage_kind, unit_type,
+          price_nanos_per_unit, currency, effective_from, effective_to, source,
+          metadata_json, created_at, updated_at
+        ) VALUES (
+          @id, @workspace_id, @provider, @model, @usage_kind, @unit_type,
+          @price_nanos_per_unit, @currency, @effective_from, NULL, @source,
+          @metadata_json, @now, @now
+        )`,
+      )
+      .run({
+        ...input,
+        metadata_json: JSON.stringify(input.metadata_json ?? null),
+      });
+    const rule = await this.getPricingRuleById(input.id);
+    if (!rule) throw new Error("Failed to create pricing rule.");
+    return rule;
+  }
+
+  async listPricingRules(workspaceId: string): Promise<PricingRuleRecord[]> {
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM pricing_rules
+         WHERE workspace_id = ?
+         ORDER BY provider, model, usage_kind, unit_type`,
+      )
+      .all(workspaceId)
+      .map((row) => PricingRuleRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
+  async getPricingRuleById(id: string): Promise<PricingRuleRecord | null> {
+    const row = this.db.prepare("SELECT * FROM pricing_rules WHERE id = ?").get(id);
+    if (!row) return null;
+    return PricingRuleRecordSchema.parse(fromDbJson(row as DbRow));
+  }
+
+  async listPricingRulesForUsage(input: PricingRuleLookupInput): Promise<PricingRuleRecord[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT *
+         FROM pricing_rules
+         WHERE workspace_id = @workspaceId
+           AND provider = @provider
+           AND model IN (@model, '*')
+           AND usage_kind = @usageKind
+           AND effective_from <= @occurredAt
+           AND (effective_to IS NULL OR effective_to > @occurredAt)
+         ORDER BY CASE WHEN model = @model THEN 0 ELSE 1 END, effective_from DESC`,
+      )
+      .all(input)
+      .map((row) => PricingRuleRecordSchema.parse(fromDbJson(row as DbRow)));
+    const selected = new Map<string, PricingRuleRecord>();
+    for (const row of rows) {
+      if (!selected.has(row.unit_type)) selected.set(row.unit_type, row);
+    }
+    return [...selected.values()];
+  }
+
   async createUsageEvent(input: CreateUsageEventInput): Promise<UsageEventRecord> {
     this.db
       .prepare(
@@ -384,6 +513,41 @@ export class SqliteLedgerStore implements LedgerStore {
          WHERE workspace_id = @workspaceId AND id = @usageEventId`,
       )
       .run({ workspaceId, usageEventId, taskId });
+    if (result.changes === 0) throw new Error(`Usage event not found: ${usageEventId}`);
+    const row = this.db
+      .prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
+      .get(workspaceId, usageEventId);
+    return UsageEventRecordSchema.parse(fromDbJson(row as DbRow));
+  }
+
+  async listUnpricedUsageEvents(workspaceId: string, limit: number): Promise<UsageEventRecord[]> {
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM usage_events
+         WHERE workspace_id = ? AND pricing_mode = 'unpriced'
+         ORDER BY occurred_at ASC
+         LIMIT ?`,
+      )
+      .all(workspaceId, limit)
+      .map((row) => UsageEventRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
+  async updateUsageEventPricing(
+    workspaceId: string,
+    usageEventId: string,
+    input: UsagePricingUpdateInput,
+  ): Promise<UsageEventRecord> {
+    const result = this.db
+      .prepare(
+        `UPDATE usage_events
+         SET estimated_cost_nanos = @estimated_cost_nanos,
+             estimated_currency = @estimated_currency,
+             pricing_mode = @pricing_mode,
+             unpriced_reason = @unpriced_reason
+         WHERE workspace_id = @workspaceId AND id = @usageEventId`,
+      )
+      .run({ ...input, workspaceId, usageEventId });
     if (result.changes === 0) throw new Error(`Usage event not found: ${usageEventId}`);
     const row = this.db
       .prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")

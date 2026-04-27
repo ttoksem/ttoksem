@@ -1,4 +1,5 @@
 import type {
+  PricingRuleRecord,
   RunRecord,
   TaskRecord,
   UsageEventRecord,
@@ -31,6 +32,21 @@ export interface CreateRunInput {
   source: string;
   started_at?: string | null;
   external_ref_json?: Record<string, unknown> | null;
+  metadata_json?: Record<string, unknown> | null;
+  now: string;
+}
+
+export interface UpsertPricingRuleInput {
+  id: string;
+  workspace_id: string;
+  provider: string;
+  model: string;
+  usage_kind: string;
+  unit_type: string;
+  price_nanos_per_unit: number;
+  currency: string;
+  effective_from: string;
+  source: string;
   metadata_json?: Record<string, unknown> | null;
   now: string;
 }
@@ -73,6 +89,21 @@ export interface LedgerReportRow {
   pricing_mode: string | null;
 }
 
+export interface PricingRuleLookupInput {
+  workspaceId: string;
+  provider: string;
+  model: string;
+  usageKind: string;
+  occurredAt: string;
+}
+
+export interface UsagePricingUpdateInput {
+  estimated_cost_nanos: number | null;
+  estimated_currency: string | null;
+  pricing_mode: "rule_calculated" | "unpriced";
+  unpriced_reason: string | null;
+}
+
 export type UsageAssignmentStatus = "unassigned" | "suggested" | "assigned" | "dismissed";
 
 export interface LedgerStore {
@@ -97,6 +128,10 @@ export interface LedgerStore {
   getRunById(id: string): Promise<RunRecord | null>;
   getRunBySessionId(workspaceId: string, sessionId: string): Promise<RunRecord | null>;
 
+  upsertPricingRule(input: UpsertPricingRuleInput): Promise<PricingRuleRecord>;
+  listPricingRules(workspaceId: string): Promise<PricingRuleRecord[]>;
+  listPricingRulesForUsage(input: PricingRuleLookupInput): Promise<PricingRuleRecord[]>;
+
   createUsageEvent(input: CreateUsageEventInput): Promise<UsageEventRecord>;
   getUsageEventByIdempotency(
     workspaceId: string,
@@ -112,6 +147,12 @@ export interface LedgerStore {
     workspaceId: string,
     usageEventId: string,
     taskId: string,
+  ): Promise<UsageEventRecord>;
+  listUnpricedUsageEvents(workspaceId: string, limit: number): Promise<UsageEventRecord[]>;
+  updateUsageEventPricing(
+    workspaceId: string,
+    usageEventId: string,
+    input: UsagePricingUpdateInput,
   ): Promise<UsageEventRecord>;
   reportUsageByDay(workspaceId: string, date: string): Promise<LedgerReportRow[]>;
   reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]>;

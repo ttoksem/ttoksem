@@ -23,6 +23,29 @@ The MVP does not perform currency conversion, mixed-currency subtotaling, or pri
 
 In practice, most initial pricing data is expected to be USD. Reports should only show a single currency when all included cost rows use the same currency; mixed or missing currency rows should be surfaced as unknown or warning state instead of silently merged.
 
+## Pricing Rule Policy
+
+Pricing rules convert usage units into estimated cost when provider-observed cost is missing. Rules are scoped to a workspace and matched by:
+
+```text
+provider + model + usage_kind + unit_type + effective time
+```
+
+Supported unit types are intentionally string-based. Common values are:
+
+```text
+input_token
+output_token
+total_token
+request
+second
+image
+```
+
+If a matching rule exists, usage is stored with `pricing_mode=rule_calculated`, `estimated_cost_nanos`, and `estimated_currency`. If no matching rule exists, the usage remains `pricing_mode=unpriced` with `unpriced_reason=missing_pricing_rule`.
+
+Existing unpriced events can be recalculated after rules are added with `pricing reprice`.
+
 ## Usage Timing Policy
 
 `occurred_at` remains the canonical event time for ordering and reporting. Usage records may also carry optional execution timing:
@@ -74,10 +97,15 @@ Use `TTOKSEM_DB=/path/to/ttoksem.db` to select a local SQLite file. Without it, 
 
 ## Current CLI Slice
 
+The pricing numbers below are example rules, not provider price guidance.
+
 ```bash
 pnpm cli workspace init --key ttoksem-dev --root .
 pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
+pnpm cli pricing upsert --workspace ttoksem-dev --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
+pnpm cli pricing upsert --workspace ttoksem-dev --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --session-id codex-thread-2026-04-27 --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev

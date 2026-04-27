@@ -69,6 +69,25 @@ export const RunRecordSchema = z.object({
 
 export type RunRecord = z.infer<typeof RunRecordSchema>;
 
+export const PricingRuleRecordSchema = z.object({
+  id: z.string().startsWith("price_"),
+  workspace_id: z.string().startsWith("ws_"),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  usage_kind: z.string().min(1),
+  unit_type: z.string().min(1),
+  price_nanos_per_unit: z.number().int().nonnegative(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  effective_from: isoUtc,
+  effective_to: nullableString,
+  source: z.string(),
+  metadata_json: z.record(z.string(), z.unknown()).nullable().optional(),
+  created_at: isoUtc,
+  updated_at: isoUtc,
+});
+
+export type PricingRuleRecord = z.infer<typeof PricingRuleRecordSchema>;
+
 export const UsageFieldsSchema = z
   .object({
     provider: z.string().min(1),

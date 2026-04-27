@@ -218,6 +218,85 @@ inbox
     await close();
   });
 
+const pricing = program.command("pricing").description("Pricing commands");
+
+pricing
+  .command("upsert")
+  .requiredOption("--provider <provider>", "provider name")
+  .requiredOption("--model <model>", "model name, or * for wildcard")
+  .requiredOption("--usage-kind <kind>", "usage kind")
+  .requiredOption("--unit-type <unit>", "priced unit type")
+  .requiredOption("--price <amount>", "price amount for the --per unit count")
+  .option("--per <count>", "unit count represented by --price", "1")
+  .option("--currency <code>", "ISO currency code", "USD")
+  .option("--effective-from <iso>", "UTC ISO timestamp when this rule takes effect")
+  .option("--source <source>", "pricing source", "manual")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("Create or update an active pricing rule")
+  .action(async (options: PricingUpsertOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const rule = await service.upsertPricingRule({
+      workspace: workspaceResolver(options),
+      provider: options.provider,
+      model: options.model,
+      usageKind: options.usageKind,
+      unitType: options.unitType,
+      priceNanosPerUnit: priceNanosPerUnit(options.price, options.per),
+      currency: options.currency,
+      effectiveFrom: options.effectiveFrom,
+      source: options.source,
+    });
+    console.log(
+      `pricing ${rule.provider}/${rule.model} ${rule.usage_kind} ${rule.unit_type} ${rule.price_nanos_per_unit} nanos ${rule.currency}`,
+    );
+    await close();
+  });
+
+pricing
+  .command("list")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("List active pricing rules")
+  .action(async (options: { workspace?: string; root?: string }) => {
+    const { service, close } = await makeService();
+    await service.init();
+    for (const rule of await service.listPricingRules({ workspace: workspaceResolver(options) })) {
+      console.log(
+        [
+          rule.provider,
+          rule.model,
+          rule.usage_kind,
+          rule.unit_type,
+          `nanos=${rule.price_nanos_per_unit}`,
+          rule.currency,
+          `from=${rule.effective_from}`,
+        ].join("\t"),
+      );
+    }
+    await close();
+  });
+
+pricing
+  .command("reprice")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--limit <count>", "maximum unpriced events to check", "100")
+  .description("Apply active pricing rules to unpriced usage events")
+  .action(async (options: PricingRepriceOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await service.repriceUnpricedUsage({
+      workspace: workspaceResolver(options),
+      limit: parsePositiveInteger(options.limit),
+    });
+    console.log(
+      `reprice checked=${result.checked} repriced=${result.repriced} still_unpriced=${result.still_unpriced}`,
+    );
+    await close();
+  });
+
 const report = program.command("report").description("Report commands");
 
 report
@@ -298,6 +377,26 @@ interface CodexTurnOptions {
 }
 
 interface InboxListOptions {
+  workspace?: string;
+  root?: string;
+  limit: string;
+}
+
+interface PricingUpsertOptions {
+  provider: string;
+  model: string;
+  usageKind: string;
+  unitType: string;
+  price: string;
+  per: string;
+  currency: string;
+  effectiveFrom?: string;
+  source: string;
+  workspace?: string;
+  root?: string;
+}
+
+interface PricingRepriceOptions {
   workspace?: string;
   root?: string;
   limit: string;
@@ -591,6 +690,15 @@ function parseOptionalNumber(value: string | undefined): number | null {
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
   return parsed;
+}
+
+function priceNanosPerUnit(price: string, per: string): number {
+  const amount = parseOptionalNumber(price);
+  const unitCount = parseOptionalNumber(per);
+  if (amount == null || unitCount == null || unitCount <= 0) {
+    throw new Error(`Invalid price/per: ${price}/${per}`);
+  }
+  return Math.round((amount / unitCount) * 1_000_000_000);
 }
 
 function slug(value: string): string {
