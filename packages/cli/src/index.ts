@@ -31,7 +31,7 @@ workspace
   .action(async (options: { key?: string; name?: string; root?: string }) => {
     const { service, close } = await makeService();
     await service.init();
-    const rootPath = resolve(options.root ?? process.cwd());
+    const rootPath = resolveFromCommandCwd(options.root ?? ".");
     const key = options.key ?? slug(rootPath.split("/").filter(Boolean).at(-1) ?? "workspace");
     const workspace = await service.createWorkspace({ key, name: options.name, rootPath });
     console.log(`workspace ${workspace.key} ${workspace.id}`);
@@ -45,7 +45,7 @@ workspace
   .action(async (options: { root?: string }) => {
     const { service, close } = await makeService();
     await service.init();
-    const current = await service.currentWorkspace(resolve(options.root ?? process.cwd()));
+    const current = await service.currentWorkspace(resolveFromCommandCwd(options.root ?? "."));
     console.log(JSON.stringify(current, null, 2));
     await close();
   });
@@ -191,7 +191,9 @@ async function makeService(): Promise<{
   dbPath: string;
   close: () => Promise<void>;
 }> {
-  const dbPath = resolve(process.env.TTOKSEM_DB ?? ".ttoksem/ttoksem.db");
+  const dbPath = process.env.TTOKSEM_DB
+    ? resolve(process.env.TTOKSEM_DB)
+    : resolveFromCommandCwd(".ttoksem/ttoksem.db");
   mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteLedgerStore(dbPath);
   return {
@@ -204,8 +206,12 @@ async function makeService(): Promise<{
 function workspaceResolver(options: { workspace?: string; root?: string }) {
   return {
     key: options.workspace,
-    rootPath: options.root ? resolve(options.root) : resolve(process.cwd()),
+    rootPath: resolveFromCommandCwd(options.root ?? "."),
   };
+}
+
+function resolveFromCommandCwd(path: string): string {
+  return resolve(process.env.INIT_CWD ?? process.cwd(), path);
 }
 
 function readMessage(path: string): AiUsageObserved {
@@ -286,4 +292,3 @@ function slug(value: string): string {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
