@@ -142,6 +142,27 @@ describe("SqliteLedgerStore", () => {
         id: "run_test",
         external_ref_json: { system: "codex", id: "run-001" },
       });
+
+      const reconciled = await store.updateRunTiming({
+        workspaceId: "ws_test",
+        runId: "run_test",
+        startedAt: "2026-04-27T00:00:00.500Z",
+        endedAt: "2026-04-27T00:00:05.000Z",
+        now: "2026-04-27T00:00:06.000Z",
+      });
+      expect(reconciled.started_at).toBe("2026-04-27T00:00:00.500Z");
+      expect(reconciled.ended_at).toBe("2026-04-27T00:00:05.000Z");
+      expect(reconciled.updated_at).toBe("2026-04-27T00:00:06.000Z");
+
+      const unchanged = await store.updateRunTiming({
+        workspaceId: "ws_test",
+        runId: "run_test",
+        startedAt: "2026-04-27T00:00:02.000Z",
+        endedAt: "2026-04-27T00:00:04.000Z",
+        now: "2026-04-27T00:00:07.000Z",
+      });
+      expect(unchanged.started_at).toBe("2026-04-27T00:00:00.500Z");
+      expect(unchanged.ended_at).toBe("2026-04-27T00:00:05.000Z");
     } finally {
       await store.close();
       rmSync(dbPath, { force: true });
@@ -305,6 +326,9 @@ describe("SqliteLedgerStore", () => {
         source: "test",
         idempotency_key: "test:dashboard",
         occurred_at: "2026-04-27T00:00:00.000Z",
+        started_at: "2026-04-27T00:00:01.000Z",
+        ended_at: "2026-04-27T00:00:03.500Z",
+        duration_ms: 2500,
         provider: "openai",
         model: "codex-chat",
         usage_kind: "conversation_turn",
@@ -420,6 +444,10 @@ describe("SqliteLedgerStore", () => {
         {
           run_id: "run_test",
           run_status: "active",
+          started_at: "2026-04-27T00:00:00.000Z",
+          ended_at: "2026-04-27T00:00:03.500Z",
+          span_duration_ms: 3500,
+          event_duration_ms: 2500,
           event_count: 1,
           token_count: 30,
           estimated_cost_nanos: 1500,

@@ -45,6 +45,14 @@ export interface CreateRunInput {
   now: string;
 }
 
+export interface UpdateRunTimingInput {
+  workspaceId: string;
+  runId: string;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  now: string;
+}
+
 export interface CreateAccessKeyInput {
   id: string;
   name: string;
@@ -207,6 +215,8 @@ export interface DashboardTaskRunRow {
   run_source: string | null;
   started_at: string | null;
   ended_at: string | null;
+  span_duration_ms: number | null;
+  event_duration_ms: number | null;
   event_count: number;
   token_count: number;
   estimated_cost_nanos: number;
@@ -257,6 +267,7 @@ export interface LedgerStore {
 
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRunById(id: string): Promise<RunRecord | null>;
+  updateRunTiming(input: UpdateRunTimingInput): Promise<RunRecord>;
 
   createAccessKey(input: CreateAccessKeyInput): Promise<AccessKeyRecord>;
   listAccessKeys(): Promise<AccessKeyRecord[]>;

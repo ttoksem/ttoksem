@@ -1502,6 +1502,19 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     function elapsedTimeCell(baseValue, value) {
       return '<span class="elapsed-time" title="' + text(shortDate(value)) + '">' + text(elapsedFrom(baseValue, value)) + '</span>';
     }
+    function durationText(value) {
+      const ms = Number(value || 0);
+      if (!Number.isFinite(ms) || ms <= 0) return "-";
+      const totalSeconds = Math.round(ms / 1000);
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      if (days > 0) return days + "d " + hours + "h";
+      if (hours > 0) return hours + "h " + String(minutes).padStart(2, "0") + "m";
+      if (minutes > 0) return minutes + "m " + String(seconds).padStart(2, "0") + "s";
+      return seconds + "s";
+    }
     function runStartTime(row) {
       return row.started_at || row.first_activity_at || row.last_activity_at;
     }
@@ -2138,7 +2151,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         const share = percent(tokens, totalTokens);
         const label = truncate(runDisplayId(row.run_id), 24);
         const value = integer(tokens) + " tokens · " + share + "%";
-        const title = String(row.run_id || "no-run") + " · " + plural(row.event_count, "event") + " · " + integer(tokens) + " tokens · " + money(row.estimated_total, currency);
+        const title = String(row.run_id || "no-run") + " · " + plural(row.event_count, "event") + " · " + integer(tokens) + " tokens · span " + durationText(row.span_duration_ms) + " · active " + durationText(row.event_duration_ms) + " · " + money(row.estimated_total, currency);
         return '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end"><title>' + text(title) + '</title>' + text(label) + '</text>' +
           '<rect class="chart-bar" x="' + left + '" y="' + y + '" width="' + barWidth.toFixed(1) + '" height="16" rx="5"><title>' + text(title) + '</title></rect>' +
           '<text class="chart-value" x="' + (left + plotWidth + 10) + '" y="' + (y + 14) + '">' + text(value) + '</text>';
@@ -2233,10 +2246,11 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         return;
       }
       const currency = detailCurrency(data);
-      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 230px;">Run</th><th style="width: 90px;">Status</th><th style="width: 120px;">Source</th><th class="num" style="width: 88px;">Events</th><th class="num" style="width: 98px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 158px;">Started</th><th style="width: 96px;">First +</th><th style="width: 96px;">Last +</th></tr></thead><tbody>' +
+      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 210px;">Run</th><th style="width: 88px;">Status</th><th style="width: 108px;">Source</th><th class="num" style="width: 78px;">Events</th><th class="num" style="width: 92px;">Tokens</th><th class="num" style="width: 120px;">Cost</th><th style="width: 150px;">Started</th><th style="width: 88px;">Span</th><th style="width: 88px;">Active</th><th style="width: 82px;">First +</th><th style="width: 82px;">Last +</th></tr></thead><tbody>' +
         data.runs.map((row) => {
           const start = runStartTime(row);
-          return '<tr><td>' + runLabel(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td title="' + text(row.source) + '">' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, currency)) + '</td><td class="date-cell" title="' + text(shortDate(start)) + '">' + text(shortDate(start)) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.first_activity_at) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.last_activity_at) + '</td></tr>';
+          const runTitle = 'span ' + durationText(row.span_duration_ms) + ' · active ' + durationText(row.event_duration_ms) + ' · ended ' + shortDate(row.ended_at);
+          return '<tr><td>' + runLabel(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td title="' + text(row.source) + '">' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, currency)) + '</td><td class="date-cell" title="' + text(shortDate(start)) + '">' + text(shortDate(start)) + '</td><td class="date-cell" title="' + text(runTitle) + '">' + text(durationText(row.span_duration_ms)) + '</td><td class="date-cell" title="' + text(runTitle) + '">' + text(durationText(row.event_duration_ms)) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.first_activity_at) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.last_activity_at) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }

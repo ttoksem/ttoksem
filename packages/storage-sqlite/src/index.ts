@@ -551,6 +551,42 @@ export class SqliteLedgerStore implements LedgerStore {
     return parseRun(this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id));
   }
 
+  async updateRunTiming(input: {
+    workspaceId: string;
+    runId: string;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    now: string;
+  }): Promise<RunRecord> {
+    const result = this.db
+      .prepare(
+        `UPDATE runs
+         SET started_at = CASE
+               WHEN @startedAt IS NULL THEN started_at
+               WHEN started_at IS NULL OR @startedAt < started_at THEN @startedAt
+               ELSE started_at
+             END,
+             ended_at = CASE
+               WHEN @endedAt IS NULL THEN ended_at
+               WHEN ended_at IS NULL OR @endedAt > ended_at THEN @endedAt
+               ELSE ended_at
+             END,
+             updated_at = @now
+         WHERE workspace_id = @workspaceId AND id = @runId`,
+      )
+      .run({
+        workspaceId: input.workspaceId,
+        runId: input.runId,
+        startedAt: input.startedAt ?? null,
+        endedAt: input.endedAt ?? null,
+        now: input.now,
+      });
+    if (result.changes === 0) throw new Error(`Run not found: ${input.runId}`);
+    const run = await this.getRunById(input.runId);
+    if (!run) throw new Error(`Run not found: ${input.runId}`);
+    return run;
+  }
+
   async createAccessKey(input: CreateAccessKeyInput): Promise<AccessKeyRecord> {
     this.db
       .prepare(
@@ -1339,22 +1375,50 @@ export class SqliteLedgerStore implements LedgerStore {
   ): Promise<DashboardTaskRunRow[]> {
     return this.db
       .prepare(
-        `SELECT
-           u.run_id AS run_id,
-           r.status AS run_status,
-           r.source AS run_source,
-           r.started_at AS started_at,
-           r.ended_at AS ended_at,
-           COUNT(*) AS event_count,
-           COALESCE(SUM(COALESCE(u.total_tokens, COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0))), 0) AS token_count,
-           COALESCE(SUM(COALESCE(u.estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos,
-           MIN(u.occurred_at) AS first_activity_at,
-           MAX(u.occurred_at) AS last_activity_at
-         FROM usage_events u
-         LEFT JOIN runs r ON r.id = u.run_id
-         WHERE u.workspace_id = ? AND u.task_id = ?
-         GROUP BY u.run_id, r.status, r.source, r.started_at, r.ended_at
-         ORDER BY last_activity_at DESC, event_count DESC
+        `WITH grouped_runs AS (
+           SELECT
+             u.run_id AS run_id,
+             r.status AS run_status,
+             r.source AS run_source,
+             COALESCE(r.started_at, MIN(COALESCE(u.started_at, u.occurred_at))) AS started_at,
+             COALESCE(r.ended_at, MAX(COALESCE(u.ended_at, u.started_at, u.occurred_at))) AS ended_at,
+             COUNT(*) AS event_count,
+             COALESCE(SUM(COALESCE(u.total_tokens, COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0))), 0) AS token_count,
+             COALESCE(SUM(COALESCE(u.estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos,
+             SUM(
+               CASE
+                 WHEN u.duration_ms IS NOT NULL THEN u.duration_ms
+                 WHEN u.started_at IS NOT NULL AND u.ended_at IS NOT NULL THEN
+                   CAST(ROUND((julianday(u.ended_at) - julianday(u.started_at)) * 86400000.0) AS INTEGER)
+                 ELSE NULL
+               END
+             ) AS event_duration_ms,
+             MIN(u.occurred_at) AS first_activity_at,
+             MAX(u.occurred_at) AS last_activity_at
+           FROM usage_events u
+           LEFT JOIN runs r ON r.id = u.run_id
+           WHERE u.workspace_id = ? AND u.task_id = ?
+           GROUP BY u.run_id, r.status, r.source, r.started_at, r.ended_at
+         )
+         SELECT
+           run_id,
+           run_status,
+           run_source,
+           started_at,
+           ended_at,
+           CASE
+             WHEN started_at IS NOT NULL AND ended_at IS NOT NULL THEN
+               MAX(0, CAST(ROUND((julianday(ended_at) - julianday(started_at)) * 86400000.0) AS INTEGER))
+             ELSE NULL
+           END AS span_duration_ms,
+           event_duration_ms,
+           event_count,
+           token_count,
+           estimated_cost_nanos,
+           first_activity_at,
+           last_activity_at
+         FROM grouped_runs
+         ORDER BY COALESCE(ended_at, last_activity_at) DESC, event_count DESC
          LIMIT ?`,
       )
       .all(workspaceId, taskId, limit) as DashboardTaskRunRow[];

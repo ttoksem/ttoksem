@@ -18,7 +18,7 @@ The product records AI usage and cost. It does not execute LLM calls.
 
 The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, and a local read-only Hono dashboard.
 
-Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, inbox grouping, suggested assignment workflows, and provider SDK collectors with exact usage capture.
+Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, MCP-facing assignment workflows, and provider SDK collectors with exact usage capture.
 
 ## Currency Policy
 
@@ -80,7 +80,7 @@ Stored timestamps are UTC ISO text. The browser dashboard keeps those source val
 
 A run groups multiple usage events from one explicit request, job, or attempt.
 
-Inputs do not require a session concept. For ordinary one-off usage records, omit run fields and record the usage directly to a task or inbox. When an integration needs to group several measurable events, pass an explicit `run_id`; the core service creates or reuses that run and stores its `run_id` on each usage event.
+Inputs do not require a session concept. For ordinary one-off usage records, omit run fields and record the usage directly to a task or inbox. When an integration needs to group several measurable events, pass an explicit `run_id`; the core service creates or reuses that run, stores its `run_id` on each usage event, and reconciles the run's start/end range from attached usage.
 
 Usage can still be recorded without a run. That keeps one-off/manual logging simple while allowing RAG, API, and tool workflows to group related events when the caller has enough context.
 

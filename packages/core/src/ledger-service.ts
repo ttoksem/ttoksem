@@ -188,6 +188,8 @@ export interface DashboardTaskDetailData {
     source: string;
     started_at: string | null;
     ended_at: string | null;
+    span_duration_ms: number | null;
+    event_duration_ms: number | null;
     event_count: number;
     token_count: number;
     estimated_total: number;
@@ -496,7 +498,8 @@ export class LedgerService {
     const run = await this.resolveUsageRun(workspace, task, parsed);
     const usage = parsed.payload.usage;
     const pricing = await this.priceUsage(workspace.id, parsed);
-    return this.store.createUsageEvent({
+    const durationMs = usage.duration_ms ?? inferDurationMs(usage.started_at, usage.ended_at);
+    const event = await this.store.createUsageEvent({
       id: this.idFactory("usage"),
       workspace_id: workspace.id,
       task_id: task?.id ?? null,
@@ -507,7 +510,7 @@ export class LedgerService {
       occurred_at: parsed.occurred_at,
       started_at: usage.started_at ?? null,
       ended_at: usage.ended_at ?? null,
-      duration_ms: usage.duration_ms ?? inferDurationMs(usage.started_at, usage.ended_at),
+      duration_ms: durationMs,
       provider: usage.provider,
       model: usage.model,
       usage_kind: usage.usage_kind,
@@ -528,6 +531,16 @@ export class LedgerService {
       payload_json: parsed,
       now: this.clock.now(),
     });
+    if (run) {
+      await this.store.updateRunTiming({
+        workspaceId: workspace.id,
+        runId: run.id,
+        startedAt: runStartAt(parsed),
+        endedAt: runEndAt(parsed, durationMs),
+        now: this.clock.now(),
+      });
+    }
+    return event;
   }
 
   async repriceUnpricedUsage(input: {
@@ -856,6 +869,8 @@ export class LedgerService {
         source: run.run_source ?? "unknown",
         started_at: run.started_at,
         ended_at: run.ended_at,
+        span_duration_ms: run.span_duration_ms ?? null,
+        event_duration_ms: run.event_duration_ms ?? null,
         event_count: run.event_count,
         token_count: run.token_count,
         estimated_total: nanosToDecimal(run.estimated_cost_nanos),
@@ -1606,6 +1621,25 @@ function inferDurationMs(
   if (!startedAt || !endedAt) return null;
   const duration = Date.parse(endedAt) - Date.parse(startedAt);
   return Number.isFinite(duration) && duration >= 0 ? duration : null;
+}
+
+function runStartAt(message: AiUsageObserved): string {
+  return message.payload.usage.started_at ?? message.occurred_at;
+}
+
+function runEndAt(message: AiUsageObserved, durationMs: number | null): string {
+  const usage = message.payload.usage;
+  if (usage.ended_at) return usage.ended_at;
+  if (usage.started_at && durationMs != null) {
+    return addMsToIso(usage.started_at, durationMs) ?? message.occurred_at;
+  }
+  return message.occurred_at;
+}
+
+function addMsToIso(value: string, durationMs: number): string | null {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return null;
+  return new Date(time + durationMs).toISOString();
 }
 
 function defaultIdFactory(prefix: string): string {

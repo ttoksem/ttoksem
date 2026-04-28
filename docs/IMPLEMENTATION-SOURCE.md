@@ -42,8 +42,6 @@ Deferred from the design source:
 - correction/adjustment records
 - write-capable HTTP API
 - write-scope enforcement for future HTTP/MCP mutation routes
-- inbox grouping and suggested assignment actions
-- run reconciliation and duration aggregation
 - provider SDK collectors with exact provider usage capture
 - cross-currency reporting
 - prompt redaction automation

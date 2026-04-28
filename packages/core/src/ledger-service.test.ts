@@ -70,6 +70,13 @@ describe("LedgerService", () => {
   it("creates an explicit run and attaches usage to it", async () => {
     const createdRuns: CreateRunInput[] = [];
     const createdUsage: CreateUsageEventInput[] = [];
+    const runTimingUpdates: Array<{
+      workspaceId: string;
+      runId: string;
+      startedAt?: string | null;
+      endedAt?: string | null;
+      now: string;
+    }> = [];
     const workspace = workspaceRecord();
     const task = taskRecord(workspace.id);
     const service = new LedgerService({
@@ -83,6 +90,17 @@ describe("LedgerService", () => {
         createUsageEvent: async (input) => {
           createdUsage.push(input);
           return usageEventRecord(input);
+        },
+        updateRunTiming: async (input) => {
+          runTimingUpdates.push(input);
+          return runRecord({
+            id: input.runId,
+            workspace_id: input.workspaceId,
+            task_id: task.id,
+            source: "codex-chat",
+            started_at: input.startedAt ?? null,
+            now: input.now,
+          });
         },
       }),
       clock: { now: () => "2026-04-27T00:00:10.000Z" },
@@ -104,6 +122,8 @@ describe("LedgerService", () => {
           provider: "openai",
           model: "codex-chat",
           usage_kind: "conversation_turn",
+          started_at: "2026-04-27T00:00:01.000Z",
+          ended_at: "2026-04-27T00:00:04.000Z",
           input_tokens: 10,
           output_tokens: 20,
           total_tokens: 30,
@@ -119,9 +139,15 @@ describe("LedgerService", () => {
       workspace_id: workspace.id,
       task_id: task.id,
       source: "codex-chat",
-      started_at: "2026-04-27T00:00:00.000Z",
+      started_at: "2026-04-27T00:00:01.000Z",
     });
     expect(createdUsage[0]?.run_id).toBe("run_explicit");
+    expect(runTimingUpdates[0]).toMatchObject({
+      workspaceId: workspace.id,
+      runId: "run_explicit",
+      startedAt: "2026-04-27T00:00:01.000Z",
+      endedAt: "2026-04-27T00:00:04.000Z",
+    });
   });
 
   it("calculates estimated cost from active pricing rules", async () => {
@@ -411,6 +437,16 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     setActiveTask: async () => workspaceRecord(),
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
+    updateRunTiming: async (input) => ({
+      ...runRecord({
+        id: input.runId,
+        workspace_id: input.workspaceId,
+        source: "test",
+        started_at: input.startedAt ?? null,
+        now: input.now,
+      }),
+      ended_at: input.endedAt ?? null,
+    }),
     createAccessKey: async (input) => accessKeyRecord(input),
     listAccessKeys: async () => [],
     getAccessKeyById: async () => null,
