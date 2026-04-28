@@ -440,6 +440,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       fill: #9eb8db;
       opacity: .95;
     }
+    .chart-bar.hot {
+      fill: var(--bad);
+      opacity: .88;
+    }
     .chart-line {
       fill: none;
       stroke: var(--accent);
@@ -760,6 +764,39 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     .driver-meta span {
       white-space: nowrap;
     }
+    .task-driver-report {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+    }
+    .task-driver-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+    .top-event-list {
+      display: grid;
+      gap: 10px;
+    }
+    .token-split {
+      display: flex;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8ecf4;
+    }
+    .token-split span {
+      display: block;
+      min-width: 0;
+      height: 100%;
+    }
+    .token-split .input {
+      background: #9eb8db;
+    }
+    .token-split .output {
+      background: var(--accent);
+    }
     .mini-table {
       display: grid;
       gap: 8px;
@@ -795,8 +832,11 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     #taskTable table {
       min-width: 680px;
     }
-    #recentTable table, #taskEventTable table {
+    #recentTable table {
       min-width: 1320px;
+    }
+    #taskEventTable table {
+      min-width: 1520px;
     }
     #recentTable {
       overflow-x: auto;
@@ -1254,6 +1294,16 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       <span class="pill" id="taskStatus"></span>
     </div>
     <section class="grid kpis" id="taskKpis"></section>
+    <section class="panel" style="margin-top: 12px;">
+      <div class="panel-head"><h2>Token Driver Report</h2><span class="pill" id="taskDriverCount"></span></div>
+      <div class="task-driver-report">
+        <div class="task-driver-grid">
+          <div id="taskRunDriverChart"></div>
+          <div id="taskEventTimelineChart"></div>
+        </div>
+        <div id="taskTopEvents"></div>
+      </div>
+    </section>
     <section class="grid detail-layout">
       <div class="stack">
         <section class="panel">
@@ -1999,6 +2049,138 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       document.getElementById("taskSignalPanel").innerHTML =
         '<div class="attention-list"><div class="attention-row"><span class="pill ' + pillClass(insight.status) + '">' + text(insight.status) + '</span><div><div class="attention-title">' + text(insight.insight) + '</div><div class="attention-body">' + text(promptSnippet(insight.latest_prompt) || "No prompt snapshot.") + '</div><div class="signal-list">' + renderSignals(insight.signals) + '</div></div><div class="attention-metric">' + text(money(insight.estimated_total, detailCurrency(data))) + '</div></div></div>';
     }
+    function eventTokenTotal(row) {
+      return Number(row.total_tokens || row.tokens || 0);
+    }
+    function runDisplayId(value) {
+      return value || "no-run";
+    }
+    function tokenSplit(row) {
+      const input = Number(row.input_tokens || 0);
+      const output = Number(row.output_tokens || 0);
+      const total = Math.max(eventTokenTotal(row), input + output, 1);
+      const inputWidth = Math.round((input / total) * 100);
+      const outputWidth = Math.round((output / total) * 100);
+      if (inputWidth + outputWidth === 0) return '<div class="token-split"><span class="input" style="width:100%"></span></div>';
+      return '<div class="token-split" title="' + text(integer(input) + " input / " + integer(output) + " output") + '"><span class="input" style="width:' + inputWidth + '%"></span><span class="output" style="width:' + outputWidth + '%"></span></div>';
+    }
+    function renderTaskRunDriverChart(data) {
+      const rows = (data.runs || [])
+        .slice()
+        .sort((a, b) => Number(b.token_count || 0) - Number(a.token_count || 0) || Number(b.event_count || 0) - Number(a.event_count || 0))
+        .slice(0, 8);
+      if (rows.length === 0) {
+        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Run token drivers</div><div class="chart-sub">Run-level token concentration</div></div></div><div class="chart-empty">No run data.</div></div>';
+      }
+      const currency = detailCurrency(data);
+      const totalTokens = rows.reduce((sum, row) => sum + Number(row.token_count || 0), 0);
+      const maxTokens = Math.max(...rows.map((row) => Number(row.token_count || 0)), 1);
+      const width = 700;
+      const rowHeight = 32;
+      const top = 18;
+      const left = 170;
+      const right = 150;
+      const height = top + rows.length * rowHeight + 20;
+      const plotWidth = width - left - right;
+      const grid = [0.25, 0.5, 0.75, 1].map((ratio) => {
+        const x = left + plotWidth * ratio;
+        return '<line class="chart-grid" x1="' + x.toFixed(1) + '" y1="' + top + '" x2="' + x.toFixed(1) + '" y2="' + (height - 14) + '"></line>';
+      }).join("");
+      const bars = rows.map((row, index) => {
+        const tokens = Number(row.token_count || 0);
+        const y = top + index * rowHeight + 6;
+        const barWidth = Math.max(3, (tokens / maxTokens) * plotWidth);
+        const share = percent(tokens, totalTokens);
+        const label = truncate(runDisplayId(row.run_id), 24);
+        const value = integer(tokens) + " tokens · " + share + "%";
+        const title = runDisplayId(row.run_id) + " · " + plural(row.event_count, "event") + " · " + integer(tokens) + " tokens · " + money(row.estimated_total, currency);
+        return '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end">' + text(label) + '</text>' +
+          '<rect class="chart-bar" x="' + left + '" y="' + y + '" width="' + barWidth.toFixed(1) + '" height="16" rx="5"><title>' + text(title) + '</title></rect>' +
+          '<text class="chart-value" x="' + (left + plotWidth + 10) + '" y="' + (y + 14) + '">' + text(value) + '</text>';
+      }).join("");
+      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Run token drivers</div><div class="chart-sub">Largest runs by token volume</div></div><div class="chart-total">' + text(integer(totalTokens)) + '</div></div>' +
+        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Run token driver chart">' + grid + bars + '</svg></div>';
+    }
+    function renderTaskEventTimelineChart(data) {
+      const events = (data.recent || [])
+        .filter((row) => row.occurred_at)
+        .slice()
+        .sort((a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)))
+        .slice(-28);
+      if (events.length === 0) {
+        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Event token timeline</div><div class="chart-sub">Event-level token spikes</div></div></div><div class="chart-empty">No usage events.</div></div>';
+      }
+      const currency = detailCurrency(data);
+      const maxTokens = Math.max(...events.map(eventTokenTotal), 1);
+      const totalTokens = events.reduce((sum, row) => sum + eventTokenTotal(row), 0);
+      const width = 700;
+      const height = 220;
+      const left = 38;
+      const top = 18;
+      const right = 18;
+      const bottom = 36;
+      const plotWidth = width - left - right;
+      const plotHeight = height - top - bottom;
+      const barWidth = Math.max(5, Math.min(22, plotWidth / Math.max(events.length, 1) * 0.52));
+      const step = events.length > 1 ? plotWidth / (events.length - 1) : 0;
+      const xAt = (index) => events.length === 1 ? left + plotWidth / 2 : left + index * step;
+      const yFor = (tokens) => top + plotHeight - (tokens / maxTokens) * plotHeight;
+      const maxEventTokens = Math.max(...events.map(eventTokenTotal), 0);
+      const grid = [0, 0.5, 1].map((ratio) => {
+        const y = top + plotHeight - plotHeight * ratio;
+        return '<line class="chart-grid" x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (width - right) + '" y2="' + y.toFixed(1) + '"></line>';
+      }).join("");
+      const bars = events.map((row, index) => {
+        const tokens = eventTokenTotal(row);
+        const x = xAt(index) - barWidth / 2;
+        const y = yFor(tokens);
+        const barHeight = Math.max(2, top + plotHeight - y);
+        const output = Math.min(Number(row.output_tokens || 0), tokens);
+        const outputHeight = tokens > 0 ? Math.max(0, (output / tokens) * barHeight) : 0;
+        const title = shortDate(row.occurred_at) + " · " + integer(tokens) + " tokens · " + runDisplayId(row.run_id) + " · " + money(row.cost, row.currency || currency);
+        const tone = tokens === maxEventTokens && maxEventTokens > 0 ? " hot" : " soft";
+        const base = '<rect class="chart-bar' + tone + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + barHeight.toFixed(1) + '" rx="4"><title>' + text(title) + '</title></rect>';
+        const outputBar = outputHeight > 1
+          ? '<rect class="chart-bar" x="' + x.toFixed(1) + '" y="' + (top + plotHeight - outputHeight).toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + outputHeight.toFixed(1) + '" rx="4"><title>' + text(integer(output) + " output tokens") + '</title></rect>'
+          : "";
+        return base + outputBar;
+      }).join("");
+      const sameDay = events.every((row) => String(row.occurred_at).slice(0, 10) === String(events[0].occurred_at).slice(0, 10));
+      const labels = events.map((row, index) => {
+        if (events.length > 10 && index % Math.ceil(events.length / 7) !== 0) return "";
+        return '<text class="chart-axis" x="' + xAt(index).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle">' + text(bucketHourLabel(String(row.occurred_at).slice(0, 13), sameDay)) + '</text>';
+      }).join("");
+      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Event token timeline</div><div class="chart-sub">Recent events by total tokens, output overlay</div></div><div class="chart-total">' + text(integer(totalTokens)) + '</div></div>' +
+        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Event token timeline chart">' +
+          grid +
+          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + 4) + '" text-anchor="end">' + text(integer(maxTokens)) + '</text>' +
+          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + plotHeight + 4) + '" text-anchor="end">0</text>' +
+          bars + labels +
+        '</svg><div class="chart-legend"><span class="legend-item"><span class="legend-swatch soft"></span>input/other tokens</span><span class="legend-item"><span class="legend-swatch"></span>output tokens</span><span class="legend-item"><span class="legend-swatch" style="background: var(--bad);"></span>largest event</span></div></div>';
+    }
+    function renderTaskTopEvents(data) {
+      const rows = (data.recent || [])
+        .slice()
+        .sort((a, b) => eventTokenTotal(b) - eventTokenTotal(a) || String(b.occurred_at).localeCompare(String(a.occurred_at)))
+        .slice(0, 5);
+      if (rows.length === 0) return '<div class="chart-panel"><div class="chart-empty">No high-token events.</div></div>';
+      const currency = detailCurrency(data);
+      const maxTokens = Math.max(...rows.map(eventTokenTotal), 1);
+      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Top token events</div><div class="chart-sub">Largest recent events with run and prompt context</div></div></div><div class="top-event-list">' +
+        rows.map((row) => {
+          const tokens = eventTokenTotal(row);
+          const width = percent(tokens, maxTokens);
+          const prompt = promptSnippet(row.prompt);
+          return '<div class="driver-row"><div class="driver-top"><div><strong>' + text(shortDate(row.occurred_at)) + '</strong><div class="driver-meta"><span>' + text(runDisplayId(row.run_id)) + '</span><span>' + text(row.provider_model) + '</span><span>' + text(row.usage_kind) + '</span><span>' + text(integer(row.input_tokens || 0) + " in / " + integer(row.output_tokens || 0) + " out") + '</span></div></div><div class="driver-cost">' + text(integer(tokens) + " tokens") + '</div></div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div>' + tokenSplit(row) + '<div class="driver-meta"><span>' + text(money(row.cost, row.currency || currency)) + '</span><span>' + text(row.confidence) + '</span>' + (prompt ? '<span>' + text(prompt) + '</span>' : "") + '</div></div>';
+        }).join("") +
+        '</div></div>';
+    }
+    function renderTaskDriverReport(data) {
+      document.getElementById("taskDriverCount").textContent = integer((data.runs || []).length) + " runs / " + integer((data.recent || []).length) + " events";
+      document.getElementById("taskRunDriverChart").innerHTML = renderTaskRunDriverChart(data);
+      document.getElementById("taskEventTimelineChart").innerHTML = renderTaskEventTimelineChart(data);
+      document.getElementById("taskTopEvents").innerHTML = renderTaskTopEvents(data);
+    }
     function renderTaskRuns(data) {
       document.getElementById("taskRunCount").textContent = integer(data.runs.length);
       if (data.runs.length === 0) {
@@ -2017,8 +2199,8 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         return;
       }
       const currency = detailCurrency(data);
-      document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 230px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th style="width: 130px;">Assignment</th><th>Prompt</th></tr></thead><tbody>' +
-        data.recent.map((row) => '<tr><td class="date-cell">' + text(shortDate(row.occurred_at)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td><span class="pill ' + pillClass(row.assignment_status) + '">' + text(row.assignment_status) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
+      document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 170px;">Run</th><th style="width: 220px;">Provider</th><th style="width: 145px;">Kind</th><th class="num" style="width: 82px;">Input</th><th class="num" style="width: 82px;">Output</th><th class="num" style="width: 92px;">Total</th><th class="num" style="width: 118px;">Cost</th><th style="width: 124px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
+        data.recent.map((row) => '<tr><td class="date-cell">' + text(shortDate(row.occurred_at)) + '</td><td>' + text(runDisplayId(row.run_id)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.input_tokens || 0) + '</td><td class="num">' + integer(row.output_tokens || 0) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
         '</tbody></table>';
     }
     async function loadTaskDetail(workspace, taskKey) {
@@ -2038,6 +2220,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       document.getElementById("taskMeta").textContent = data.task.key + description + " · created " + shortDate(data.task.created_at);
       document.getElementById("taskStatus").textContent = data.task.status;
       renderTaskKpis(data);
+      renderTaskDriverReport(data);
       renderTaskSignal(data);
       renderTaskRuns(data);
       renderTaskEvents(data);

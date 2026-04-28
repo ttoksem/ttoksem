@@ -134,8 +134,12 @@ export interface DashboardData {
     occurred_at: string;
     task_key: string;
     task_name: string;
+    run_id: string;
     provider_model: string;
     usage_kind: string;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
     tokens: number;
     cost: number;
     currency: string | null;
@@ -883,8 +887,12 @@ function toDashboardRecent(event: DashboardRecentUsageRow): DashboardData["recen
     occurred_at: event.occurred_at,
     task_key: event.task_key ?? "unassigned",
     task_name: event.task_name ?? "Unassigned",
+    run_id: event.run_id ?? "no-run",
     provider_model: `${event.provider}/${event.model}`,
     usage_kind: event.usage_kind,
+    input_tokens: event.input_tokens ?? 0,
+    output_tokens: event.output_tokens ?? 0,
+    total_tokens: event.total_tokens ?? event.token_count,
     tokens: event.token_count,
     cost: nanosToDecimal(event.estimated_cost_nanos ?? event.observed_cost_nanos),
     currency: event.estimated_currency ?? event.observed_currency,

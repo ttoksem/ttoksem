@@ -176,9 +176,13 @@ export interface DashboardRecentUsageRow {
   occurred_at: string;
   task_key: string | null;
   task_name: string | null;
+  run_id: string | null;
   provider: string;
   model: string;
   usage_kind: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
   token_count: number;
   estimated_cost_nanos: number | null;
   observed_cost_nanos: number | null;
