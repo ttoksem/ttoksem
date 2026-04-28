@@ -16,9 +16,9 @@ The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, and write-capable HTTP API routes.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, prompt snapshot retention/redaction modes, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, and write-capable HTTP API routes.
 
-Post-MVP scope includes cross-currency reporting, redaction policy automation, and optional deferred MCP-facing assignment workflows.
+Post-MVP scope includes optional deferred MCP-facing assignment workflows.
 
 ## Currency Policy
 
@@ -27,7 +27,7 @@ ttoksem keeps currency as provenance on cost-bearing usage records:
 - `observed_currency`: currency reported with provider-observed cost
 - `estimated_currency`: currency used for rule-estimated cost
 
-The MVP does not perform currency conversion, mixed-currency subtotaling, or primary-currency report selection.
+ttoksem does not perform currency conversion, mixed-currency subtotaling, or primary-currency report selection.
 
 In practice, most initial pricing data is expected to be USD. Reports should only show a single currency when all included cost rows use the same currency; mixed or missing currency rows should be surfaced as unknown or warning state instead of silently merged.
 
@@ -75,6 +75,21 @@ Existing `unpriced` and `rule_calculated` events can be migrated against the cur
 If `started_at` and `ended_at` are present but `duration_ms` is omitted, the core service derives `duration_ms`. Missing timing fields are allowed so lightweight/manual logging stays simple.
 
 Stored timestamps are UTC ISO text. The browser dashboard keeps those source values unchanged and applies the client's timezone only while rendering timestamps and daily dashboard buckets. CLI reports remain UTC-oriented unless a later reporting command adds an explicit timezone option.
+
+## Prompt Retention Policy
+
+`usage chat-turn` and `usage import-codex-sessions` default to `--prompt-mode full` for local Codex logging, because the task and run reports use prompt samples to explain where tokens were spent.
+
+Sensitive workspaces can choose stricter modes:
+
+```text
+full      store prompt/response text as provided
+redacted  store text after built-in secret, token, private-key, and email redaction
+hash      store SHA-256 hashes in prompt_snapshot, not text
+none      store no prompt_snapshot text or hash
+```
+
+Redacted mode also avoids copying the original Codex `user_message` into source context, so dashboard and inbox samples read from the sanitized prompt text. This redaction is a local safety net, not a DLP product; do not intentionally paste secrets into usage records.
 
 ## Run Policy
 

@@ -235,7 +235,7 @@ usage
   .option("--response-text <text>", "full assistant response text to store")
   .option("--prompt-file <path>", "file containing full prompt text to store")
   .option("--response-file <path>", "file containing full assistant response text to store")
-  .option("--prompt-mode <mode>", "prompt snapshot mode", "full")
+  .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: CodexTurnOptions) => {
     const { service, close } = await makeService();
@@ -257,7 +257,7 @@ usage
   .option("--thread-id <id>", "only import one Codex thread id")
   .option("--since <iso>", "only import token_count events at or after this UTC timestamp")
   .option("--model <model>", "model label when session metadata does not include one", "codex-app")
-  .option("--prompt-mode <mode>", "prompt snapshot mode: full or none", "full")
+  .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
   .action(async (options: CodexSessionImportOptions) => {
@@ -744,6 +744,8 @@ interface UsageMoveOptions {
   root?: string;
 }
 
+type PromptMode = "none" | "hash" | "redacted" | "full";
+
 interface CodexTurnOptions {
   workspace: string;
   task?: string;
@@ -760,7 +762,7 @@ interface CodexTurnOptions {
   responseText?: string;
   promptFile?: string;
   responseFile?: string;
-  promptMode: "none" | "hash" | "redacted" | "full";
+  promptMode: PromptMode;
   idempotencyKey?: string;
 }
 
@@ -773,7 +775,7 @@ interface CodexSessionImportOptions {
   threadId?: string;
   since?: string;
   model: string;
-  promptMode: "full" | "none";
+  promptMode: PromptMode;
   limit?: string;
   dryRun?: boolean;
 }
@@ -1000,8 +1002,14 @@ function buildUsageMessage(options: UsageAddOptions): AiUsageObserved {
 }
 
 function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
+  const promptMode = parsePromptMode(options.promptMode);
   const promptText = readOptionalText(options.promptText, options.promptFile);
   const responseText = readOptionalText(options.responseText, options.responseFile);
+  const promptSnapshot = buildPromptSnapshot({
+    mode: promptMode,
+    promptText,
+    responseText,
+  });
   const inputEstimate = estimateTokenCount({
     tokens: options.inputTokens,
     chars: options.inputChars,
@@ -1051,15 +1059,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
         pricing_mode: "unpriced",
         unpriced_reason: "missing_pricing_rule",
       },
-      prompt_snapshot:
-        options.promptMode === "none"
-          ? { mode: "none" }
-          : {
-              mode: options.promptMode,
-              prompt_text: options.promptMode === "full" ? promptText : null,
-              response_text: options.promptMode === "full" ? responseText : null,
-              retention_note: "User requested full prompt/response retention for Codex chat logging.",
-            },
+      prompt_snapshot: promptSnapshot.snapshot,
       source_context: {
         tool: "codex-chat",
         capture_mode: "assistant_estimated_turn",
@@ -1179,10 +1179,10 @@ function buildCodexSessionUsageMessage(input: {
   const model = input.session.model ?? input.options.model;
   const idempotencyKey = `codex-session:${input.session.id}:${input.timestamp}`;
   const runId = codexPromptRunId(input.session, input.promptGroup);
-  const promptSnapshot =
-    input.options.promptMode === "full" && input.promptGroup.promptText
-      ? { mode: "full", prompt_text: input.promptGroup.promptText }
-      : { mode: "none" };
+  const promptSnapshot = buildPromptSnapshot({
+    mode: input.options.promptMode,
+    promptText: input.promptGroup.promptText,
+  });
   return AiUsageObservedSchema.parse({
     schema_version: "1.0",
     message_id: `msg_${slug(idempotencyKey)}`,
@@ -1218,11 +1218,11 @@ function buildCodexSessionUsageMessage(input: {
         unpriced_reason: "missing_pricing_rule",
         raw_usage: input.usage.raw,
       },
-      prompt_snapshot: promptSnapshot,
+      prompt_snapshot: promptSnapshot.snapshot,
       source_context: {
         tool: "codex",
         capture_mode: "codex_session_token_count",
-        user_message: input.promptGroup.promptText,
+        user_message: promptSnapshot.contextPromptText,
         prompt_group: {
           index: input.promptGroup.index,
           prompt_hash: input.promptGroup.promptHash,
@@ -1322,8 +1322,127 @@ function tokenUsage(raw: Record<string, unknown>): CodexTokenUsage | null {
   return { inputTokens, outputTokens, cachedInputTokens, reasoningOutputTokens, totalTokens, raw };
 }
 
-function parsePromptMode(value: string): "full" | "none" {
-  if (value === "full" || value === "none") return value;
+function buildPromptSnapshot(input: {
+  mode: PromptMode;
+  promptText: string | null;
+  responseText?: string | null;
+}): { snapshot: Record<string, unknown>; contextPromptText: string | null } {
+  if (input.mode === "none") {
+    return { snapshot: { mode: "none" }, contextPromptText: null };
+  }
+  if (input.promptText == null && input.responseText == null) {
+    return { snapshot: { mode: "none" }, contextPromptText: null };
+  }
+  if (input.mode === "full") {
+    return {
+      snapshot: {
+        mode: "full",
+        prompt_text: input.promptText,
+        response_text: input.responseText ?? null,
+        retention_note: "User requested full prompt/response retention for Codex chat logging.",
+      },
+      contextPromptText: input.promptText,
+    };
+  }
+  if (input.mode === "hash") {
+    return {
+      snapshot: {
+        mode: "hash",
+        prompt_hash: input.promptText ? hashText(input.promptText) : null,
+        response_hash: input.responseText ? hashText(input.responseText) : null,
+        retention_note: "Only SHA-256 prompt/response hashes are retained; text is not stored.",
+      },
+      contextPromptText: null,
+    };
+  }
+
+  const promptRedaction = input.promptText ? redactText(input.promptText) : null;
+  const responseRedaction = input.responseText ? redactText(input.responseText) : null;
+  const categories = [
+    ...new Set([...(promptRedaction?.categories ?? []), ...(responseRedaction?.categories ?? [])]),
+  ];
+  const matchCount = (promptRedaction?.matchCount ?? 0) + (responseRedaction?.matchCount ?? 0);
+  return {
+    snapshot: {
+      mode: "redacted",
+      prompt_text: promptRedaction?.text ?? null,
+      response_text: responseRedaction?.text ?? null,
+      redaction: {
+        method: "built_in_patterns",
+        redacted: matchCount > 0,
+        match_count: matchCount,
+        categories,
+      },
+      retention_note: "Prompt/response text is retained after built-in secret redaction.",
+    },
+    contextPromptText: promptRedaction?.text ?? null,
+  };
+}
+
+interface RedactionRule {
+  category: string;
+  pattern: RegExp;
+  replacement: string | ((match: string, matches: unknown[]) => string);
+}
+
+const REDACTION_RULES: RedactionRule[] = [
+  {
+    category: "private_key",
+    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    replacement: "[REDACTED:private-key]",
+  },
+  {
+    category: "credential_assignment",
+    pattern:
+      /\b([A-Z0-9_.-]*(?:API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|TOKEN|SECRET|PASSWORD|AUTHORIZATION)[A-Z0-9_.-]*)(\s*[:=]\s*)(["']?)([^\s"',;]{8,})\3/gi,
+    replacement: (_match, matches) =>
+      `${String(matches[1] ?? "")}${String(matches[2] ?? "")}${String(
+        matches[3] ?? "",
+      )}[REDACTED:credential]${String(matches[3] ?? "")}`,
+  },
+  {
+    category: "bearer_token",
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/g,
+    replacement: "Bearer [REDACTED:token]",
+  },
+  {
+    category: "openai_api_key",
+    pattern: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
+    replacement: "[REDACTED:api-key]",
+  },
+  {
+    category: "ttoksem_token",
+    pattern: /\bttok_[A-Za-z0-9_-]{16,}\b/g,
+    replacement: "[REDACTED:ttoksem-token]",
+  },
+  {
+    category: "email",
+    pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+    replacement: "[REDACTED:email]",
+  },
+];
+
+function redactText(value: string): { text: string; matchCount: number; categories: string[] } {
+  let text = value;
+  let matchCount = 0;
+  const categories = new Set<string>();
+  for (const rule of REDACTION_RULES) {
+    text = text.replace(rule.pattern, (...matches: unknown[]) => {
+      matchCount += 1;
+      categories.add(rule.category);
+      const fullMatch = String(matches[0] ?? "");
+      return typeof rule.replacement === "string" ? rule.replacement : rule.replacement(fullMatch, matches);
+    });
+  }
+  return { text, matchCount, categories: [...categories] };
+}
+
+function hashText(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function parsePromptMode(value: string): PromptMode {
+  if (value === "full" || value === "none" || value === "redacted" || value === "hash") return value;
   throw new Error(`Invalid prompt mode: ${value}`);
 }
 

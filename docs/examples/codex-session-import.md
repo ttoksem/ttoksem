@@ -79,7 +79,29 @@ That makes repeated imports safe. Existing records are reused instead of duplica
 
 ## What Gets Stored
 
-Imported session records store usage measurements and the latest user prompt that preceded the token count. By default the importer sets `prompt_snapshot.mode = "full"` when a local `user_message` is available. Use `--prompt-mode none` only when prompt retention is not appropriate for that workspace.
+Imported session records store usage measurements and the latest user prompt that preceded the token count. By default the importer sets `prompt_snapshot.mode = "full"` when a local `user_message` is available.
+
+Use a stricter prompt mode when the workspace may contain secrets or unrelated private content:
+
+```bash
+pnpm cli usage import-codex-sessions \
+  --workspace ttoksem-dev \
+  --task <current-goal-task-key> \
+  --thread-id <codex-thread-id> \
+  --model gpt-5.5 \
+  --prompt-mode redacted
+```
+
+Available modes:
+
+```text
+full      stores the latest local user_message as prompt_snapshot.prompt_text
+redacted  stores built-in redacted prompt text and keeps source_context.user_message redacted too
+hash      stores a SHA-256 prompt_hash under prompt_snapshot, not prompt text
+none      stores no prompt_snapshot text or hash
+```
+
+The built-in redaction pass masks obvious API keys, bearer tokens, ttoksem access tokens, private-key blocks, credential assignment values, and email addresses. It is intended as a local safety net, not a replacement for deciding whether a workspace should retain prompts at all.
 
 Run grouping is prompt-based inside the Codex session. A Codex session can contain many user requests, and each request can produce several `token_count` events while tools, edits, tests, and final responses happen. ttoksem treats the latest `user_message` group as the run boundary, not the whole Codex session. That keeps the task detail report useful for finding which prompt/request consumed the most tokens.
 

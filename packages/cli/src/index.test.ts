@@ -603,6 +603,163 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("redacts or hashes prompt snapshots without keeping original secrets", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-redaction-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      expect(runCli(["workspace", "init", "--key", "redaction-test", "--root", tempDir], env)).toContain(
+        "workspace redaction-test",
+      );
+      runCli(
+        [
+          "usage",
+          "chat-turn",
+          "--workspace",
+          "redaction-test",
+          "--prompt-mode",
+          "redacted",
+          "--prompt-text",
+          "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456 send mail to owner@example.com",
+          "--response-text",
+          "Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456",
+          "--input-chars",
+          "80",
+          "--output-chars",
+          "60",
+          "--idempotency-key",
+          "redacted-turn-001",
+        ],
+        env,
+      );
+      runCli(
+        [
+          "usage",
+          "chat-turn",
+          "--workspace",
+          "redaction-test",
+          "--prompt-mode",
+          "hash",
+          "--prompt-text",
+          "keep only a hash of this prompt",
+          "--input-chars",
+          "40",
+          "--idempotency-key",
+          "hashed-turn-001",
+        ],
+        env,
+      );
+
+      const codexSessionFile = join(tempDir, "codex-session-redacted.jsonl");
+      writeFileSync(
+        codexSessionFile,
+        [
+          JSON.stringify({
+            timestamp: "2026-04-27T01:00:00.000Z",
+            type: "session_meta",
+            payload: {
+              id: "019dd187-51b3-7e02-b2dc-311a2b503dd3",
+              cwd: tempDir,
+              originator: "Codex Desktop",
+              source: "vscode",
+              model_provider: "openai",
+              model: "gpt-5.5",
+            },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-27T01:00:01.000Z",
+            type: "event_msg",
+            payload: {
+              type: "user_message",
+              message: "use token ttok_abcdefghijklmnopqrstuvwxyz123456 and ping dev@example.com",
+            },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-27T01:00:03.000Z",
+            type: "event_msg",
+            payload: {
+              type: "token_count",
+              info: {
+                last_token_usage: {
+                  input_tokens: 20,
+                  output_tokens: 5,
+                  total_tokens: 25,
+                },
+              },
+            },
+          }),
+        ].join("\n"),
+      );
+      expect(
+        runCli(
+          [
+            "usage",
+            "import-codex-sessions",
+            "--workspace",
+            "redaction-test",
+            "--file",
+            codexSessionFile,
+            "--prompt-mode",
+            "redacted",
+          ],
+          env,
+        ),
+      ).toContain("codex import scanned_files=1 token_events=1 imported=1 skipped=0 errors=0");
+
+      const store = new SqliteLedgerStore(dbPath);
+      try {
+        await store.migrate();
+        const workspace = await store.getWorkspaceByKey("redaction-test");
+        const redacted = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-chat",
+          "redacted-turn-001",
+        );
+        const redactedSnapshot = promptSnapshot(redacted?.payload_json);
+        expect(redactedSnapshot).toMatchObject({
+          mode: "redacted",
+          prompt_text: "OPENAI_API_KEY=[REDACTED:credential] send mail to [REDACTED:email]",
+          response_text: "Authorization: Bearer [REDACTED:token]",
+        });
+        expect(redactedSnapshot?.prompt_text).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456");
+        expect(redactedSnapshot?.prompt_text).not.toContain("owner@example.com");
+        expect(asRecord(redactedSnapshot?.redaction)).toMatchObject({
+          method: "built_in_patterns",
+          redacted: true,
+        });
+
+        const hashed = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-chat",
+          "hashed-turn-001",
+        );
+        const hashedSnapshot = promptSnapshot(hashed?.payload_json);
+        expect(hashedSnapshot?.mode).toBe("hash");
+        expect(hashedSnapshot?.prompt_hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+        expect(hashedSnapshot?.prompt_text).toBeUndefined();
+
+        const imported = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-session",
+          "codex-session:019dd187-51b3-7e02-b2dc-311a2b503dd3:2026-04-27T01:00:03.000Z",
+        );
+        const importedSnapshot = promptSnapshot(imported?.payload_json);
+        expect(importedSnapshot).toMatchObject({
+          mode: "redacted",
+          prompt_text: "use token [REDACTED:ttoksem-token] and ping [REDACTED:email]",
+        });
+        expect(importedSnapshot?.prompt_text).not.toContain("ttok_abcdefghijklmnopqrstuvwxyz123456");
+        expect(sourceContext(imported?.payload_json)?.user_message).toBe(
+          "use token [REDACTED:ttoksem-token] and ping [REDACTED:email]",
+        );
+      } finally {
+        await store.close();
+      }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 15_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {
@@ -630,6 +787,11 @@ function codexRawUsage(payload: Record<string, unknown> | undefined): Record<str
 function promptSnapshot(payload: Record<string, unknown> | undefined): Record<string, unknown> | null {
   const payloadObject = asRecord(payload?.payload);
   return asRecord(payloadObject?.prompt_snapshot);
+}
+
+function sourceContext(payload: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  const payloadObject = asRecord(payload?.payload);
+  return asRecord(payloadObject?.source_context);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

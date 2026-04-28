@@ -22,6 +22,7 @@ Implemented first slice:
 - `usage codex-turn`
 - `usage import-codex-sessions`
 - `usage openai-response`
+- prompt snapshot retention/redaction modes
 - `usage move`
 - `inbox list`
 - `auth key create/list/revoke`
@@ -44,5 +45,9 @@ Deferred from the design source:
 - correction/adjustment records
 - write-scope enforcement for future HTTP MCP mutation routes
 - provider SDK collectors beyond OpenAI response usage capture
-- cross-currency reporting
-- prompt redaction automation
+
+Explicitly out of scope unless the product policy changes:
+
+- currency conversion
+- mixed-currency subtotaling
+- primary-currency report selection
