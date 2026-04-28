@@ -1099,18 +1099,23 @@ export class SqliteLedgerStore implements LedgerStore {
       .all(workspaceId, taskId) as DashboardBreakdownRow[];
   }
 
-  async listDashboardDailyCosts(workspaceId: string, limit: number): Promise<DashboardDailyCostRow[]> {
+  async listDashboardDailyCosts(
+    workspaceId: string,
+    limit: number,
+    timeZoneOffsetMinutes?: number,
+  ): Promise<DashboardDailyCostRow[]> {
+    const dayExpression = dashboardDayExpression(timeZoneOffsetMinutes);
     return this.db
       .prepare(
         `SELECT *
          FROM (
            SELECT
-             substr(occurred_at, 1, 10) AS date,
+             ${dayExpression} AS date,
              COUNT(*) AS event_count,
              COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
            FROM usage_events
            WHERE workspace_id = ?
-           GROUP BY substr(occurred_at, 1, 10)
+           GROUP BY ${dayExpression}
            ORDER BY date DESC
            LIMIT ?
          )
@@ -1123,18 +1128,20 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     taskId: string,
     limit: number,
+    timeZoneOffsetMinutes?: number,
   ): Promise<DashboardDailyCostRow[]> {
+    const dayExpression = dashboardDayExpression(timeZoneOffsetMinutes);
     return this.db
       .prepare(
         `SELECT *
          FROM (
            SELECT
-             substr(occurred_at, 1, 10) AS date,
+             ${dayExpression} AS date,
              COUNT(*) AS event_count,
              COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
            FROM usage_events
            WHERE workspace_id = ? AND task_id = ?
-           GROUP BY substr(occurred_at, 1, 10)
+           GROUP BY ${dayExpression}
            ORDER BY date DESC
            LIMIT ?
          )
@@ -1173,6 +1180,15 @@ export class SqliteLedgerStore implements LedgerStore {
 }
 
 type DbRow = Record<string, unknown>;
+
+function dashboardDayExpression(timeZoneOffsetMinutes: number | undefined): string {
+  if (timeZoneOffsetMinutes == null || timeZoneOffsetMinutes === 0) return "substr(occurred_at, 1, 10)";
+  if (!Number.isInteger(timeZoneOffsetMinutes) || Math.abs(timeZoneOffsetMinutes) > 14 * 60) {
+    throw new Error(`Invalid timezone offset minutes: ${timeZoneOffsetMinutes}`);
+  }
+  const sign = timeZoneOffsetMinutes >= 0 ? "+" : "-";
+  return `date(occurred_at, '${sign}${Math.abs(timeZoneOffsetMinutes)} minutes')`;
+}
 
 function parseWorkspace(row: unknown): WorkspaceRecord | null {
   if (!row) return null;

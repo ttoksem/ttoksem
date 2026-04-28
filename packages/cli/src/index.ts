@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
-import { LedgerService } from "@ttoksem/core";
+import { LedgerService, type DashboardData } from "@ttoksem/core";
 import { AiUsageObservedSchema, type AiUsageObserved, type UsageEventRecord } from "@ttoksem/schema";
 import { serveDashboard } from "@ttoksem/server";
 import { SqliteLedgerStore } from "@ttoksem/storage-sqlite";
@@ -227,6 +228,29 @@ usage
     await close();
   });
 
+usage
+  .command("import-codex-sessions")
+  .description("Import Codex App/CLI session token_count events")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--task <key>", "task key to attach imported usage")
+  .option("--file <path>", "single Codex session JSONL file")
+  .option("--sessions-dir <path>", "Codex sessions directory; defaults to $CODEX_HOME/sessions")
+  .option("--codex-home <path>", "Codex home directory", process.env.CODEX_HOME ?? "~/.codex")
+  .option("--thread-id <id>", "only import one Codex thread id")
+  .option("--since <iso>", "only import token_count events at or after this UTC timestamp")
+  .option("--model <model>", "model label when session metadata does not include one", "codex-app")
+  .option("--limit <count>", "maximum token_count events to import")
+  .option("--dry-run", "scan and print counts without writing usage events")
+  .action(async (options: CodexSessionImportOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await importCodexSessions(service, options);
+    console.log(
+      `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+    );
+    await close();
+  });
+
 const inbox = program.command("inbox").description("Inbox commands");
 
 inbox
@@ -253,6 +277,27 @@ inbox
   });
 
 const dashboard = program.command("dashboard").description("Dashboard commands");
+
+dashboard
+  .command("overview")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--root <path>", "workspace root path")
+  .option("--task-limit <count>", "maximum task rows", "8")
+  .option("--recent-limit <count>", "maximum recent usage rows", "8")
+  .option("--day-limit <count>", "maximum daily buckets", "14")
+  .description("Show a report-style workspace dashboard")
+  .action(async (options: DashboardOverviewOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const data = await service.dashboard({
+      workspace: workspaceResolver(options),
+      taskLimit: parsePositiveInteger(options.taskLimit),
+      recentLimit: parsePositiveInteger(options.recentLimit),
+      dayLimit: parsePositiveInteger(options.dayLimit),
+    });
+    printDashboardOverview(data);
+    await close();
+  });
 
 dashboard
   .command("serve")
@@ -559,6 +604,19 @@ interface CodexTurnOptions {
   idempotencyKey?: string;
 }
 
+interface CodexSessionImportOptions {
+  workspace: string;
+  task?: string;
+  file?: string;
+  sessionsDir?: string;
+  codexHome: string;
+  threadId?: string;
+  since?: string;
+  model: string;
+  limit?: string;
+  dryRun?: boolean;
+}
+
 interface InboxListOptions {
   workspace?: string;
   root?: string;
@@ -569,6 +627,14 @@ interface DashboardServeOptions {
   workspace: string;
   host: string;
   port: string;
+}
+
+interface DashboardOverviewOptions {
+  workspace?: string;
+  root?: string;
+  taskLimit: string;
+  recentLimit: string;
+  dayLimit: string;
 }
 
 interface TaskUpdateOptions {
@@ -798,6 +864,212 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
   });
 }
 
+async function importCodexSessions(
+  service: LedgerService,
+  options: CodexSessionImportOptions,
+): Promise<{ scannedFiles: number; tokenEvents: number; imported: number; skipped: number; errors: number }> {
+  const files = codexSessionFiles(options);
+  const limit = options.limit ? parsePositiveInteger(options.limit) : Number.POSITIVE_INFINITY;
+  const sinceMs = options.since ? Date.parse(options.since) : null;
+  if (sinceMs != null && !Number.isFinite(sinceMs)) throw new Error(`Invalid --since timestamp: ${options.since}`);
+  let tokenEvents = 0;
+  let imported = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const file of files) {
+    const messages = parseCodexSessionUsage(file, options, sinceMs);
+    for (const message of messages) {
+      if (tokenEvents >= limit) return { scannedFiles: files.length, tokenEvents, imported, skipped, errors };
+      tokenEvents += 1;
+      if (options.dryRun) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        await service.recordUsage(message);
+        imported += 1;
+      } catch (error) {
+        errors += 1;
+        console.error(`codex import error file=${file} idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  return { scannedFiles: files.length, tokenEvents, imported, skipped, errors };
+}
+
+function codexSessionFiles(options: CodexSessionImportOptions): string[] {
+  if (options.file) return [resolveImportPath(options.file)];
+  const codexHome = resolveImportPath(options.codexHome);
+  const sessionsDir = options.sessionsDir ? resolveImportPath(options.sessionsDir) : join(codexHome, "sessions");
+  if (!existsSync(sessionsDir)) throw new Error(`Codex sessions directory not found: ${sessionsDir}`);
+  return collectJsonlFiles(sessionsDir).sort();
+}
+
+function collectJsonlFiles(root: string): string[] {
+  const stat = statSync(root);
+  if (stat.isFile()) return root.endsWith(".jsonl") ? [root] : [];
+  const files: string[] = [];
+  for (const entry of readdirSync(root)) {
+    const path = join(root, entry);
+    const entryStat = statSync(path);
+    if (entryStat.isDirectory()) {
+      files.push(...collectJsonlFiles(path));
+    } else if (entryStat.isFile() && path.endsWith(".jsonl")) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+function parseCodexSessionUsage(
+  file: string,
+  options: CodexSessionImportOptions,
+  sinceMs: number | null,
+): AiUsageObserved[] {
+  let session: CodexSessionMeta | null = null;
+  const messages: AiUsageObserved[] = [];
+  const lines = readFileSync(file, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const item = JSON.parse(line) as unknown;
+    if (!isRecord(item)) continue;
+    const payload = isRecord(item.payload) ? item.payload : null;
+    if (item.type === "session_meta" && payload) {
+      session = codexSessionMeta(payload, file);
+      continue;
+    }
+    if (!session || item.type !== "event_msg" || !payload || payload.type !== "token_count") continue;
+    if (options.threadId && session.id !== options.threadId) continue;
+    const timestamp = typeof item.timestamp === "string" ? item.timestamp : null;
+    if (!timestamp) continue;
+    const occurredMs = Date.parse(timestamp);
+    if (!Number.isFinite(occurredMs)) continue;
+    if (sinceMs != null && occurredMs < sinceMs) continue;
+    const info = isRecord(payload.info) ? payload.info : null;
+    const usage = isRecord(info?.last_token_usage) ? tokenUsage(info.last_token_usage) : null;
+    if (!usage) continue;
+    messages.push(buildCodexSessionUsageMessage({ session, usage, timestamp, options }));
+  }
+  return messages;
+}
+
+function buildCodexSessionUsageMessage(input: {
+  session: CodexSessionMeta;
+  usage: CodexTokenUsage;
+  timestamp: string;
+  options: CodexSessionImportOptions;
+}): AiUsageObserved {
+  const model = input.session.model ?? input.options.model;
+  const idempotencyKey = `codex-session:${input.session.id}:${input.timestamp}`;
+  return AiUsageObservedSchema.parse({
+    schema_version: "1.0",
+    message_id: `msg_${slug(idempotencyKey)}`,
+    kind: "ingest_message",
+    type: "ai.usage.observed",
+    occurred_at: input.timestamp,
+    source: { system: "codex-session", actor: "codex-local-import" },
+    workspace: { key: input.options.workspace },
+    idempotency_key: idempotencyKey,
+    payload: {
+      task: input.options.task ? { key: slug(input.options.task) } : null,
+      run: { id: `run_codex_${input.session.id.replace(/[^a-zA-Z0-9]/g, "_")}` },
+      usage: {
+        provider: input.session.modelProvider ?? "openai",
+        model,
+        usage_kind: "conversation_turn",
+        input_tokens: input.usage.inputTokens,
+        output_tokens: input.usage.outputTokens,
+        cached_input_tokens: input.usage.cachedInputTokens,
+        reasoning_output_tokens: input.usage.reasoningOutputTokens,
+        total_tokens: input.usage.totalTokens,
+        accuracy_mode: "exact",
+        pricing_mode: "unpriced",
+        unpriced_reason: "missing_pricing_rule",
+        raw_usage: input.usage.raw,
+      },
+      prompt_snapshot: { mode: "none" },
+      source_context: {
+        tool: "codex",
+        capture_mode: "codex_session_token_count",
+        session: {
+          id: input.session.id,
+          cwd: input.session.cwd,
+          source: input.session.source,
+          originator: input.session.originator,
+          cli_version: input.session.cliVersion,
+          file: input.session.file,
+        },
+        token_usage: input.usage.raw,
+      },
+    },
+  });
+}
+
+interface CodexSessionMeta {
+  id: string;
+  cwd: string | null;
+  source: string | null;
+  originator: string | null;
+  cliVersion: string | null;
+  modelProvider: string | null;
+  model: string | null;
+  file: string;
+}
+
+interface CodexTokenUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedInputTokens: number | null;
+  reasoningOutputTokens: number | null;
+  totalTokens: number | null;
+  raw: Record<string, unknown>;
+}
+
+function codexSessionMeta(payload: Record<string, unknown>, file: string): CodexSessionMeta {
+  const id = stringField(payload.id) ?? sessionIdFromPath(file);
+  if (!id) throw new Error(`Codex session id not found: ${file}`);
+  return {
+    id,
+    cwd: stringField(payload.cwd),
+    source: stringField(payload.source),
+    originator: stringField(payload.originator),
+    cliVersion: stringField(payload.cli_version),
+    modelProvider: stringField(payload.model_provider),
+    model: stringField(payload.model),
+    file,
+  };
+}
+
+function tokenUsage(raw: Record<string, unknown>): CodexTokenUsage | null {
+  const inputTokens = numberField(raw.input_tokens);
+  const outputTokens = numberField(raw.output_tokens);
+  const cachedInputTokens = numberField(raw.cached_input_tokens);
+  const reasoningOutputTokens = numberField(raw.reasoning_output_tokens);
+  const totalTokens = numberField(raw.total_tokens);
+  if (inputTokens == null && outputTokens == null && totalTokens == null) return null;
+  return { inputTokens, outputTokens, cachedInputTokens, reasoningOutputTokens, totalTokens, raw };
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function numberField(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function sessionIdFromPath(path: string): string | null {
+  const match = path.match(/rollout-[^.]*-([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/i);
+  return match?.[1] ?? null;
+}
+
+function resolveImportPath(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+  return resolveFromCommandCwd(path);
+}
+
 function readOptionalText(text: string | undefined, file: string | undefined): string | null {
   if (text != null) return text;
   if (file != null) return readFileSync(resolveFromCommandCwd(file), "utf8");
@@ -825,6 +1097,136 @@ function printReport(report: {
   console.log(`Pricing basis: event-time records`);
   console.log(`Events: ${report.event_count}`);
   console.log(`Unpriced usage: ${report.unpriced_count} event(s)`);
+}
+
+function printDashboardOverview(data: DashboardData): void {
+  const currency = data.summary.currency ?? "USD";
+  const total = data.summary.event_count;
+  const priced = Math.max(0, total - data.summary.unpriced_count);
+  const assigned = data.summary.assigned_count;
+  const unassigned = data.summary.unassigned_count;
+
+  console.log(`Workspace dashboard: ${data.workspace.key}`);
+  console.log(`Cost basis: event_time_estimate`);
+  console.log(`Pricing basis: event-time records`);
+  console.log("");
+  console.log("Summary");
+  console.log(`  Estimated total       ${formatMoney(data.summary.estimated_total, currency)}`);
+  console.log(`  Provider observed     ${formatMoney(data.summary.observed_total, currency)}`);
+  console.log(`  Usage events          ${total}`);
+  console.log(`  Assigned usage        ${assigned}/${total}`);
+  console.log(`  Unassigned usage      ${unassigned}`);
+  console.log(`  Unpriced usage        ${data.summary.unpriced_count}`);
+  console.log(`  Tasks / runs          ${data.summary.task_count} / ${data.summary.run_count}`);
+
+  const warnings = dashboardWarnings(data);
+  if (warnings.length > 0) {
+    console.log("");
+    console.log("Warnings");
+    for (const warning of warnings) console.log(`  - ${warning}`);
+  }
+
+  console.log("");
+  console.log("Cost quality");
+  printTextBar("observed", data.summary.observed_total, data.summary.estimated_total, formatMoney(data.summary.observed_total, currency));
+  printTextBar("estimated", Math.max(0, data.summary.estimated_total - data.summary.observed_total), data.summary.estimated_total, formatMoney(Math.max(0, data.summary.estimated_total - data.summary.observed_total), currency));
+  printTextCountBar("priced", priced, total);
+  printTextCountBar("unpriced", data.summary.unpriced_count, total);
+
+  console.log("");
+  console.log("Daily cost");
+  for (const row of data.daily) {
+    printTextBar(row.date, row.estimated_total, maxDailyCost(data), formatMoney(row.estimated_total, currency), row.event_count);
+  }
+
+  console.log("");
+  console.log("Top tasks");
+  printDashboardTable(
+    ["Task", "Cost", "Events", "Runs", "Unpriced", "Detail"],
+    data.task_insights.slice(0, 8).map((row) => [
+      row.task_key,
+      formatMoney(row.estimated_total, currency),
+      String(row.event_count),
+      String(row.run_count),
+      String(row.unpriced_count),
+      row.task_key === "unassigned" ? "ttoksem inbox list" : `ttoksem report task ${row.task_key}`,
+    ]),
+  );
+
+  console.log("");
+  console.log("Report tiles");
+  printDashboardTable(
+    ["Report", "Key metric", "Warning", "Next"],
+    [
+      ["Workspace daily cost", formatMoney(data.summary.estimated_total, currency), warningForCount(data.summary.unpriced_count, "unpriced"), "ttoksem report today"],
+      ["Task cost summary", `${data.summary.task_count} tasks`, warningForCount(data.summary.unassigned_count, "unassigned"), "ttoksem report task <task>"],
+      ["Model cost breakdown", `${data.recent.length} recent rows`, "", "filter by provider/model"],
+      ["Data quality", `${data.summary.unpriced_count + data.summary.unassigned_count} gaps`, warnings[0] ?? "", "ttoksem inbox list"],
+    ],
+  );
+}
+
+function dashboardWarnings(data: DashboardData): string[] {
+  const warnings: string[] = [];
+  if (data.summary.unpriced_count > 0) {
+    warnings.push(`${data.summary.unpriced_count} usage event(s) are unpriced; totals are incomplete.`);
+  }
+  if (data.summary.unassigned_count > 0) {
+    warnings.push(`${data.summary.unassigned_count} usage event(s) are unassigned; task totals may be incomplete.`);
+  }
+  if (data.summary.currency == null && data.summary.event_count > 0) {
+    warnings.push("Currency is mixed or unknown.");
+  }
+  return warnings;
+}
+
+function warningForCount(count: number, label: string): string {
+  return count > 0 ? `${count} ${label}` : "";
+}
+
+function maxDailyCost(data: DashboardData): number {
+  return Math.max(...data.daily.map((row) => row.estimated_total), 0.000001);
+}
+
+function printTextBar(label: string, value: number, max: number, valueText: string, eventCount?: number): void {
+  const width = barWidth(value, max);
+  const suffix = eventCount == null ? "" : `  events=${eventCount}`;
+  console.log(`  ${label.padEnd(14)} ${valueText.padStart(16)}  ${"█".repeat(width)}${suffix}`);
+}
+
+function printTextCountBar(label: string, value: number, max: number): void {
+  const width = barWidth(value, max);
+  console.log(`  ${label.padEnd(14)} ${String(value).padStart(16)}  ${"!".repeat(width)}`);
+}
+
+function barWidth(value: number, max: number): number {
+  if (value <= 0 || max <= 0) return 0;
+  return Math.max(1, Math.round((value / max) * 24));
+}
+
+function printDashboardTable(headers: string[], rows: string[][]): void {
+  const widths = headers.map((header, index) =>
+    Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)),
+  );
+  console.log(
+    "  " +
+      headers
+        .map((header, index) => header.padEnd(widths[index] ?? header.length))
+        .join("  "),
+  );
+  console.log("  " + widths.map((width) => "-".repeat(width)).join("  "));
+  for (const row of rows) {
+    console.log(
+      "  " +
+        row
+          .map((cell, index) => cell.padEnd(widths[index] ?? cell.length))
+          .join("  "),
+    );
+  }
+}
+
+function formatMoney(value: number, currency: string): string {
+  return `${value.toFixed(9)} ${currency}`;
 }
 
 function printUsageEventLine(event: UsageEventRecord): void {

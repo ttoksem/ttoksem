@@ -24,6 +24,7 @@ export function createHttpApp(options: CreateHttpAppOptions): Hono {
       taskLimit: parseLimit(context.req.query("taskLimit"), 80),
       recentLimit: parseLimit(context.req.query("recentLimit"), 80),
       dayLimit: parseLimit(context.req.query("dayLimit"), 30),
+      timeZoneOffsetMinutes: parseTimeZoneOffset(context.req.query("tzOffsetMinutes")),
     });
     return context.json(data);
   });
@@ -36,6 +37,7 @@ export function createHttpApp(options: CreateHttpAppOptions): Hono {
       recentLimit: parseLimit(context.req.query("eventLimit"), 150),
       dayLimit: parseLimit(context.req.query("dayLimit"), 60),
       runLimit: parseLimit(context.req.query("runLimit"), 150),
+      timeZoneOffsetMinutes: parseTimeZoneOffset(context.req.query("tzOffsetMinutes")),
     });
     return context.json(data);
   });
@@ -68,6 +70,13 @@ function parseLimit(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
   return Math.min(parsed, 200);
+}
+
+function parseTimeZoneOffset(value: string | undefined): number | undefined {
+  if (value == null) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || Math.abs(parsed) > 14 * 60) return undefined;
+  return parsed;
 }
 
 function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null): string {
@@ -235,6 +244,102 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     .overview-primary {
       margin-top: 10px;
+    }
+    .report-board {
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, .95fr);
+      grid-template-areas:
+        "summary tiles"
+        "glance glance";
+      margin-top: 10px;
+      align-items: start;
+    }
+    .report-summary-panel {
+      grid-area: summary;
+    }
+    .report-tiles-panel {
+      grid-area: tiles;
+    }
+    .at-a-glance-panel {
+      grid-area: glance;
+    }
+    .report-summary {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+    .report-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: start;
+      border-bottom: 1px solid #edf1f6;
+      padding-bottom: 10px;
+    }
+    .report-title strong {
+      display: block;
+      font-size: var(--fs-metric);
+      line-height: var(--lh-title);
+    }
+    .report-title span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: var(--fs-sm);
+    }
+    .summary-lines {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+    }
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #f0f3f8;
+      padding-bottom: 7px;
+      font-variant-numeric: tabular-nums;
+    }
+    .summary-line span:first-child {
+      color: var(--muted);
+      font-weight: var(--fw-semibold);
+    }
+    .report-tile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px;
+    }
+    .report-tile {
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 10px;
+      min-width: 0;
+    }
+    .report-tile h3 {
+      margin: 0;
+      font-size: var(--fs-base);
+      line-height: var(--lh-title);
+    }
+    .report-tile strong {
+      display: block;
+      margin-top: 8px;
+      font-size: var(--fs-card);
+      line-height: var(--lh-title);
+      font-variant-numeric: tabular-nums;
+    }
+    .report-tile small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: var(--fs-sm);
+      line-height: var(--lh-copy);
+    }
+    #glanceTable {
+      overflow-x: auto;
+    }
+    #glanceTable table {
+      min-width: 1120px;
     }
     .detail-layout {
       grid-template-columns: minmax(0, 1fr) 420px;
@@ -1076,9 +1181,16 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
       .workspace-stage,
+      .report-board,
       .overview-board,
       .detail-layout {
         grid-template-columns: 1fr;
+      }
+      .report-board {
+        grid-template-areas:
+          "summary"
+          "tiles"
+          "glance";
       }
       .overview-board {
         grid-template-areas:
@@ -1144,7 +1256,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
   <header>
     <div class="wrap topbar">
       <div>
-        <h1>ttoksem</h1>
+        <h1>ttoksem Report Dashboard</h1>
         <div class="workspace" id="workspaceLabel"></div>
       </div>
       <form class="toolbar" id="workspaceForm">
@@ -1154,29 +1266,43 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     </div>
   </header>
   <main class="wrap" id="overviewPage">
-    <section class="grid workspace-stage">
-      <section class="panel">
-        <div class="panel-head"><h2>Workspace Pulse</h2><span class="pill" id="pulseState"></span></div>
-        <div class="workspace-pulse" id="workspacePulse"></div>
+    <section class="grid report-board">
+      <section class="panel report-summary-panel">
+        <div class="panel-head"><h2>Report Summary</h2><span class="pill">event-time</span></div>
+        <div id="reportSummary"></div>
       </section>
-      <section class="panel">
-        <div class="panel-head"><h2>Work Progress</h2><span class="pill" id="flowCount"></span></div>
-        <div class="task-flow" id="taskFlow"></div>
+      <section class="panel report-tiles-panel">
+        <div class="panel-head"><h2>Report Tiles</h2><span class="pill" id="reportTileCount"></span></div>
+        <div id="reportTiles"></div>
       </section>
-      <section class="panel">
-        <div class="panel-head"><h2>Decision Queue</h2><span class="pill" id="attentionCount"></span></div>
-        <div id="attentionPanel"></div>
+      <section class="panel table-panel at-a-glance-panel">
+        <div class="panel-head"><h2>At-a-glance Report Table</h2><span class="pill" id="glanceCount"></span></div>
+        <div id="glanceTable"></div>
       </section>
     </section>
     <section class="grid kpis overview-primary" id="kpis"></section>
+    <section class="grid workspace-stage">
+      <section class="panel">
+        <div class="panel-head"><h2>Cost Trend</h2><span class="pill" id="pulseState"></span></div>
+        <div class="workspace-pulse" id="workspacePulse"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Work Progress Detail</h2><span class="pill" id="flowCount"></span></div>
+        <div class="task-flow" id="taskFlow"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Cleanup Queue</h2><span class="pill" id="attentionCount"></span></div>
+        <div id="attentionPanel"></div>
+      </section>
+    </section>
     <section class="grid overview-board">
       <section class="panel portfolio-panel">
-        <div class="panel-head"><h2>Task Portfolio</h2><div class="section-tabs"><span class="pill" id="taskCount"></span><span class="pager" id="taskPager"></span></div></div>
+        <div class="panel-head"><h2>Task Report Explorer</h2><div class="section-tabs"><span class="pill" id="taskCount"></span><span class="pager" id="taskPager"></span></div></div>
         <div id="taskTable"></div>
       </section>
       <aside class="stack cost-column">
         <section class="panel">
-          <div class="panel-head"><h2>Cost Intelligence</h2><span class="pill" id="modelCount"></span></div>
+          <div class="panel-head"><h2>Model Cost Breakdown</h2><span class="pill" id="modelCount"></span></div>
           <div id="costIntelligence"></div>
         </section>
         <section class="panel">
@@ -1186,13 +1312,13 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       </aside>
       <section class="panel table-panel task-insight-panel">
         <div class="panel-head">
-          <h2>Task Insight</h2>
+          <h2>Task Insight Table</h2>
           <div class="section-tabs"><span class="pill" id="insightCount"></span><span class="pager" id="insightPager"></span></div>
         </div>
         <div id="insightTable"></div>
       </section>
       <section class="panel table-panel recent-usage-panel">
-        <div class="panel-head"><h2>Recent Usage</h2><div class="section-tabs"><span class="pill" id="recentCount"></span><span class="pager" id="recentPager"></span></div></div>
+        <div class="panel-head"><h2>Usage Event Detail</h2><div class="section-tabs"><span class="pill" id="recentCount"></span><span class="pager" id="recentPager"></span></div></div>
         <div id="recentTable"></div>
       </section>
     </section>
@@ -1253,6 +1379,17 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       insights: 8,
       recent: 10,
     };
+    const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+    const clientTimeZoneOffsetMinutes = -new Date().getTimezoneOffset();
+    const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZoneName: "short",
+    });
     const dashboardState = {
       data: null,
       workspace: workspaceInput.value,
@@ -1351,7 +1488,9 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
     }
     function shortDate(value) {
       if (!value) return "-";
-      return String(value).replace("T", " ").slice(0, 16);
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return dateTimeFormatter.format(date);
     }
     function promptSnippet(value) {
       const raw = String(value || "").replace(/\\s+/g, " ").trim();
@@ -1644,6 +1783,110 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         ["Estimated Cost", money(s.estimated_total, s.currency), integer(s.run_count) + " runs"],
       ].map(([label, value, sub]) => '<article class="panel kpi"><div class="kpi-label">' + text(label) + '</div><div class="kpi-value">' + text(value) + '</div><div class="kpi-sub">' + text(sub) + '</div></article>').join("");
     }
+    function renderReportSummary(data) {
+      const s = data.summary;
+      const warnings = [];
+      if (s.unpriced_count > 0) warnings.push(integer(s.unpriced_count) + " unpriced usage rows");
+      if (s.unassigned_count > 0) warnings.push(integer(s.unassigned_count) + " unassigned usage rows");
+      if (!s.currency && s.event_count > 0) warnings.push("mixed or unknown currency");
+      const warningHtml = warnings.length === 0
+        ? '<span class="pill">clear</span>'
+        : warnings.map((warning) => '<span class="pill warn">' + text(warning) + '</span>').join("");
+      document.getElementById("reportSummary").innerHTML =
+        '<div class="report-summary">' +
+          '<div class="report-title"><div><strong>Workspace dashboard: ' + text(data.workspace.key) + '</strong><span>Cost basis: event_time_estimate · Pricing basis: event-time records</span></div><div>' + warningHtml + '</div></div>' +
+          '<div class="summary-lines">' +
+            summaryLine("Estimated total", money(s.estimated_total, s.currency)) +
+            summaryLine("Provider observed", money(s.observed_total, s.currency)) +
+            summaryLine("Usage events", integer(s.event_count)) +
+            summaryLine("Tasks / runs", integer(s.task_count) + " / " + integer(s.run_count)) +
+            summaryLine("Assigned usage", integer(s.assigned_count) + "/" + integer(s.event_count)) +
+            summaryLine("Unassigned usage", integer(s.unassigned_count)) +
+            summaryLine("Unpriced usage", integer(s.unpriced_count)) +
+            summaryLine("Visible report rows", integer((data.task_insights || []).length + (data.recent || []).length)) +
+          '</div>' +
+          renderQualityBars(data) +
+        '</div>';
+    }
+    function summaryLine(label, value) {
+      return '<div class="summary-line"><span>' + text(label) + '</span><strong>' + text(value) + '</strong></div>';
+    }
+    function renderQualityBars(data) {
+      const s = data.summary;
+      const max = Math.max(s.event_count, 1);
+      const estimatedOnly = Math.max(0, s.event_count - s.unpriced_count);
+      const rows = [
+        ["observed", s.observed_total > 0 ? s.event_count - s.unpriced_count : 0, money(s.observed_total, s.currency), ""],
+        ["priced", estimatedOnly, integer(estimatedOnly) + " events", ""],
+        ["unpriced", s.unpriced_count, integer(s.unpriced_count) + " events", "warn"],
+        ["unassigned", s.unassigned_count, integer(s.unassigned_count) + " events", "warn"],
+      ];
+      return '<div class="driver-list">' + rows.map(([label, value, valueText, tone]) =>
+        '<div class="driver-row"><div class="driver-top"><strong>' + text(label) + '</strong><div class="driver-cost">' + text(valueText) + '</div></div><div class="progress-track"><div class="progress-segment ' + (tone || "assigned") + '" style="width:' + Math.max(0, percent(Number(value), max)) + '%"></div></div></div>'
+      ).join("") + '</div>';
+    }
+    function renderReportTiles(data, workspace) {
+      const s = data.summary;
+      const topTask = (data.task_insights || []).find((row) => row.task_key !== "unassigned");
+      const topModel = topRecentModel(data);
+      const tiles = [
+        {
+          title: "Workspace daily cost",
+          metric: money(s.estimated_total, s.currency),
+          detail: integer(data.daily.length) + " daily buckets · " + integer(s.event_count) + " events",
+          href: "#dailySpark",
+        },
+        {
+          title: "Task cost summary",
+          metric: topTask ? money(topTask.estimated_total, s.currency) : "No task cost",
+          detail: topTask ? taskTitle(topTask) : "No assigned task usage",
+          href: topTask ? taskHref(topTask.task_key, workspace) : "#taskTable",
+        },
+        {
+          title: "Model cost breakdown",
+          metric: topModel ? topModel.key : "No model rows",
+          detail: topModel ? money(topModel.cost, s.currency) + " · " + integer(topModel.events) + " events" : "No recent usage",
+          href: "#costIntelligence",
+        },
+        {
+          title: "Data quality",
+          metric: integer(s.unpriced_count + s.unassigned_count) + " gaps",
+          detail: integer(s.unpriced_count) + " unpriced · " + integer(s.unassigned_count) + " unassigned",
+          href: "#attentionPanel",
+        },
+      ];
+      document.getElementById("reportTileCount").textContent = integer(tiles.length);
+      document.getElementById("reportTiles").innerHTML = '<div class="report-tile-grid">' + tiles.map((tile) =>
+        '<a class="report-tile" href="' + text(tile.href) + '"><h3>' + text(tile.title) + '</h3><strong>' + text(tile.metric) + '</strong><small>' + text(tile.detail) + '</small></a>'
+      ).join("") + '</div>';
+    }
+    function renderAtAGlanceTable(data, workspace) {
+      const rows = (data.task_insights || []).slice(0, 8);
+      document.getElementById("glanceCount").textContent = rows.length === 0 ? "0 rows" : plural(rows.length, "row");
+      if (rows.length === 0) {
+        document.getElementById("glanceTable").innerHTML = '<div class="empty">No report rows yet.</div>';
+        return;
+      }
+      const total = data.summary.estimated_total || 0;
+      document.getElementById("glanceTable").innerHTML = '<table><thead><tr><th style="width: 270px;">Report item</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 82px;">Share</th><th class="num" style="width: 82px;">Events</th><th class="num" style="width: 74px;">Runs</th><th style="width: 180px;">Priced / unpriced</th><th class="num" style="width: 92px;">Tokens</th><th>Reading</th></tr></thead><tbody>' +
+        rows.map((row) => {
+          const priced = Math.max(0, row.event_count - row.unpriced_count);
+          const reading = (row.signals || []).length > 0 ? row.signals.join(", ") : row.insight;
+          return '<tr><td>' + renderTaskLabel(row, workspace) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + text(percent(row.estimated_total, total) + "%") + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td>' + text(integer(priced) + " priced / " + integer(row.unpriced_count) + " unpriced") + '</td><td class="num">' + integer(row.token_count) + '</td><td class="wide-text">' + text(reading) + '</td></tr>';
+        }).join("") +
+        '</tbody></table>';
+    }
+    function topRecentModel(data) {
+      const byModel = new Map();
+      (data.recent || []).forEach((row) => {
+        const key = row.provider_model || "unknown";
+        const current = byModel.get(key) || { key, cost: 0, events: 0 };
+        current.cost += Number(row.cost || 0);
+        current.events += 1;
+        byModel.set(key, current);
+      });
+      return Array.from(byModel.values()).sort((a, b) => b.cost - a.cost)[0] || null;
+    }
     function renderAttention(data, workspace) {
       const items = data.attention || [];
       document.getElementById("attentionCount").textContent = integer(items.length);
@@ -1699,7 +1942,7 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 240px;">Task</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
         page.rows.map((row) => {
           const task = renderTaskLabel(row, workspace);
-          return '<tr><td class="date-cell">' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
+          return '<tr><td class="date-cell">' + text(shortDate(row.occurred_at)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -1768,8 +2011,8 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
         '</div>';
     }
     async function loadDashboard(workspace) {
-      workspaceLabel.textContent = workspace;
-      const response = await fetch('/api/dashboard?workspace=' + encodeURIComponent(workspace));
+      workspaceLabel.textContent = workspace + " · " + clientTimeZone;
+      const response = await fetch('/api/dashboard?workspace=' + encodeURIComponent(workspace) + '&tzOffsetMinutes=' + encodeURIComponent(String(clientTimeZoneOffsetMinutes)));
       if (!response.ok) {
         document.getElementById("kpis").innerHTML = '<article class="panel error">Dashboard error: ' + text(await response.text()) + '</article>';
         return;
@@ -1783,6 +2026,9 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       renderWorkspacePulse(data, workspace);
       renderTaskFlow(data);
       renderKpis(data);
+      renderReportSummary(data);
+      renderReportTiles(data, workspace);
+      renderAtAGlanceTable(data, workspace);
       renderAttention(data, workspace);
       renderTaskInsights(data, workspace);
       renderTasks(data, workspace);
@@ -1835,14 +2081,14 @@ function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null
       }
       const currency = detailCurrency(data);
       document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 230px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th style="width: 130px;">Assignment</th><th>Prompt</th></tr></thead><tbody>' +
-        data.recent.map((row) => '<tr><td class="date-cell">' + text(row.occurred_at.replace("T", " ").slice(0, 19)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td><span class="pill ' + pillClass(row.assignment_status) + '">' + text(row.assignment_status) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
+        data.recent.map((row) => '<tr><td class="date-cell">' + text(shortDate(row.occurred_at)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td><span class="pill ' + pillClass(row.assignment_status) + '">' + text(row.assignment_status) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
         '</tbody></table>';
     }
     async function loadTaskDetail(workspace, taskKey) {
       showPage("task");
-      workspaceLabel.textContent = workspace;
+      workspaceLabel.textContent = workspace + " · " + clientTimeZone;
       document.getElementById("backLink").href = '/?workspace=' + encodeURIComponent(workspace);
-      const response = await fetch('/api/tasks/' + encodeURIComponent(taskKey) + '?workspace=' + encodeURIComponent(workspace));
+      const response = await fetch('/api/tasks/' + encodeURIComponent(taskKey) + '?workspace=' + encodeURIComponent(workspace) + '&tzOffsetMinutes=' + encodeURIComponent(String(clientTimeZoneOffsetMinutes)));
       if (!response.ok) {
         document.getElementById("taskKpis").innerHTML = '<article class="panel error">Task error: ' + text(await response.text()) + '</article>';
         return;

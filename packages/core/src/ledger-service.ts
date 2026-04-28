@@ -526,6 +526,7 @@ export class LedgerService {
     taskLimit?: number;
     recentLimit?: number;
     dayLimit?: number;
+    timeZoneOffsetMinutes?: number;
   }): Promise<DashboardData> {
     const workspace = await this.resolveWorkspace(input.workspace);
     const [summary, tasks, taskInsightRows, recent, pricingBreakdown, accuracyBreakdown, daily] =
@@ -536,7 +537,11 @@ export class LedgerService {
         this.store.listRecentUsageEvents(workspace.id, input.recentLimit ?? 30),
         this.store.listDashboardPricingModeBreakdown(workspace.id),
         this.store.listDashboardAccuracyModeBreakdown(workspace.id),
-        this.store.listDashboardDailyCosts(workspace.id, input.dayLimit ?? 14),
+        this.store.listDashboardDailyCosts(
+          workspace.id,
+          input.dayLimit ?? 14,
+          input.timeZoneOffsetMinutes,
+        ),
       ]);
     const taskInsights = buildTaskInsights(taskInsightRows);
 
@@ -546,15 +551,15 @@ export class LedgerService {
         name: workspace.name,
       },
       summary: {
-        event_count: summary.event_count,
+        event_count: summary.event_count ?? 0,
         estimated_total: nanosToDecimal(summary.estimated_cost_nanos),
         observed_total: nanosToDecimal(summary.observed_cost_nanos),
         currency: summary.currency,
-        unpriced_count: summary.unpriced_count,
-        unassigned_count: summary.unassigned_count,
-        assigned_count: summary.assigned_count,
-        task_count: summary.task_count,
-        run_count: summary.run_count,
+        unpriced_count: summary.unpriced_count ?? 0,
+        unassigned_count: summary.unassigned_count ?? 0,
+        assigned_count: summary.assigned_count ?? 0,
+        task_count: summary.task_count ?? 0,
+        run_count: summary.run_count ?? 0,
       },
       attention: buildAttention(summary, taskInsights),
       task_insights: taskInsights,
@@ -591,6 +596,7 @@ export class LedgerService {
     recentLimit?: number;
     dayLimit?: number;
     runLimit?: number;
+    timeZoneOffsetMinutes?: number;
   }): Promise<DashboardTaskDetailData> {
     const workspace = await this.resolveWorkspace(input.workspace);
     const task = await this.store.getTaskByKey(workspace.id, input.taskKey);
@@ -609,7 +615,12 @@ export class LedgerService {
       this.store.listDashboardTaskInsights(workspace.id, 200),
       this.store.getDashboardTaskInsight(workspace.id, task.id),
       this.store.listRecentUsageEventsForTask(workspace.id, task.id, input.recentLimit ?? 100),
-      this.store.listDashboardDailyCostsForTask(workspace.id, task.id, input.dayLimit ?? 30),
+      this.store.listDashboardDailyCostsForTask(
+        workspace.id,
+        task.id,
+        input.dayLimit ?? 30,
+        input.timeZoneOffsetMinutes,
+      ),
       this.store.listDashboardRunsForTask(workspace.id, task.id, input.runLimit ?? 100),
       this.store.listDashboardProviderModelBreakdownForTask(workspace.id, task.id),
       this.store.listDashboardPricingModeBreakdownForTask(workspace.id, task.id),

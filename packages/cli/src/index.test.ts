@@ -214,6 +214,116 @@ describe("ttoksem CLI workflows", () => {
       expect(runCli(["pricing", "migrate-events", "--workspace", "cli-test"], env)).toContain(
         "pricing migrate-events checked=1 migrated=0 unchanged=1 still_unpriced=0",
       );
+      const dashboardOutput = runCli(["dashboard", "overview", "--workspace", "cli-test"], env);
+      expect(dashboardOutput).toContain("Workspace dashboard: cli-test");
+      expect(dashboardOutput).toContain("Summary");
+      expect(dashboardOutput).toContain("Cost quality");
+      expect(dashboardOutput).toContain("Top tasks");
+      expect(dashboardOutput).toContain("Report tiles");
+      expect(dashboardOutput).toContain("Task cost summary");
+
+      const codexSessionFile = join(tempDir, "codex-session.jsonl");
+      writeFileSync(
+        codexSessionFile,
+        [
+          JSON.stringify({
+            timestamp: "2026-04-27T00:10:00.000Z",
+            type: "session_meta",
+            payload: {
+              id: "019dd187-51b3-7e02-b2dc-311a2b503dd2",
+              cwd: tempDir,
+              originator: "Codex Desktop",
+              cli_version: "0.125.0-alpha.3",
+              source: "vscode",
+              model_provider: "openai",
+            },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-27T00:10:05.000Z",
+            type: "event_msg",
+            payload: {
+              type: "token_count",
+              info: {
+                total_token_usage: {
+                  input_tokens: 1000,
+                  cached_input_tokens: 800,
+                  output_tokens: 40,
+                  reasoning_output_tokens: 10,
+                  total_tokens: 1040,
+                },
+                last_token_usage: {
+                  input_tokens: 1000,
+                  cached_input_tokens: 800,
+                  output_tokens: 40,
+                  reasoning_output_tokens: 10,
+                  total_tokens: 1040,
+                },
+              },
+            },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-27T00:11:05.000Z",
+            type: "event_msg",
+            payload: {
+              type: "token_count",
+              info: {
+                last_token_usage: {
+                  input_tokens: 120,
+                  cached_input_tokens: 80,
+                  output_tokens: 15,
+                  reasoning_output_tokens: 4,
+                  total_tokens: 135,
+                },
+              },
+            },
+          }),
+        ].join("\n"),
+      );
+      expect(
+        runCli(
+          [
+            "usage",
+            "import-codex-sessions",
+            "--workspace",
+            "cli-test",
+            "--task",
+            "implement-cli-workflow-tests",
+            "--file",
+            codexSessionFile,
+            "--model",
+            "gpt-5.5",
+          ],
+          env,
+        ),
+      ).toContain("codex import scanned_files=1 token_events=2 imported=2 skipped=0 errors=0");
+      const codexStore = new SqliteLedgerStore(dbPath);
+      try {
+        await codexStore.migrate();
+        const workspace = await codexStore.getWorkspaceByKey("cli-test");
+        const imported = await codexStore.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-session",
+          "codex-session:019dd187-51b3-7e02-b2dc-311a2b503dd2:2026-04-27T00:10:05.000Z",
+        );
+        expect(imported).toMatchObject({
+          provider: "openai",
+          model: "gpt-5.5",
+          usage_kind: "conversation_turn",
+          input_tokens: 1000,
+          output_tokens: 40,
+          total_tokens: 1040,
+          accuracy_mode: "exact",
+          assignment_status: "assigned",
+        });
+        expect(imported?.run_id).toMatch(/^run_codex_/);
+        expect(codexRawUsage(imported?.payload_json)).toMatchObject({
+          cached_input_tokens: 800,
+          reasoning_output_tokens: 10,
+        });
+      } finally {
+        await codexStore.close();
+      }
+
       const repricedStore = new SqliteLedgerStore(dbPath);
       try {
         await repricedStore.migrate();
@@ -285,6 +395,12 @@ function tokenEstimationInputMode(payload: Record<string, unknown> | undefined):
   const tokenEstimation = asRecord(sourceContext?.token_estimation);
   const input = asRecord(tokenEstimation?.input);
   return typeof input?.mode === "string" ? input.mode : null;
+}
+
+function codexRawUsage(payload: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  const payloadObject = asRecord(payload?.payload);
+  const usage = asRecord(payloadObject?.usage);
+  return asRecord(usage?.raw_usage);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -424,6 +424,60 @@ describe("SqliteLedgerStore", () => {
       rmSync(`${dbPath}-wal`, { force: true });
     }
   });
+
+  it("groups dashboard daily costs by a dashboard timezone offset", async () => {
+    const dbPath = testDbPath();
+    const store = new SqliteLedgerStore(dbPath);
+    try {
+      await store.migrate();
+      await store.createWorkspace({
+        id: "ws_test",
+        key: "test",
+        name: "Test",
+        root_path: "/tmp/test",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      await store.createUsageEvent({
+        id: "usage_late_utc",
+        workspace_id: "ws_test",
+        task_id: null,
+        run_id: null,
+        message_id: "msg_late_utc",
+        source: "test",
+        idempotency_key: "test:late-utc",
+        occurred_at: "2026-04-26T23:30:00.000Z",
+        provider: "openai",
+        model: "gpt-5.5",
+        usage_kind: "conversation_turn",
+        input_tokens: 10,
+        output_tokens: 1,
+        total_tokens: 11,
+        observed_cost_nanos: null,
+        estimated_cost_nanos: 1000,
+        observed_currency: null,
+        estimated_currency: "USD",
+        accuracy_mode: "exact",
+        pricing_mode: "rule_calculated",
+        unpriced_reason: null,
+        assignment_status: "unassigned",
+        payload_json: { schema_version: "1.0", payload: { task: null } },
+        now: "2026-04-27T00:00:00.000Z",
+      });
+
+      await expect(store.listDashboardDailyCosts("ws_test", 10)).resolves.toMatchObject([
+        { date: "2026-04-26", event_count: 1, estimated_cost_nanos: 1000 },
+      ]);
+      await expect(store.listDashboardDailyCosts("ws_test", 10, 540)).resolves.toMatchObject([
+        { date: "2026-04-27", event_count: 1, estimated_cost_nanos: 1000 },
+      ]);
+    } finally {
+      await store.close();
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+    }
+  });
 });
 
 function testDbPath(): string {

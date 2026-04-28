@@ -19,17 +19,28 @@ Implemented first slice:
 - `workspace init/current/list`
 - `task start/close/list`
 - `usage add`
+- `usage codex-turn`
+- `usage import-codex-sessions`
+- `usage move`
+- `inbox list`
+- run grouping through explicit `run_id`
+- pricing source snapshots
+- LiteLLM pricing import
+- pricing rules, repricing, and event-time pricing migration
 - `report today`
 - `report task`
+- `dashboard overview`
+- read-only local Hono dashboard
 - `doctor`
 
 Deferred from the design source:
 
 - D1 adapter
-- Hono HTTP API
 - MCP tools
-- pricing snapshot import and rule calculation
 - correction/adjustment records
-- inbox grouping and assignment actions
-- run reconciliation
-
+- write-capable HTTP API
+- inbox grouping and suggested assignment actions
+- run reconciliation and duration aggregation
+- provider SDK collectors with exact provider usage capture
+- cross-currency reporting
+- prompt redaction automation

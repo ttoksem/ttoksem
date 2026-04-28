@@ -15,9 +15,9 @@ The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, and a local read-only Hono dashboard.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, and a local read-only Hono dashboard.
 
-Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, and provider SDK collectors with exact usage capture.
+Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, inbox grouping, suggested assignment workflows, and provider SDK collectors with exact usage capture.
 
 ## Currency Policy
 
@@ -73,6 +73,8 @@ Existing `unpriced` and `rule_calculated` events can be migrated against the cur
 
 If `started_at` and `ended_at` are present but `duration_ms` is omitted, the core service derives `duration_ms`. Missing timing fields are allowed so lightweight/manual logging stays simple.
 
+Stored timestamps are UTC ISO text. The browser dashboard keeps those source values unchanged and applies the client's timezone only while rendering timestamps and daily dashboard buckets. CLI reports remain UTC-oriented unless a later reporting command adds an explicit timezone option.
+
 ## Run Policy
 
 A run groups multiple usage events from one explicit request, job, or attempt.
@@ -100,6 +102,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 ## Examples
 
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
+- [Codex Session Import](docs/examples/codex-session-import.md): how to manually import Codex App/CLI `token_count` records from local session JSONL files.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 - [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
 
@@ -126,6 +129,8 @@ pnpm cli pricing import-litellm --workspace ttoksem-dev --source-snapshot-id pri
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli usage chat-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5 --dry-run
+pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli pricing migrate-events --workspace ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev
@@ -134,4 +139,4 @@ pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev
 pnpm cli dashboard serve --workspace ttoksem-dev --port 4317
 ```
 
-If `usage chat-turn` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. `usage codex-turn` remains available as the current Codex logging compatibility command.
+If `usage chat-turn` or `usage import-codex-sessions` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. `usage codex-turn` remains available as the current Codex logging compatibility command.

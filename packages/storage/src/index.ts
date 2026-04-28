@@ -305,11 +305,16 @@ export interface LedgerStore {
     workspaceId: string,
     taskId: string,
   ): Promise<DashboardBreakdownRow[]>;
-  listDashboardDailyCosts(workspaceId: string, limit: number): Promise<DashboardDailyCostRow[]>;
+  listDashboardDailyCosts(
+    workspaceId: string,
+    limit: number,
+    timeZoneOffsetMinutes?: number,
+  ): Promise<DashboardDailyCostRow[]>;
   listDashboardDailyCostsForTask(
     workspaceId: string,
     taskId: string,
     limit: number,
+    timeZoneOffsetMinutes?: number,
   ): Promise<DashboardDailyCostRow[]>;
   listDashboardRunsForTask(
     workspaceId: string,
