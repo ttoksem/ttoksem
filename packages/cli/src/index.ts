@@ -4,7 +4,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
-import { LedgerService, type DashboardData } from "@ttoksem/core";
+import {
+  LedgerService,
+  type DashboardData,
+  type InboxAssignmentResult,
+  type InboxGroup,
+} from "@ttoksem/core";
 import {
   AiUsageObservedSchema,
   type AiUsageObserved,
@@ -270,22 +275,111 @@ inbox
   .command("list")
   .option("--workspace <key>", "workspace key")
   .option("--root <path>", "workspace root path")
-  .option("--limit <count>", "maximum events to show", "20")
-  .description("List unassigned usage events")
+  .option("--limit <count>", "maximum groups or events to show", "20")
+  .option("--events", "show raw unassigned usage events instead of inbox groups")
+  .description("List assignment inbox groups")
   .action(async (options: InboxListOptions) => {
     const { service, close } = await makeService();
     await service.init();
-    const events = await service.listInbox({
+    const limit = parsePositiveInteger(options.limit);
+    if (options.events) {
+      const events = await service.listInbox({
+        workspace: workspaceResolver(options),
+        limit,
+      });
+      if (events.length === 0) {
+        console.log("No unassigned usage events.");
+      } else {
+        for (const event of events) {
+          printUsageEventLine(event);
+        }
+      }
+    } else {
+      const groups = await service.listInboxGroups({
+        workspace: workspaceResolver(options),
+        limit,
+      });
+      if (groups.length === 0) console.log("No inbox groups.");
+      else printInboxGroups(groups);
+    }
+    await close();
+  });
+
+inbox
+  .command("show")
+  .argument("<group-id>", "inbox group id")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--limit <count>", "maximum events to show", "50")
+  .description("Show an inbox group and its sample events")
+  .action(async (groupId: string, options: InboxShowOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await service.showInboxGroup({
       workspace: workspaceResolver(options),
+      groupId,
       limit: parsePositiveInteger(options.limit),
     });
-    if (events.length === 0) {
-      console.log("No unassigned usage events.");
-    } else {
-      for (const event of events) {
-        printUsageEventLine(event);
-      }
-    }
+    printInboxGroupDetail(result.group, result.events);
+    await close();
+  });
+
+inbox
+  .command("assign")
+  .argument("<group-id>", "inbox group id")
+  .requiredOption("--task <key>", "destination task key")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--all", "assign every eligible event in the group")
+  .description("Assign an inbox group to a task")
+  .action(async (groupId: string, options: InboxAssignOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await service.assignInboxGroup({
+      workspace: workspaceResolver(options),
+      groupId,
+      taskKey: slug(options.task),
+      all: options.all,
+    });
+    printInboxAssignmentResult(result);
+    await close();
+  });
+
+inbox
+  .command("accept")
+  .argument("<group-id>", "inbox group id with a suggested task")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--all", "assign every eligible event in the group")
+  .description("Accept an inbox group's suggested task")
+  .action(async (groupId: string, options: InboxAcceptOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await service.acceptInboxGroup({
+      workspace: workspaceResolver(options),
+      groupId,
+      all: options.all,
+    });
+    printInboxAssignmentResult(result);
+    await close();
+  });
+
+inbox
+  .command("assign-event")
+  .argument("<usage-id>", "usage event id")
+  .requiredOption("--task <key>", "destination task key")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("Assign one inbox usage event to a task")
+  .action(async (usageEventId: string, options: InboxAssignEventOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const event = await service.assignInboxEvent({
+      workspace: workspaceResolver(options),
+      usageEventId,
+      taskKey: slug(options.task),
+    });
+    console.log(`usage ${event.id} moved task_id=${event.task_id ?? ""}`);
     await close();
   });
 
@@ -653,6 +747,32 @@ interface InboxListOptions {
   workspace?: string;
   root?: string;
   limit: string;
+  events?: boolean;
+}
+
+interface InboxShowOptions {
+  workspace?: string;
+  root?: string;
+  limit: string;
+}
+
+interface InboxAssignOptions {
+  workspace?: string;
+  root?: string;
+  task: string;
+  all?: boolean;
+}
+
+interface InboxAcceptOptions {
+  workspace?: string;
+  root?: string;
+  all?: boolean;
+}
+
+interface InboxAssignEventOptions {
+  workspace?: string;
+  root?: string;
+  task: string;
 }
 
 interface DashboardServeOptions {
@@ -1329,6 +1449,79 @@ function printDashboardTable(headers: string[], rows: string[][]): void {
 
 function formatMoney(value: number, currency: string): string {
   return `${value.toFixed(9)} ${currency}`;
+}
+
+function printInboxGroups(groups: InboxGroup[]): void {
+  printDashboardTable(
+    ["Group", "Status", "Events", "Cost", "Tokens", "Range", "Suggested", "Evidence", "Sample"],
+    groups.map((group) => [
+      group.group_id,
+      group.assignment_status,
+      String(group.event_count),
+      formatMoney(group.estimated_total, group.currency ?? "USD"),
+      String(group.token_count),
+      formatTimeRange(group.first_occurred_at, group.last_occurred_at),
+      formatInboxSuggestion(group.suggested_task),
+      group.reason_codes.slice(0, 3).join(","),
+      group.prompt_samples[0] ? truncate(group.prompt_samples[0], 48) : group.sample_event_ids[0] ?? "",
+    ]),
+  );
+}
+
+function printInboxGroupDetail(group: InboxGroup, events: UsageEventRecord[]): void {
+  console.log(`Inbox group: ${group.group_id}`);
+  console.log(`  Status       ${group.assignment_status}`);
+  console.log(`  Events       ${group.event_count}`);
+  console.log(`  Cost         ${formatMoney(group.estimated_total, group.currency ?? "USD")}`);
+  console.log(`  Tokens       ${group.token_count}`);
+  console.log(`  Range        ${formatTimeRange(group.first_occurred_at, group.last_occurred_at)}`);
+  console.log(`  Suggested    ${formatInboxSuggestion(group.suggested_task)}`);
+  console.log(`  Evidence     ${group.reason_codes.join(", ")}`);
+  console.log(`  Context      ${formatInboxContext(group)}`);
+  if (group.prompt_samples.length > 0) {
+    console.log("  Prompts");
+    for (const prompt of group.prompt_samples) console.log(`    - ${truncate(prompt, 120)}`);
+  }
+  console.log("");
+  console.log("Events");
+  for (const event of events) printUsageEventLine(event);
+}
+
+function printInboxAssignmentResult(result: InboxAssignmentResult): void {
+  console.log(
+    `inbox ${result.group.group_id} assigned task=${result.task.key} assigned=${result.assigned_count} skipped=${result.skipped_count}`,
+  );
+  if (result.assigned_event_ids.length > 0) {
+    console.log(`events ${result.assigned_event_ids.join(",")}`);
+  }
+  if (result.skipped_event_ids.length > 0) {
+    console.log(`skipped ${result.skipped_event_ids.join(",")}`);
+  }
+}
+
+function formatInboxSuggestion(suggestion: InboxGroup["suggested_task"]): string {
+  if (!suggestion) return "";
+  return `${suggestion.task_key} ${suggestion.level} ${(suggestion.confidence * 100).toFixed(0)}%`;
+}
+
+function formatInboxContext(group: InboxGroup): string {
+  const context = group.source_context;
+  return [
+    context.date_bucket,
+    context.tool ? `tool=${context.tool}` : "",
+    context.cwd ? `cwd=${context.cwd}` : "",
+    context.git_branch ? `branch=${context.git_branch}` : "",
+    context.command ? `command=${context.command}` : "",
+    context.conversation_id ? `conversation=${context.conversation_id}` : "",
+    context.request_id ? `request=${context.request_id}` : "",
+    context.external_ref ? `external=${context.external_ref}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function formatTimeRange(first: string, last: string): string {
+  return first === last ? first : `${first}..${last}`;
 }
 
 function printUsageEventLine(event: UsageEventRecord): void {

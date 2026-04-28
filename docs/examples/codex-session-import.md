@@ -41,7 +41,7 @@ pnpm cli usage import-codex-sessions \
   --model gpt-5.5
 ```
 
-Use `--file <session.jsonl>` when the exact session file is known. Use `--since <UTC-ISO>` for a recent range. If the current user goal is ambiguous, omit `--task`; the imported events remain unassigned for later inbox cleanup. Do not keep passing an old task key just because it was used in the previous import.
+Use `--file <session.jsonl>` when the exact session file is known. Use `--since <UTC-ISO>` for a recent range. If the current user goal is ambiguous, omit `--task`; the imported events remain unassigned for later inbox cleanup. `ttoksem inbox list` groups those events by day and source context, `ttoksem inbox show <group_id>` explains the sample events, and `ttoksem inbox assign <group_id> --task <task_key> --all` performs explicit bulk assignment. Do not keep passing an old task key just because it was used in the previous import.
 
 For an incremental agent import, use the latest imported timestamp as the next lower bound:
 

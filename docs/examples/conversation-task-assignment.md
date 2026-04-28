@@ -214,9 +214,11 @@ The product should provide:
 ```text
 unassigned usage
 suggested assignment
-usage move
 inbox list
-bulk assignment later
+inbox show
+inbox accept suggested task
+inbox assign group --all
+inbox assign-event
 ```
 
 Those tools let users choose their own task granularity after usage is captured.

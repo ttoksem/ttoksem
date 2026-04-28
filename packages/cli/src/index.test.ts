@@ -438,7 +438,7 @@ describe("ttoksem CLI workflows", () => {
           "--workspace",
           "cli-test",
           "--prompt-text",
-          "unassigned prompt",
+          "implement-cli-workflow-tests unassigned prompt",
           "--input-chars",
           "20",
           "--output-chars",
@@ -452,18 +452,83 @@ describe("ttoksem CLI workflows", () => {
       expect(usageId).toBeDefined();
       expect(unassignedOutput).toContain("unassigned");
 
-      const inboxOutput = runCli(["inbox", "list", "--workspace", "cli-test"], env);
-      expect(inboxOutput).toContain(usageId);
-      expect(inboxOutput).toContain("tokens=15");
-      expect(inboxOutput).toContain("prompt=unassigned prompt");
+      const secondUnassignedOutput = runCli(
+        [
+          "usage",
+          "codex-turn",
+          "--workspace",
+          "cli-test",
+          "--prompt-text",
+          "implement-cli-workflow-tests follow up",
+          "--input-chars",
+          "20",
+          "--output-chars",
+          "40",
+          "--idempotency-key",
+          "unassigned-002",
+        ],
+        env,
+      );
+      const secondUsageId = secondUnassignedOutput.match(/usage_(?<id>[a-z0-9]+)/)?.[0];
+      expect(secondUsageId).toBeDefined();
 
+      const rawInboxOutput = runCli(["inbox", "list", "--workspace", "cli-test", "--events"], env);
+      expect(rawInboxOutput).toContain(usageId);
+      expect(rawInboxOutput).toContain("tokens=15");
+      expect(rawInboxOutput).toContain("prompt=implement-cli-workflow-tests unassigned prompt");
+
+      const groupedInboxOutput = runCli(["inbox", "list", "--workspace", "cli-test"], env);
+      const groupId = groupedInboxOutput.match(/inbox_[a-f0-9]+/)?.[0];
+      expect(groupId).toBeDefined();
+      expect(groupedInboxOutput).toContain("implement-cli-workflow-tests high");
+      expect(groupedInboxOutput).toContain("unassigned");
+
+      const groupDetailOutput = runCli(["inbox", "show", groupId ?? "", "--workspace", "cli-test"], env);
+      expect(groupDetailOutput).toContain(usageId);
+      expect(groupDetailOutput).toContain(secondUsageId);
+      expect(groupDetailOutput).toContain("implement-cli-workflow-tests unassigned prompt");
+
+      expect(runCli(["inbox", "accept", groupId ?? "", "--workspace", "cli-test", "--all"], env)).toContain(
+        `inbox ${groupId} assigned task=implement-cli-workflow-tests assigned=2 skipped=0`,
+      );
+      expect(runCli(["inbox", "list", "--workspace", "cli-test"], env).trim()).toBe(
+        "No inbox groups.",
+      );
+
+      const manualUnassignedOutput = runCli(
+        [
+          "usage",
+          "codex-turn",
+          "--workspace",
+          "cli-test",
+          "--prompt-text",
+          "manual single event",
+          "--input-chars",
+          "20",
+          "--output-chars",
+          "40",
+          "--idempotency-key",
+          "unassigned-003",
+        ],
+        env,
+      );
+      const manualUsageId = manualUnassignedOutput.match(/usage_(?<id>[a-z0-9]+)/)?.[0];
+      expect(manualUsageId).toBeDefined();
       expect(
         runCli(
-          ["usage", "move", usageId ?? "", "--workspace", "cli-test", "--task", "implement-cli-workflow-tests"],
+          [
+            "inbox",
+            "assign-event",
+            manualUsageId ?? "",
+            "--workspace",
+            "cli-test",
+            "--task",
+            "implement-cli-workflow-tests",
+          ],
           env,
         ),
-      ).toContain(`usage ${usageId} moved task_id=task_`);
-      expect(runCli(["inbox", "list", "--workspace", "cli-test"], env).trim()).toBe(
+      ).toContain(`usage ${manualUsageId} moved task_id=task_`);
+      expect(runCli(["inbox", "list", "--workspace", "cli-test", "--events"], env).trim()).toBe(
         "No unassigned usage events.",
       );
     } finally {

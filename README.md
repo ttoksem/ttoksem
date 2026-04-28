@@ -145,11 +145,14 @@ pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli pricing migrate-events --workspace ttoksem-dev
 pnpm cli auth key create --name "hwanghee dashboard" --scope dashboard:read
 pnpm cli inbox list --workspace ttoksem-dev
-pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
+pnpm cli inbox show <inbox_group_id> --workspace ttoksem-dev
+pnpm cli inbox accept <inbox_group_id> --workspace ttoksem-dev --all
+pnpm cli inbox assign <inbox_group_id> --workspace ttoksem-dev --task implement-chat-usage-logging --all
+pnpm cli inbox assign-event <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev
 pnpm cli dashboard serve --workspace ttoksem-dev --port 4317
 ```
 
-If `usage chat-turn` or `usage import-codex-sessions` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. `usage codex-turn` remains available as the current Codex logging compatibility command.
+If `usage chat-turn` or `usage import-codex-sessions` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. The default inbox view is group-based; use `inbox list --events` for the raw event list. `usage codex-turn` remains available as the current Codex logging compatibility command.
 
 For Codex-agent workflows, `usage import-codex-sessions` is intended to be called by the agent, skill, or local hook as part of the work loop. The user should not need to run the import command manually after each request.

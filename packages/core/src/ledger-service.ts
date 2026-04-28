@@ -199,6 +199,52 @@ export interface DashboardTaskDetailData {
   accuracy_breakdown: DashboardData["accuracy_breakdown"];
 }
 
+export interface InboxTaskSuggestion {
+  task_key: string;
+  task_name: string;
+  confidence: number;
+  level: "high" | "medium" | "low";
+  reason: string;
+}
+
+export interface InboxGroup {
+  group_id: string;
+  assignment_status: "unassigned" | "suggested";
+  event_count: number;
+  run_count: number;
+  token_count: number;
+  estimated_total: number;
+  currency: string | null;
+  first_occurred_at: string;
+  last_occurred_at: string;
+  source_context: {
+    date_bucket: string;
+    tool: string | null;
+    cwd: string | null;
+    git_branch: string | null;
+    command: string | null;
+    conversation_id: string | null;
+    request_id: string | null;
+    external_ref: string | null;
+  };
+  reason_codes: string[];
+  sample_event_ids: string[];
+  prompt_samples: string[];
+  suggested_task: InboxTaskSuggestion | null;
+}
+
+export interface InboxAssignmentResult {
+  group: InboxGroup;
+  task: {
+    key: string;
+    name: string;
+  };
+  assigned_count: number;
+  skipped_count: number;
+  assigned_event_ids: string[];
+  skipped_event_ids: string[];
+}
+
 export class LedgerService {
   private readonly store: LedgerStore;
   private readonly clock: Clock;
@@ -565,6 +611,26 @@ export class LedgerService {
     return this.store.listUsageEventsByAssignment(workspace.id, "unassigned", input.limit ?? 20);
   }
 
+  async listInboxGroups(input: { workspace: WorkspaceResolver; limit?: number }): Promise<InboxGroup[]> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const events = await this.listInboxEvents(workspace.id, Math.max((input.limit ?? 20) * 20, 100));
+    const tasks = await this.store.listTasks(workspace.id);
+    return buildInboxGroups(workspace.id, events, tasks).slice(0, input.limit ?? 20);
+  }
+
+  async showInboxGroup(input: {
+    workspace: WorkspaceResolver;
+    groupId: string;
+    limit?: number;
+  }): Promise<{ group: InboxGroup; events: UsageEventRecord[] }> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const { group, events } = await this.resolveInboxGroup(workspace.id, input.groupId);
+    return {
+      group,
+      events: events.slice(0, input.limit ?? 50),
+    };
+  }
+
   async moveUsage(input: {
     workspace: WorkspaceResolver;
     usageEventId: string;
@@ -574,6 +640,68 @@ export class LedgerService {
     const task = await this.store.getTaskByKey(workspace.id, input.taskKey);
     if (!task) throw new Error(`Task not found: ${input.taskKey}`);
     return this.store.moveUsageEventToTask(workspace.id, input.usageEventId, task.id);
+  }
+
+  async assignInboxEvent(input: {
+    workspace: WorkspaceResolver;
+    usageEventId: string;
+    taskKey: string;
+  }): Promise<UsageEventRecord> {
+    return this.moveUsage(input);
+  }
+
+  async assignInboxGroup(input: {
+    workspace: WorkspaceResolver;
+    groupId: string;
+    taskKey: string;
+    all?: boolean;
+  }): Promise<InboxAssignmentResult> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const task = await this.store.getTaskByKey(workspace.id, input.taskKey);
+    if (!task) throw new Error(`Task not found: ${input.taskKey}`);
+
+    const { group, events } = await this.resolveInboxGroup(workspace.id, input.groupId);
+    if (!input.all && events.length > 1) {
+      throw new Error(
+        `Inbox group ${input.groupId} has ${events.length} events. Re-run with --all for bulk assignment, or use inbox assign-event <usage_id>.`,
+      );
+    }
+
+    const assignedEventIds: string[] = [];
+    const skippedEventIds: string[] = [];
+    for (const event of events) {
+      if (event.assignment_status !== "unassigned" && event.assignment_status !== "suggested") {
+        skippedEventIds.push(event.id);
+        continue;
+      }
+      const moved = await this.store.moveUsageEventToTask(workspace.id, event.id, task.id);
+      assignedEventIds.push(moved.id);
+    }
+
+    return {
+      group,
+      task: { key: task.key, name: task.name },
+      assigned_count: assignedEventIds.length,
+      skipped_count: skippedEventIds.length,
+      assigned_event_ids: assignedEventIds,
+      skipped_event_ids: skippedEventIds,
+    };
+  }
+
+  async acceptInboxGroup(input: {
+    workspace: WorkspaceResolver;
+    groupId: string;
+    all?: boolean;
+  }): Promise<InboxAssignmentResult> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const { group } = await this.resolveInboxGroup(workspace.id, input.groupId);
+    if (!group.suggested_task) throw new Error(`Inbox group ${input.groupId} has no suggested task.`);
+    return this.assignInboxGroup({
+      workspace: { id: workspace.id },
+      groupId: input.groupId,
+      taskKey: group.suggested_task.task_key,
+      all: input.all,
+    });
   }
 
   async reportToday(input: { workspace: WorkspaceResolver; date?: string }): Promise<DailyReport> {
@@ -879,7 +1007,321 @@ export class LedgerService {
       costCalculatedAt: this.clock.now(),
     };
   }
+
+  private async listInboxEvents(workspaceId: string, limit: number): Promise<UsageEventRecord[]> {
+    const [unassigned, suggested] = await Promise.all([
+      this.store.listUsageEventsByAssignment(workspaceId, "unassigned", limit),
+      this.store.listUsageEventsByAssignment(workspaceId, "suggested", limit),
+    ]);
+    const eventsById = new Map<string, UsageEventRecord>();
+    for (const event of [...unassigned, ...suggested]) eventsById.set(event.id, event);
+    return [...eventsById.values()]
+      .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
+      .slice(0, limit);
+  }
+
+  private async resolveInboxGroup(
+    workspaceId: string,
+    groupId: string,
+  ): Promise<{ group: InboxGroup; events: UsageEventRecord[] }> {
+    const events = await this.listInboxEvents(workspaceId, 5000);
+    const tasks = await this.store.listTasks(workspaceId);
+    const groups = buildInboxGroups(workspaceId, events, tasks);
+    const group = groups.find((item) => item.group_id === groupId);
+    if (!group) throw new Error(`Inbox group not found: ${groupId}`);
+    const groupEvents = events.filter(
+      (event) => inboxGroupId(workspaceId, event, group.suggested_task) === groupId,
+    );
+    return { group, events: groupEvents };
+  }
 }
+
+function buildInboxGroups(
+  workspaceId: string,
+  events: UsageEventRecord[],
+  tasks: TaskRecord[],
+): InboxGroup[] {
+  const groupEvents = new Map<string, UsageEventRecord[]>();
+  const groupSuggestions = new Map<string, InboxTaskSuggestion | null>();
+
+  for (const event of events) {
+    if (event.assignment_status !== "unassigned" && event.assignment_status !== "suggested") continue;
+    const suggestion = suggestTaskForEvents([event], tasks);
+    const groupId = inboxGroupId(workspaceId, event, suggestion);
+    const existing = groupEvents.get(groupId) ?? [];
+    existing.push(event);
+    groupEvents.set(groupId, existing);
+    groupSuggestions.set(groupId, suggestion);
+  }
+
+  return [...groupEvents.entries()]
+    .map(([groupId, rows]) => inboxGroupFromEvents(groupId, rows, groupSuggestions.get(groupId) ?? null))
+    .sort((a, b) => {
+      const costDelta = b.estimated_total - a.estimated_total;
+      if (Math.abs(costDelta) > 0.000000001) return costDelta;
+      if (b.event_count !== a.event_count) return b.event_count - a.event_count;
+      return b.last_occurred_at.localeCompare(a.last_occurred_at);
+    });
+}
+
+function inboxGroupFromEvents(
+  groupId: string,
+  events: UsageEventRecord[],
+  suggestedTask: InboxTaskSuggestion | null,
+): InboxGroup {
+  const sorted = [...events].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (!first || !last) throw new Error("Inbox group cannot be empty.");
+  const currencies = new Set(
+    sorted
+      .flatMap((event) => [event.estimated_currency, event.observed_currency])
+      .filter((value): value is string => Boolean(value)),
+  );
+  const runIds = new Set(sorted.map((event) => event.run_id).filter(Boolean));
+  const sourceContext = inboxSourceContext(first);
+  const promptSamples = uniqueNonEmpty(sorted.map((event) => extractPromptText(event.payload_json))).slice(0, 3);
+  return {
+    group_id: groupId,
+    assignment_status: first.assignment_status === "suggested" ? "suggested" : "unassigned",
+    event_count: sorted.length,
+    run_count: runIds.size,
+    token_count: sorted.reduce((sum, event) => sum + eventTokenCount(event), 0),
+    estimated_total: nanosToDecimal(
+      sorted.reduce(
+        (sum, event) => sum + (event.estimated_cost_nanos ?? event.observed_cost_nanos ?? 0),
+        0,
+      ),
+    ),
+    currency: currencies.size === 1 ? [...currencies][0] : null,
+    first_occurred_at: first.occurred_at,
+    last_occurred_at: last.occurred_at,
+    source_context: sourceContext,
+    reason_codes: inboxReasonCodes(sourceContext),
+    sample_event_ids: sorted.slice(0, 5).map((event) => event.id),
+    prompt_samples: promptSamples,
+    suggested_task: suggestedTask,
+  };
+}
+
+function inboxGroupId(
+  workspaceId: string,
+  event: UsageEventRecord,
+  suggestedTask: InboxTaskSuggestion | null,
+): string {
+  const sourceContext = inboxSourceContext(event);
+  return `inbox_${hashString(
+    [
+      workspaceId,
+      event.assignment_status,
+      suggestedTask?.task_key ?? "",
+      sourceContext.date_bucket,
+      sourceContext.tool ?? "",
+      sourceContext.cwd ?? "",
+      sourceContext.git_branch ?? "",
+      sourceContext.command ?? "",
+      sourceContext.conversation_id ?? "",
+      sourceContext.request_id ?? "",
+      sourceContext.external_ref ?? "",
+      event.source,
+      event.provider,
+      event.model,
+      event.usage_kind,
+    ].join("|"),
+  )}`;
+}
+
+function inboxSourceContext(event: UsageEventRecord): InboxGroup["source_context"] {
+  const payload = isRecord(event.payload_json.payload) ? event.payload_json.payload : null;
+  const context = isRecord(payload?.source_context) ? payload.source_context : null;
+  const session = isRecord(context?.session) ? context.session : null;
+  const promptGroup = isRecord(context?.prompt_group) ? context.prompt_group : null;
+  const git = isRecord(context?.git) ? context.git : null;
+  return {
+    date_bucket: event.occurred_at.slice(0, 10),
+    tool: stringField(context?.tool) ?? event.source,
+    cwd: stringField(context?.cwd) ?? stringField(session?.cwd),
+    git_branch: stringField(context?.git_branch) ?? stringField(git?.branch),
+    command: stringField(context?.command),
+    conversation_id:
+      stringField(context?.conversation_id) ??
+      stringField(context?.conversationId) ??
+      stringField(session?.id),
+    request_id:
+      stringField(context?.request_id) ??
+      stringField(context?.requestId) ??
+      stringField(promptGroup?.prompt_hash) ??
+      numberField(promptGroup?.index)?.toString() ??
+      null,
+    external_ref: externalRefKey(context?.external_ref),
+  };
+}
+
+function inboxReasonCodes(context: InboxGroup["source_context"]): string[] {
+  const reasons: string[] = [];
+  if (context.tool) reasons.push("same_tool");
+  if (context.cwd) reasons.push("same_cwd");
+  if (context.git_branch) reasons.push("same_git_branch");
+  if (context.command) reasons.push("same_command");
+  if (context.conversation_id) reasons.push("same_conversation");
+  if (context.request_id) reasons.push("same_request");
+  if (context.external_ref) reasons.push("same_external_ref");
+  reasons.push("same_day");
+  return reasons;
+}
+
+function suggestTaskForEvents(events: UsageEventRecord[], tasks: TaskRecord[]): InboxTaskSuggestion | null {
+  let best: InboxTaskSuggestion | null = null;
+  const text = inboxSuggestionText(events);
+  const explicitKey = explicitSuggestedTaskKey(events);
+  for (const task of tasks) {
+    const suggestion = explicitKey === task.key ? taskSuggestion(task, 0.95, "source_context suggested task") : taskTextMatch(task, text);
+    if (!suggestion) continue;
+    if (!best || suggestion.confidence > best.confidence) best = suggestion;
+  }
+  return best;
+}
+
+function explicitSuggestedTaskKey(events: UsageEventRecord[]): string | null {
+  for (const event of events) {
+    const payload = isRecord(event.payload_json.payload) ? event.payload_json.payload : null;
+    const context = isRecord(payload?.source_context) ? payload.source_context : null;
+    const key =
+      stringField(context?.suggested_task_key) ??
+      stringField(context?.suggestedTaskKey) ??
+      stringField(context?.task_key);
+    if (key) return key;
+  }
+  return null;
+}
+
+function inboxSuggestionText(events: UsageEventRecord[]): string {
+  return events
+    .flatMap((event) => {
+      const context = inboxSourceContext(event);
+      return [
+        extractPromptText(event.payload_json),
+        context.cwd,
+        context.git_branch,
+        context.command,
+        context.conversation_id,
+        context.request_id,
+        context.external_ref,
+      ];
+    })
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+}
+
+function taskTextMatch(task: TaskRecord, text: string): InboxTaskSuggestion | null {
+  if (!text) return null;
+  const key = task.key.toLowerCase();
+  const name = task.name.toLowerCase();
+  const normalizedText = normalizeMatchText(text);
+  if (normalizedText.includes(normalizeMatchText(key))) return taskSuggestion(task, 0.86, "task key appears in context");
+  if (normalizedText.includes(normalizeMatchText(name))) return taskSuggestion(task, 0.84, "task name appears in context");
+
+  const tokens = task.key
+    .split(/[^a-z0-9]+/i)
+    .map((token) => token.toLowerCase())
+    .filter((token) => token.length >= 4 && !TASK_MATCH_STOP_WORDS.has(token));
+  if (tokens.length === 0) return null;
+  const hits = tokens.filter((token) => normalizedText.includes(token));
+  if (hits.length >= 2 && hits.length / tokens.length >= 0.5) {
+    return taskSuggestion(task, 0.72, `context matched task words: ${hits.slice(0, 3).join(",")}`);
+  }
+  if (hits.length === 1 && hits[0] && hits[0].length >= 8) {
+    return taskSuggestion(task, 0.62, `context matched task word: ${hits[0]}`);
+  }
+  return null;
+}
+
+function taskSuggestion(task: TaskRecord, confidence: number, reason: string): InboxTaskSuggestion {
+  return {
+    task_key: task.key,
+    task_name: task.name,
+    confidence,
+    level: confidence >= 0.85 ? "high" : confidence >= 0.6 ? "medium" : "low",
+    reason,
+  };
+}
+
+function extractPromptText(payloadJson: Record<string, unknown>): string | null {
+  const payload = isRecord(payloadJson.payload) ? payloadJson.payload : null;
+  const promptSnapshot = isRecord(payload?.prompt_snapshot) ? payload.prompt_snapshot : null;
+  const promptText = stringField(promptSnapshot?.prompt_text);
+  if (promptText) return promptText;
+  const context = isRecord(payload?.source_context) ? payload.source_context : null;
+  return stringField(context?.user_message);
+}
+
+function eventTokenCount(event: UsageEventRecord): number {
+  return event.total_tokens ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0);
+}
+
+function externalRefKey(value: unknown): string | null {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (!isRecord(value)) return null;
+  const system = stringField(value.system);
+  const id = stringField(value.id);
+  if (system && id) return `${system}:${id}`;
+  return id ?? system;
+}
+
+function uniqueNonEmpty(values: Array<string | null>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function normalizeMatchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function hashString(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function numberField(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const TASK_MATCH_STOP_WORDS = new Set([
+  "add",
+  "build",
+  "check",
+  "cleanup",
+  "codex",
+  "dashboard",
+  "define",
+  "document",
+  "event",
+  "events",
+  "fix",
+  "implement",
+  "improve",
+  "local",
+  "logging",
+  "report",
+  "session",
+  "task",
+  "test",
+  "tests",
+  "update",
+  "usage",
+]);
 
 function toDashboardRecent(event: DashboardRecentUsageRow): DashboardData["recent"][number] {
   return {
