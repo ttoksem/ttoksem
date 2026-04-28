@@ -478,6 +478,58 @@ describe("SqliteLedgerStore", () => {
       rmSync(`${dbPath}-wal`, { force: true });
     }
   });
+
+  it("stores, uses, and revokes database access keys", async () => {
+    const dbPath = testDbPath();
+    const store = new SqliteLedgerStore(dbPath);
+    try {
+      await store.migrate();
+      await store.createWorkspace({
+        id: "ws_test",
+        key: "test",
+        name: "Test",
+        root_path: "/tmp/test",
+        source: "test",
+        now: "2026-04-27T00:00:00.000Z",
+      });
+      const key = await store.createAccessKey({
+        id: "key_test",
+        name: "Dashboard",
+        token_prefix: "ttok_test_prefix",
+        token_hash: "sha256:test",
+        scopes_json: ["dashboard:read"],
+        workspace_keys_json: ["test"],
+        now: "2026-04-27T00:00:01.000Z",
+      });
+
+      expect(key).toMatchObject({
+        id: "key_test",
+        token_prefix: "ttok_test_prefix",
+        scopes_json: ["dashboard:read"],
+        workspace_keys_json: ["test"],
+        revoked_at: null,
+        last_used_at: null,
+      });
+      await expect(store.listAccessKeys()).resolves.toHaveLength(1);
+      await expect(store.getAccessKeyByTokenHash("sha256:test")).resolves.toMatchObject({
+        id: "key_test",
+      });
+      await expect(store.countActiveAccessKeys("2026-04-27T00:00:02.000Z")).resolves.toBe(1);
+
+      await store.touchAccessKey("key_test", "2026-04-27T00:00:03.000Z");
+      await expect(store.getAccessKeyById("key_test")).resolves.toMatchObject({
+        last_used_at: "2026-04-27T00:00:03.000Z",
+      });
+
+      await store.revokeAccessKey("key_test", "2026-04-27T00:00:04.000Z");
+      await expect(store.countActiveAccessKeys("2026-04-27T00:00:05.000Z")).resolves.toBe(0);
+    } finally {
+      await store.close();
+      rmSync(dbPath, { force: true });
+      rmSync(`${dbPath}-shm`, { force: true });
+      rmSync(`${dbPath}-wal`, { force: true });
+    }
+  });
 });
 
 function testDbPath(): string {

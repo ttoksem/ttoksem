@@ -68,6 +68,22 @@ export const RunRecordSchema = z.object({
 
 export type RunRecord = z.infer<typeof RunRecordSchema>;
 
+export const AccessKeyRecordSchema = z.object({
+  id: z.string().startsWith("key_"),
+  name: z.string().min(1),
+  token_prefix: z.string().min(1),
+  token_hash: z.string().min(1),
+  scopes_json: z.array(z.string().min(1)),
+  workspace_keys_json: z.array(z.string().min(1)).nullable().optional(),
+  expires_at: nullableString,
+  revoked_at: nullableString,
+  last_used_at: nullableString,
+  created_at: isoUtc,
+  updated_at: isoUtc,
+});
+
+export type AccessKeyRecord = z.infer<typeof AccessKeyRecordSchema>;
+
 const PricingSourceNameSchema = z.enum(["litellm", "manual", "import", "openrouter"]);
 
 export const PricingSourceSnapshotRecordSchema = z.object({

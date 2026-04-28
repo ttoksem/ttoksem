@@ -1,11 +1,13 @@
 import Database from "better-sqlite3";
 import {
+  AccessKeyRecordSchema,
   PricingRuleRecordSchema,
   PricingSourceSnapshotRecordSchema,
   RunRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
   WorkspaceRecordSchema,
+  type AccessKeyRecord,
   type PricingRuleRecord,
   type PricingSourceSnapshotRecord,
   type RunRecord,
@@ -15,6 +17,7 @@ import {
 } from "@ttoksem/schema";
 import type {
   CreateRunInput,
+  CreateAccessKeyInput,
   CreateTaskInput,
   CreateUsageEventInput,
   CreateWorkspaceInput,
@@ -110,6 +113,25 @@ export class SqliteLedgerStore implements LedgerStore {
 
       CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
       CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
+
+      CREATE TABLE IF NOT EXISTS access_keys (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        token_prefix TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        scopes_json TEXT NOT NULL,
+        workspace_keys_json TEXT,
+        expires_at TEXT,
+        revoked_at TEXT,
+        last_used_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(token_hash)
+      );
+
+      CREATE INDEX IF NOT EXISTS access_keys_created_idx ON access_keys(created_at);
+      CREATE INDEX IF NOT EXISTS access_keys_active_idx
+        ON access_keys(revoked_at, expires_at);
 
       CREATE TABLE IF NOT EXISTS pricing_source_snapshots (
         id TEXT PRIMARY KEY,
@@ -241,6 +263,10 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0006_remove_run_session_id", new Date().toISOString());
+    this.migrateAccessKeysToDbScopeIfNeeded();
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0007_db_access_keys", new Date().toISOString());
   }
 
   private dropRunSessionIdIfPresent(): void {
@@ -280,6 +306,75 @@ export class SqliteLedgerStore implements LedgerStore {
         CREATE INDEX IF NOT EXISTS runs_workspace_status_idx ON runs(workspace_id, status);
         CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
       `);
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
+  }
+
+  private migrateAccessKeysToDbScopeIfNeeded(): void {
+    const columns = columnNames(this.db, "access_keys");
+    if (!columns.includes("workspace_id") && columns.includes("workspace_keys_json")) return;
+    const rows = this.db.prepare("SELECT * FROM access_keys").all() as DbRow[];
+    const workspaces = new Map(
+      (this.db.prepare("SELECT id, key FROM workspaces").all() as Array<{ id: string; key: string }>).map(
+        (workspace) => [workspace.id, workspace.key],
+      ),
+    );
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.exec(`
+        DROP INDEX IF EXISTS access_keys_workspace_idx;
+        DROP INDEX IF EXISTS access_keys_workspace_active_idx;
+        DROP INDEX IF EXISTS access_keys_created_idx;
+        DROP INDEX IF EXISTS access_keys_active_idx;
+        ALTER TABLE access_keys RENAME TO access_keys_old;
+        CREATE TABLE access_keys (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          token_prefix TEXT NOT NULL,
+          token_hash TEXT NOT NULL,
+          scopes_json TEXT NOT NULL,
+          workspace_keys_json TEXT,
+          expires_at TEXT,
+          revoked_at TEXT,
+          last_used_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(token_hash)
+        );
+        CREATE INDEX IF NOT EXISTS access_keys_created_idx ON access_keys(created_at);
+        CREATE INDEX IF NOT EXISTS access_keys_active_idx
+          ON access_keys(revoked_at, expires_at);
+      `);
+      const insert = this.db.prepare(
+        `INSERT OR IGNORE INTO access_keys (
+          id, name, token_prefix, token_hash, scopes_json, workspace_keys_json,
+          expires_at, revoked_at, last_used_at, created_at, updated_at
+        ) VALUES (
+          @id, @name, @token_prefix, @token_hash, @scopes_json, @workspace_keys_json,
+          @expires_at, @revoked_at, @last_used_at, @created_at, @updated_at
+        )`,
+      );
+      for (const row of rows) {
+        const workspaceId = typeof row.workspace_id === "string" ? row.workspace_id : null;
+        const workspaceKey = workspaceId ? workspaces.get(workspaceId) : null;
+        insert.run({
+          id: row.id,
+          name: row.name,
+          token_prefix: row.token_prefix,
+          token_hash: row.token_hash,
+          scopes_json: row.scopes_json,
+          workspace_keys_json:
+            row.workspace_keys_json ??
+            (workspaceKey ? JSON.stringify([workspaceKey]) : null),
+          expires_at: row.expires_at ?? null,
+          revoked_at: row.revoked_at ?? null,
+          last_used_at: row.last_used_at ?? null,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        });
+      }
+      this.db.exec("DROP TABLE access_keys_old;");
     } finally {
       this.db.pragma("foreign_keys = ON");
     }
@@ -454,6 +549,85 @@ export class SqliteLedgerStore implements LedgerStore {
 
   async getRunById(id: string): Promise<RunRecord | null> {
     return parseRun(this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id));
+  }
+
+  async createAccessKey(input: CreateAccessKeyInput): Promise<AccessKeyRecord> {
+    this.db
+      .prepare(
+        `INSERT INTO access_keys (
+          id, name, token_prefix, token_hash, scopes_json, workspace_keys_json,
+          expires_at, revoked_at, last_used_at, created_at, updated_at
+        ) VALUES (
+          @id, @name, @token_prefix, @token_hash, @scopes_json, @workspace_keys_json,
+          @expires_at, NULL, NULL, @now, @now
+        )`,
+      )
+      .run({
+        ...input,
+        scopes_json: JSON.stringify(input.scopes_json),
+        workspace_keys_json: JSON.stringify(input.workspace_keys_json ?? null),
+        expires_at: input.expires_at ?? null,
+      });
+    const key = await this.getAccessKeyById(input.id);
+    if (!key) throw new Error("Failed to create access key.");
+    return key;
+  }
+
+  async listAccessKeys(): Promise<AccessKeyRecord[]> {
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM access_keys
+         ORDER BY created_at ASC`,
+      )
+      .all()
+      .map((row) => AccessKeyRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
+  async getAccessKeyById(id: string): Promise<AccessKeyRecord | null> {
+    return parseAccessKey(
+      this.db.prepare("SELECT * FROM access_keys WHERE id = ?").get(id),
+    );
+  }
+
+  async getAccessKeyByTokenHash(tokenHash: string): Promise<AccessKeyRecord | null> {
+    return parseAccessKey(
+      this.db
+        .prepare("SELECT * FROM access_keys WHERE token_hash = ?")
+        .get(tokenHash),
+    );
+  }
+
+  async revokeAccessKey(id: string, now: string): Promise<AccessKeyRecord> {
+    const result = this.db
+      .prepare(
+        `UPDATE access_keys
+         SET revoked_at = COALESCE(revoked_at, @now), updated_at = @now
+         WHERE id = @id`,
+      )
+      .run({ id, now });
+    if (result.changes === 0) throw new Error(`Access key not found: ${id}`);
+    const key = await this.getAccessKeyById(id);
+    if (!key) throw new Error(`Access key not found: ${id}`);
+    return key;
+  }
+
+  async touchAccessKey(id: string, now: string): Promise<void> {
+    this.db
+      .prepare("UPDATE access_keys SET last_used_at = @now, updated_at = @now WHERE id = @id")
+      .run({ id, now });
+  }
+
+  async countActiveAccessKeys(now: string): Promise<number> {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM access_keys
+         WHERE revoked_at IS NULL
+           AND (expires_at IS NULL OR expires_at > ?)`,
+      )
+      .get(now) as { count: number };
+    return row.count;
   }
 
   async upsertPricingSourceSnapshot(
@@ -1205,6 +1379,11 @@ function parseRun(row: unknown): RunRecord | null {
   return RunRecordSchema.parse(fromDbJson(row as DbRow));
 }
 
+function parseAccessKey(row: unknown): AccessKeyRecord | null {
+  if (!row) return null;
+  return AccessKeyRecordSchema.parse(fromDbJson(row as DbRow));
+}
+
 function fromDbJson(row: DbRow): DbRow {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => {
@@ -1227,8 +1406,12 @@ function addColumnIfMissing(
 }
 
 function hasColumn(db: Database.Database, tableName: string, columnName: string): boolean {
+  return columnNames(db, tableName).includes(columnName);
+}
+
+function columnNames(db: Database.Database, tableName: string): string[] {
   return db
     .prepare(`PRAGMA table_info(${tableName})`)
     .all()
-    .some((row) => (row as { name: string }).name === columnName);
+    .map((row) => (row as { name: string }).name);
 }

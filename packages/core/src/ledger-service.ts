@@ -1,5 +1,6 @@
 import {
   AiUsageObservedSchema,
+  type AccessKeyRecord,
   type AiUsageObserved,
   type DailyReport,
   type PricingRuleRecord,
@@ -74,6 +75,12 @@ export interface PricingMigrationResult {
   migrated: number;
   unchanged: number;
   still_unpriced: number;
+}
+
+export interface AccessKeyVerificationResult {
+  allowed: boolean;
+  key: AccessKeyRecord | null;
+  reason: "allowed" | "not_found" | "revoked" | "expired" | "insufficient_scope" | "workspace_not_allowed";
 }
 
 export interface DashboardData {
@@ -238,6 +245,65 @@ export class LedgerService {
 
   async listWorkspaces(): Promise<WorkspaceRecord[]> {
     return this.store.listWorkspaces();
+  }
+
+  async createAccessKey(input: {
+    name: string;
+    tokenPrefix: string;
+    tokenHash: string;
+    scopes: string[];
+    workspaceKeys?: string[] | null;
+    expiresAt?: string | null;
+  }): Promise<AccessKeyRecord> {
+    const name = input.name.trim();
+    if (name.length === 0) throw new Error("Access key name cannot be empty.");
+    if (input.tokenPrefix.trim().length === 0) throw new Error("Access key token prefix cannot be empty.");
+    if (input.tokenHash.trim().length === 0) throw new Error("Access key token hash cannot be empty.");
+    if (input.expiresAt != null && !input.expiresAt.endsWith("Z")) {
+      throw new Error("Access key expires_at must be UTC ISO text ending in Z.");
+    }
+    return this.store.createAccessKey({
+      id: this.idFactory("key"),
+      name,
+      token_prefix: input.tokenPrefix,
+      token_hash: input.tokenHash,
+      scopes_json: normalizeAccessScopes(input.scopes),
+      workspace_keys_json: normalizeAccessWorkspaceKeys(input.workspaceKeys ?? null),
+      expires_at: input.expiresAt ?? null,
+      now: this.clock.now(),
+    });
+  }
+
+  async listAccessKeys(): Promise<AccessKeyRecord[]> {
+    return this.store.listAccessKeys();
+  }
+
+  async revokeAccessKey(input: { id: string }): Promise<AccessKeyRecord> {
+    return this.store.revokeAccessKey(input.id, this.clock.now());
+  }
+
+  async countActiveAccessKeys(): Promise<number> {
+    return this.store.countActiveAccessKeys(this.clock.now());
+  }
+
+  async verifyAccessKey(input: {
+    workspaceKey: string;
+    tokenHash: string;
+    requiredScopes: string[];
+  }): Promise<AccessKeyVerificationResult> {
+    const key = await this.store.getAccessKeyByTokenHash(input.tokenHash);
+    const now = this.clock.now();
+    if (!key) return { allowed: false, key: null, reason: "not_found" };
+    if (key.revoked_at) return { allowed: false, key, reason: "revoked" };
+    if (key.expires_at && key.expires_at <= now) return { allowed: false, key, reason: "expired" };
+    if (!hasRequiredAccessScopes(key.scopes_json, normalizeAccessScopes(input.requiredScopes))) {
+      return { allowed: false, key, reason: "insufficient_scope" };
+    }
+    if (!hasWorkspaceAccess(key.workspace_keys_json ?? null, input.workspaceKey)) {
+      return { allowed: false, key, reason: "workspace_not_allowed" };
+    }
+    await this.store.touchAccessKey(key.id, now);
+    return { allowed: true, key, reason: "allowed" };
   }
 
   async currentWorkspace(rootPath: string): Promise<WorkspaceRecord> {
@@ -1013,6 +1079,46 @@ function usagePricingMatches(
     JSON.stringify(event.pricing_source_snapshot_ids_json ?? null) ===
       JSON.stringify(pricing.pricing_source_snapshot_ids_json ?? null)
   );
+}
+
+function normalizeAccessScopes(scopes: string[]): string[] {
+  const normalized = [
+    ...new Set(
+      scopes
+        .flatMap((scope) => scope.split(","))
+        .map((scope) => scope.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (normalized.length === 0) throw new Error("Access key must include at least one scope.");
+  for (const scope of normalized) {
+    if (scope !== "*" && !/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(scope)) {
+      throw new Error(`Invalid access key scope: ${scope}`);
+    }
+  }
+  return normalized;
+}
+
+function hasRequiredAccessScopes(grantedScopes: string[], requiredScopes: string[]): boolean {
+  if (grantedScopes.includes("*")) return true;
+  return requiredScopes.every((scope) => grantedScopes.includes(scope));
+}
+
+function normalizeAccessWorkspaceKeys(workspaceKeys: string[] | null): string[] | null {
+  if (!workspaceKeys) return null;
+  const normalized = [
+    ...new Set(
+      workspaceKeys
+        .flatMap((key) => key.split(","))
+        .map((key) => key.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return normalized.length > 0 ? normalized : null;
+}
+
+function hasWorkspaceAccess(workspaceKeys: string[] | null, requestedWorkspaceKey: string): boolean {
+  return !workspaceKeys || workspaceKeys.length === 0 || workspaceKeys.includes(requestedWorkspaceKey);
 }
 
 function toDailyReport(workspace: WorkspaceRecord, date: string, rows: LedgerReportRow[]): DailyReport {

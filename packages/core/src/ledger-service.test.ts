@@ -1,4 +1,5 @@
 import type {
+  AccessKeyRecord,
   PricingRuleRecord,
   PricingSourceSnapshotRecord,
   RunRecord,
@@ -7,6 +8,7 @@ import type {
   WorkspaceRecord,
 } from "@ttoksem/schema";
 import type {
+  CreateAccessKeyInput,
   CreateRunInput,
   CreateUsageEventInput,
   LedgerStore,
@@ -338,6 +340,51 @@ describe("LedgerService", () => {
     expect(updates[0]?.pricing_mode).toBe("manual");
     expect(updates[0]?.unpriced_reason).toBeNull();
   });
+
+  it("verifies database access keys by hash, scope, and optional workspace restriction", async () => {
+    const workspace = workspaceRecord();
+    const key = accessKeyRecord({
+      token_hash: "sha256:test",
+      scopes_json: ["dashboard:read"],
+      workspace_keys_json: [workspace.key],
+    });
+    const touched: string[] = [];
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        getAccessKeyByTokenHash: async () => key,
+        touchAccessKey: async (id) => {
+          touched.push(id);
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    await expect(
+      service.verifyAccessKey({
+        workspaceKey: workspace.key,
+        tokenHash: "sha256:test",
+        requiredScopes: ["dashboard:read"],
+      }),
+    ).resolves.toMatchObject({ allowed: true, reason: "allowed" });
+    expect(touched).toEqual(["key_test"]);
+
+    await expect(
+      service.verifyAccessKey({
+        workspaceKey: workspace.key,
+        tokenHash: "sha256:test",
+        requiredScopes: ["usage:write"],
+      }),
+    ).resolves.toMatchObject({ allowed: false, reason: "insufficient_scope" });
+    await expect(
+      service.verifyAccessKey({
+        workspaceKey: "other-workspace",
+        tokenHash: "sha256:test",
+        requiredScopes: ["dashboard:read"],
+      }),
+    ).resolves.toMatchObject({ allowed: false, reason: "workspace_not_allowed" });
+  });
 });
 
 function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
@@ -364,6 +411,14 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     setActiveTask: async () => workspaceRecord(),
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
+    createAccessKey: async (input) => accessKeyRecord(input),
+    listAccessKeys: async () => [],
+    getAccessKeyById: async () => null,
+    getAccessKeyByTokenHash: async () => null,
+    revokeAccessKey: async (id, now) =>
+      accessKeyRecord({ id, name: "revoked", now, revoked_at: now }),
+    touchAccessKey: async () => {},
+    countActiveAccessKeys: async () => 0,
     upsertPricingSourceSnapshot: async (input) => pricingSourceSnapshot(input),
     listPricingSourceSnapshots: async () => [],
     getPricingSourceSnapshotById: async () => null,
@@ -453,6 +508,27 @@ function taskRecord(workspaceId: string): TaskRecord {
     started_at: "2026-04-27T00:00:00.000Z",
     closed_at: null,
     updated_at: "2026-04-27T00:00:00.000Z",
+  };
+}
+
+function accessKeyRecord(
+  input: Partial<CreateAccessKeyInput> & {
+    revoked_at?: string | null;
+    last_used_at?: string | null;
+  } = {},
+): AccessKeyRecord {
+  return {
+    id: input.id ?? "key_test",
+    name: input.name ?? "Test key",
+    token_prefix: input.token_prefix ?? "ttok_test",
+    token_hash: input.token_hash ?? "hash_test",
+    scopes_json: input.scopes_json ?? ["dashboard:read"],
+    workspace_keys_json: input.workspace_keys_json ?? null,
+    expires_at: input.expires_at ?? null,
+    revoked_at: input.revoked_at ?? null,
+    last_used_at: input.last_used_at ?? null,
+    created_at: input.now ?? "2026-04-27T00:00:00.000Z",
+    updated_at: input.now ?? "2026-04-27T00:00:00.000Z",
   };
 }
 

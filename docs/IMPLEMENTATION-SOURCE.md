@@ -23,6 +23,7 @@ Implemented first slice:
 - `usage import-codex-sessions`
 - `usage move`
 - `inbox list`
+- `auth key create/list/revoke`
 - run grouping through explicit `run_id`
 - pricing source snapshots
 - LiteLLM pricing import
@@ -31,6 +32,7 @@ Implemented first slice:
 - `report task`
 - `dashboard overview`
 - read-only local Hono dashboard
+- access-key guard for dashboard/API data
 - `doctor`
 
 Deferred from the design source:
@@ -39,6 +41,7 @@ Deferred from the design source:
 - MCP tools
 - correction/adjustment records
 - write-capable HTTP API
+- write-scope enforcement for future HTTP/MCP mutation routes
 - inbox grouping and suggested assignment actions
 - run reconciliation and duration aggregation
 - provider SDK collectors with exact provider usage capture

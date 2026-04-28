@@ -10,12 +10,13 @@ Current scope:
 - SQLite-first local adapter with explicit SQL
 - CLI entrypoint for workspace, task, usage, report, dashboard, and doctor workflows
 - Hono HTTP package and local server entrypoint for the read-only dashboard
+- Database access-key guard for local dashboard/API data
 
 The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, and a local read-only Hono dashboard.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, and a local read-only Hono dashboard.
 
 Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, run duration aggregation, inbox grouping, suggested assignment workflows, and provider SDK collectors with exact usage capture.
 
@@ -83,6 +84,14 @@ Inputs do not require a session concept. For ordinary one-off usage records, omi
 
 Usage can still be recorded without a run. That keeps one-off/manual logging simple while allowing RAG, API, and tool workflows to group related events when the caller has enough context.
 
+## Access Key Policy
+
+ttoksem does not model users, passwords, sessions, organizations, or RBAC in the MVP. Local CLI commands use the OS user boundary.
+
+Dashboard/API data is protected by database access keys. Tokens are shown once, while only `token_hash` and `token_prefix` are stored. Read-only dashboard APIs require `dashboard:read`. A key can optionally be restricted to specific workspace keys.
+
+See [docs/ACCESS-AUTH.md](docs/ACCESS-AUTH.md) for the current policy and commands.
+
 ## Project Shape
 
 This repo is intentionally a pnpm workspace, not a single `src/` package.
@@ -102,6 +111,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 ## Examples
 
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
+- [Access Key Auth](docs/ACCESS-AUTH.md): how local dashboard/API access is guarded without adding user accounts or RBAC.
 - [Codex Session Import](docs/examples/codex-session-import.md): how to manually import Codex App/CLI `token_count` records from local session JSONL files.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 - [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
@@ -133,6 +143,7 @@ pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-ch
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli pricing migrate-events --workspace ttoksem-dev
+pnpm cli auth key create --name "hwanghee dashboard" --scope dashboard:read
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli usage move <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev

@@ -17,6 +17,37 @@ describe("ttoksem CLI workflows", () => {
       expect(runCli(["workspace", "init", "--key", "cli-test", "--root", tempDir], env)).toContain(
         "workspace cli-test",
       );
+      const accessKeyOutput = runCli(
+        [
+          "auth",
+          "key",
+          "create",
+          "--workspace-scope",
+          "cli-test",
+          "--name",
+          "CLI dashboard",
+          "--scope",
+          "dashboard:read",
+          "--scope",
+          "api:read",
+        ],
+        env,
+      );
+      const accessKeyId = accessKeyOutput.match(/access key (?<id>key_[a-z0-9]+)/)?.groups?.id;
+      const accessToken = accessKeyOutput.match(/token (?<token>ttok_[A-Za-z0-9_-]+)/)?.groups?.token;
+      expect(accessKeyId).toBeDefined();
+      expect(accessToken).toBeDefined();
+      const accessKeyList = runCli(["auth", "key", "list"], env);
+      expect(accessKeyList).toContain(accessKeyId ?? "");
+      expect(accessKeyList).toContain(`prefix=${accessToken?.slice(0, 16)}`);
+      expect(accessKeyList).toContain("scopes=dashboard:read,api:read");
+      expect(accessKeyList).toContain("workspaces=cli-test");
+      expect(accessKeyList).not.toContain(accessToken ?? "");
+      expect(runCli(["auth", "key", "revoke", accessKeyId ?? ""], env)).toContain(
+        "revoked_at=202",
+      );
+      expect(runCli(["auth", "key", "list"], env)).toContain("status=revoked");
+
       expect(
         runCli(
           [
@@ -378,7 +409,7 @@ describe("ttoksem CLI workflows", () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {

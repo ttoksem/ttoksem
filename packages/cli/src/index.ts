@@ -4,9 +4,20 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import { LedgerService, type DashboardData } from "@ttoksem/core";
-import { AiUsageObservedSchema, type AiUsageObserved, type UsageEventRecord } from "@ttoksem/schema";
+import {
+  AiUsageObservedSchema,
+  type AiUsageObserved,
+  type UsageEventRecord,
+} from "@ttoksem/schema";
 import { serveDashboard } from "@ttoksem/server";
 import { SqliteLedgerStore } from "@ttoksem/storage-sqlite";
+import {
+  appendQueryParam,
+  ensureDashboardAccessKey,
+  isLoopbackHost,
+  parseAuthMode,
+  registerAuthCommands,
+} from "./auth.js";
 
 const program = new Command();
 
@@ -304,8 +315,19 @@ dashboard
   .option("--workspace <key>", "workspace key", "ttoksem-dev")
   .option("--host <host>", "host to bind", "127.0.0.1")
   .option("--port <port>", "port to bind", "4317")
+  .option("--auth <mode>", "auth mode: access-key or none", "access-key")
+  .option("--create-key-name <name>", "name for the initial persistent dashboard key", "dashboard")
+  .option("--unsafe-no-auth", "allow --auth none on a non-loopback host")
   .description("Serve the local read-only dashboard")
   .action(async (options: DashboardServeOptions) => {
+    const authMode = parseAuthMode(options.auth);
+    if (authMode === "none" && !isLoopbackHost(options.host) && !options.unsafeNoAuth) {
+      throw new Error("--auth none on a non-loopback host requires --unsafe-no-auth.");
+    }
+    const initialToken =
+      authMode === "access-key"
+        ? await ensureDashboardAccessKey(makeService, options.workspace, options.createKeyName)
+        : null;
     const dbPath = defaultDbPath();
     mkdirSync(dirname(dbPath), { recursive: true });
     const server = await serveDashboard({
@@ -313,10 +335,17 @@ dashboard
       workspaceKey: options.workspace,
       hostname: options.host,
       port: parsePositiveInteger(options.port),
+      authMode,
     });
-    console.log(`dashboard ${server.url}`);
+    console.log(`dashboard ${initialToken ? appendQueryParam(server.url, "token", initialToken.token) : server.url}`);
+    if (initialToken) {
+      console.log(`dashboard access_key ${initialToken.key.id} prefix=${initialToken.key.token_prefix}`);
+      console.log(`dashboard token ${initialToken.token}`);
+    }
     await waitForShutdown(server.close);
   });
+
+registerAuthCommands(program, makeService);
 
 const pricing = program.command("pricing").description("Pricing commands");
 const pricingSnapshot = pricing.command("snapshot").description("Pricing source snapshot commands");
@@ -627,6 +656,9 @@ interface DashboardServeOptions {
   workspace: string;
   host: string;
   port: string;
+  auth: string;
+  createKeyName: string;
+  unsafeNoAuth?: boolean;
 }
 
 interface DashboardOverviewOptions {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { LedgerService } from "@ttoksem/core";
 import { createHttpApp } from "@ttoksem/http";
@@ -8,6 +9,7 @@ export interface ServeDashboardOptions {
   workspaceKey: string;
   hostname?: string;
   port?: number;
+  authMode?: "access-key" | "none";
 }
 
 export interface RunningDashboardServer {
@@ -24,6 +26,20 @@ export async function serveDashboard(options: ServeDashboardOptions): Promise<Ru
   const app = createHttpApp({
     service,
     defaultWorkspaceKey: options.workspaceKey,
+    auth:
+      options.authMode === "none"
+        ? { mode: "none" }
+        : {
+            mode: "access-key",
+            verifyAccessToken: async ({ workspaceKey, token, requiredScopes }) => {
+              const result = await service.verifyAccessKey({
+                workspaceKey,
+                tokenHash: hashAccessToken(token),
+                requiredScopes,
+              });
+              return result.allowed;
+            },
+          },
   });
   const server = serve({
     fetch: app.fetch,
@@ -43,4 +59,8 @@ export async function serveDashboard(options: ServeDashboardOptions): Promise<Ru
       await store.close();
     },
   };
+}
+
+function hashAccessToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
 }

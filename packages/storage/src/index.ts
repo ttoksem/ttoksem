@@ -1,4 +1,5 @@
 import type {
+  AccessKeyRecord,
   PricingRuleRecord,
   PricingSourceSnapshotRecord,
   RunRecord,
@@ -41,6 +42,17 @@ export interface CreateRunInput {
   started_at?: string | null;
   external_ref_json?: Record<string, unknown> | null;
   metadata_json?: Record<string, unknown> | null;
+  now: string;
+}
+
+export interface CreateAccessKeyInput {
+  id: string;
+  name: string;
+  token_prefix: string;
+  token_hash: string;
+  scopes_json: string[];
+  workspace_keys_json?: string[] | null;
+  expires_at?: string | null;
   now: string;
 }
 
@@ -241,6 +253,14 @@ export interface LedgerStore {
 
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRunById(id: string): Promise<RunRecord | null>;
+
+  createAccessKey(input: CreateAccessKeyInput): Promise<AccessKeyRecord>;
+  listAccessKeys(): Promise<AccessKeyRecord[]>;
+  getAccessKeyById(id: string): Promise<AccessKeyRecord | null>;
+  getAccessKeyByTokenHash(tokenHash: string): Promise<AccessKeyRecord | null>;
+  revokeAccessKey(id: string, now: string): Promise<AccessKeyRecord>;
+  touchAccessKey(id: string, now: string): Promise<void>;
+  countActiveAccessKeys(now: string): Promise<number>;
 
   upsertPricingSourceSnapshot(
     input: UpsertPricingSourceSnapshotInput,

@@ -64,6 +64,14 @@ The important rule is that `core` must not import from `cli`, `storage-sqlite`, 
 
 That lets the same core behavior later run behind HTTP, MCP, or a Cloudflare Worker-compatible adapter.
 
+## Auth Boundary
+
+ttoksem uses database access keys for dashboard/API access. This is a transport guard, not a user model.
+
+The core service owns access-key records, scope checks, optional workspace restrictions, and last-used updates. It does not generate or hash token secrets. Node-specific token generation and SHA-256 hashing live in the CLI/server boundary. The HTTP package accepts an injected verifier so it does not need to know whether the backing runtime is local Node, Worker, SQLite, or D1.
+
+This keeps the ledger model small while still making dashboard/API exposure explicit.
+
 ## Is This Libraryization?
 
 Partly, but not primarily.
