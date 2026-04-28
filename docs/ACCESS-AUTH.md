@@ -9,8 +9,8 @@ The goal is to prevent accidental exposure of ledger data when a dashboard, HTTP
 - CLI commands use the local OS user boundary.
 - Dashboard data APIs require a database access key by default.
 - Read-only dashboard APIs require `dashboard:read`.
+- HTTP mutation routes require `api:write`.
 - A key can optionally be restricted to specific workspace keys.
-- Future write APIs should require a narrower write scope such as `usage:write`.
 - MCP over stdio can stay unauthenticated because the local process launch is the boundary.
 - MCP over HTTP/SSE should reuse the same access-key guard as HTTP.
 
@@ -57,6 +57,15 @@ pnpm cli auth key create \
   --workspace-scope ttoksem-dev
 ```
 
+Create a write API key for one workspace:
+
+```bash
+pnpm cli auth key create \
+  --name "project http writer" \
+  --scope api:write \
+  --workspace-scope ttoksem-dev
+```
+
 List keys without exposing token secrets:
 
 ```bash
@@ -86,3 +95,26 @@ pnpm cli dashboard serve --workspace ttoksem-dev --auth none
 ```
 
 If `--auth none` is used on a non-loopback host, the CLI requires `--unsafe-no-auth`.
+
+## HTTP Write API
+
+Mutation routes accept `Authorization: Bearer <token>` and require `api:write`.
+
+```bash
+curl -X POST "http://127.0.0.1:4317/api/tasks?workspace=ttoksem-dev" \
+  -H "Authorization: Bearer $TTOKSEM_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"key":"api-write-example","name":"API write example"}'
+```
+
+Supported mutation routes:
+
+- `POST /api/workspaces`
+- `POST /api/tasks?workspace=<key>`
+- `PATCH /api/tasks/{task_key}?workspace=<key>`
+- `POST /api/tasks/{task_key}/close?workspace=<key>`
+- `POST /api/usage/events`
+- `POST /api/usage/events/{usage_id}/move?workspace=<key>`
+- `POST /api/inbox/{group_id}/assign?workspace=<key>`
+- `POST /api/inbox/{group_id}/accept?workspace=<key>`
+- `POST /api/inbox/events/{usage_id}/assign?workspace=<key>`

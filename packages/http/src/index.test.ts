@@ -1,4 +1,5 @@
 import type { DashboardData, DashboardTaskDetailData, LedgerService } from "@ttoksem/core";
+import type { TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "./index.js";
 
@@ -27,13 +28,213 @@ describe("createHttpApp auth", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ workspace: { key: "test" } });
   });
+
+  it("requires api:write for mutation routes", async () => {
+    const startedTasks: Array<{ key: string; name?: string }> = [];
+    const createdWorkspaces: string[] = [];
+    const app = createHttpApp({
+      service: fakeService({
+        createWorkspace: async (input) => {
+          createdWorkspaces.push(input.key);
+          return workspaceRecord({ key: input.key, name: input.name ?? input.key });
+        },
+        startTask: async (input) => {
+          startedTasks.push({ key: input.key, name: input.name });
+          return taskRecord({ key: input.key, name: input.name ?? input.key });
+        },
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "write-token" && requiredScopes.includes("api:write"),
+      },
+    });
+
+    const workspaceResponse = await app.request("/api/workspaces", {
+      method: "POST",
+      headers: { Authorization: "Bearer write-token", "content-type": "application/json" },
+      body: JSON.stringify({ key: "test", name: "Test workspace" }),
+    });
+    expect(workspaceResponse.status).toBe(201);
+    expect(createdWorkspaces).toEqual(["test"]);
+
+    await expect(
+      app.request("/api/tasks?workspace=test", {
+        method: "POST",
+        headers: { Authorization: "Bearer read-token", "content-type": "application/json" },
+        body: JSON.stringify({ key: "write-api", name: "Write API" }),
+      }),
+    ).resolves.toMatchObject({ status: 403 });
+
+    const response = await app.request("/api/tasks?workspace=test", {
+      method: "POST",
+      headers: { Authorization: "Bearer write-token", "content-type": "application/json" },
+      body: JSON.stringify({ key: "write-api", name: "Write API" }),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      task: { key: "write-api", name: "Write API" },
+    });
+    expect(startedTasks).toEqual([{ key: "write-api", name: "Write API" }]);
+  });
+
+  it("records canonical usage events through the write API", async () => {
+    const recorded: unknown[] = [];
+    const app = createHttpApp({
+      service: fakeService({
+        recordUsage: async (message) => {
+          recorded.push(message);
+          return usageEventRecord({
+            id: "usage_write_api",
+            provider: message.payload.usage.provider,
+            model: message.payload.usage.model,
+            input_tokens: message.payload.usage.input_tokens ?? null,
+            output_tokens: message.payload.usage.output_tokens ?? null,
+          });
+        },
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes, workspaceKey }) =>
+          token === "write-token" && workspaceKey === "test" && requiredScopes.includes("api:write"),
+      },
+    });
+
+    const response = await app.request("/api/usage/events", {
+      method: "POST",
+      headers: { Authorization: "Bearer write-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        schema_version: "1.0",
+        message_id: "msg_http_write",
+        kind: "ingest_message",
+        type: "ai.usage.observed",
+        occurred_at: "2026-04-28T00:00:00.000Z",
+        source: { system: "http-test" },
+        workspace: { key: "test" },
+        payload: {
+          task: null,
+          usage: {
+            provider: "openai",
+            model: "gpt-5.5",
+            usage_kind: "conversation_turn",
+            input_tokens: 10,
+            output_tokens: 5,
+            total_tokens: 15,
+            accuracy_mode: "exact",
+            pricing_mode: "unpriced",
+            unpriced_reason: "missing_pricing_rule",
+          },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      usage_event: { id: "usage_write_api", provider: "openai", model: "gpt-5.5" },
+    });
+    expect(recorded).toHaveLength(1);
+  });
 });
 
-function fakeService(): LedgerService {
+function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
   return {
     dashboard: async () => dashboardData(),
     dashboardTask: async () => taskDetailData(),
+    createWorkspace: async () => workspaceRecord({}),
+    startTask: async () => taskRecord({}),
+    updateTask: async () => taskRecord({}),
+    closeTask: async () => taskRecord({ status: "closed" }),
+    recordUsage: async () => usageEventRecord({}),
+    moveUsage: async () => usageEventRecord({ task_id: "task_test", assignment_status: "assigned" }),
+    assignInboxGroup: async () => ({
+      group: {
+        group_id: "inbox_test",
+        assignment_status: "unassigned",
+        event_count: 1,
+        run_count: 0,
+        token_count: 1,
+        estimated_total: 0,
+        currency: null,
+        first_occurred_at: "2026-04-28T00:00:00.000Z",
+        last_occurred_at: "2026-04-28T00:00:00.000Z",
+        source_context: {
+          date_bucket: "2026-04-28",
+          tool: null,
+          cwd: null,
+          git_branch: null,
+          command: null,
+          conversation_id: null,
+          request_id: null,
+          external_ref: null,
+        },
+        reason_codes: ["same_day"],
+        sample_event_ids: ["usage_test"],
+        prompt_samples: [],
+        suggested_task: null,
+      },
+      task: { key: "task", name: "Task" },
+      assigned_count: 1,
+      skipped_count: 0,
+      assigned_event_ids: ["usage_test"],
+      skipped_event_ids: [],
+    }),
+    acceptInboxGroup: async () => ({
+      group: {
+        group_id: "inbox_test",
+        assignment_status: "suggested",
+        event_count: 1,
+        run_count: 0,
+        token_count: 1,
+        estimated_total: 0,
+        currency: null,
+        first_occurred_at: "2026-04-28T00:00:00.000Z",
+        last_occurred_at: "2026-04-28T00:00:00.000Z",
+        source_context: {
+          date_bucket: "2026-04-28",
+          tool: null,
+          cwd: null,
+          git_branch: null,
+          command: null,
+          conversation_id: null,
+          request_id: null,
+          external_ref: null,
+        },
+        reason_codes: ["same_day"],
+        sample_event_ids: ["usage_test"],
+        prompt_samples: [],
+        suggested_task: { task_key: "task", task_name: "Task", confidence: 0.9, level: "high", reason: "test" },
+      },
+      task: { key: "task", name: "Task" },
+      assigned_count: 1,
+      skipped_count: 0,
+      assigned_event_ids: ["usage_test"],
+      skipped_event_ids: [],
+    }),
+    assignInboxEvent: async () => usageEventRecord({ task_id: "task_test", assignment_status: "assigned" }),
+    ...overrides,
   } as unknown as LedgerService;
+}
+
+function workspaceRecord(overrides: Partial<WorkspaceRecord>): WorkspaceRecord {
+  return {
+    id: "ws_test",
+    key: "test",
+    name: "Test",
+    description: null,
+    status: "active",
+    root_path: null,
+    active_task_id: null,
+    source: "test",
+    external_ref_json: null,
+    metadata_json: null,
+    created_at: "2026-04-28T00:00:00.000Z",
+    archived_at: null,
+    updated_at: "2026-04-28T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function dashboardData(): DashboardData {
@@ -57,6 +258,64 @@ function dashboardData(): DashboardData {
     pricing_breakdown: [],
     accuracy_breakdown: [],
     daily: [],
+  };
+}
+
+function taskRecord(overrides: Partial<TaskRecord>): TaskRecord {
+  return {
+    id: "task_test",
+    workspace_id: "ws_test",
+    key: "task",
+    name: "Task",
+    description: null,
+    type: null,
+    status: "active",
+    definition_mode: "explicit",
+    source: "test",
+    external_ref_json: null,
+    labels_json: null,
+    metadata_json: null,
+    created_at: "2026-04-28T00:00:00.000Z",
+    started_at: "2026-04-28T00:00:00.000Z",
+    closed_at: null,
+    updated_at: "2026-04-28T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function usageEventRecord(overrides: Partial<UsageEventRecord>): UsageEventRecord {
+  return {
+    id: "usage_test",
+    workspace_id: "ws_test",
+    task_id: null,
+    run_id: null,
+    message_id: "msg_test",
+    source: "test",
+    idempotency_key: null,
+    occurred_at: "2026-04-28T00:00:00.000Z",
+    started_at: null,
+    ended_at: null,
+    duration_ms: null,
+    provider: "openai",
+    model: "gpt-5.5",
+    usage_kind: "conversation_turn",
+    input_tokens: 1,
+    output_tokens: 1,
+    total_tokens: 2,
+    observed_cost_nanos: null,
+    estimated_cost_nanos: null,
+    observed_currency: null,
+    estimated_currency: null,
+    accuracy_mode: "exact",
+    pricing_mode: "unpriced",
+    unpriced_reason: "missing_pricing_rule",
+    pricing_rule_ids_json: null,
+    pricing_source_snapshot_ids_json: null,
+    cost_calculated_at: null,
+    assignment_status: "unassigned",
+    payload_json: {},
+    created_at: "2026-04-28T00:00:00.000Z",
+    ...overrides,
   };
 }
 

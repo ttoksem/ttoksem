@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { renderDashboardHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
+import { AiUsageObservedSchema } from "@ttoksem/schema";
 
 export interface CreateHttpAppOptions {
   service: LedgerService;
@@ -59,6 +60,129 @@ export function createHttpApp(options: CreateHttpAppOptions): Hono {
     return context.json(data);
   });
 
+  app.post("/api/workspaces", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = requiredString(body, "key");
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const workspace = await options.service.createWorkspace({
+      key: workspaceKey,
+      name: optionalString(body, "name"),
+      rootPath: optionalNullableString(body, "root_path") ?? optionalNullableString(body, "rootPath"),
+    });
+    return context.json({ workspace }, 201);
+  });
+
+  app.post("/api/tasks", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const key = requiredString(body, "key");
+    const task = await options.service.startTask({
+      workspace: workspaceResolver(workspaceKey),
+      key,
+      name: optionalString(body, "name") ?? key,
+      description: optionalNullableString(body, "description"),
+    });
+    return context.json({ task }, 201);
+  });
+
+  app.patch("/api/tasks/:taskKey", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const update = {
+      workspace: workspaceResolver(workspaceKey),
+      key: context.req.param("taskKey"),
+      ...(Object.hasOwn(body, "name") ? { name: requiredString(body, "name") } : {}),
+      ...(Object.hasOwn(body, "description")
+        ? { description: optionalNullableString(body, "description") }
+        : {}),
+    };
+    if (!Object.hasOwn(update, "name") && !Object.hasOwn(update, "description")) {
+      return badRequest(context, "Provide name or description.");
+    }
+    const task = await options.service.updateTask(update);
+    return context.json({ task });
+  });
+
+  app.post("/api/tasks/:taskKey/close", async (context) => {
+    const body = await readOptionalJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const task = await options.service.closeTask({
+      workspace: workspaceResolver(workspaceKey),
+      key: context.req.param("taskKey"),
+    });
+    return context.json({ task });
+  });
+
+  app.post("/api/usage/events", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = workspaceKeyFromUsageMessage(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const message = AiUsageObservedSchema.parse(usageMessageWithWorkspace(body, workspaceKey));
+    const usageEvent = await options.service.recordUsage(message);
+    return context.json({ usage_event: usageEvent }, 201);
+  });
+
+  app.post("/api/usage/events/:usageId/move", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const usageEvent = await options.service.moveUsage({
+      workspace: workspaceResolver(workspaceKey),
+      usageEventId: context.req.param("usageId"),
+      taskKey: requiredString(body, "task_key"),
+    });
+    return context.json({ usage_event: usageEvent });
+  });
+
+  app.post("/api/inbox/:groupId/assign", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const result = await options.service.assignInboxGroup({
+      workspace: workspaceResolver(workspaceKey),
+      groupId: context.req.param("groupId"),
+      taskKey: requiredString(body, "task_key"),
+      all: optionalBoolean(body, "all"),
+    });
+    return context.json(result);
+  });
+
+  app.post("/api/inbox/:groupId/accept", async (context) => {
+    const body = await readOptionalJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const result = await options.service.acceptInboxGroup({
+      workspace: workspaceResolver(workspaceKey),
+      groupId: context.req.param("groupId"),
+      all: optionalBoolean(body, "all"),
+    });
+    return context.json(result);
+  });
+
+  app.post("/api/inbox/events/:usageId/assign", async (context) => {
+    const body = await readJsonObject(context);
+    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
+    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse;
+    const usageEvent = await options.service.assignInboxEvent({
+      workspace: workspaceResolver(workspaceKey),
+      usageEventId: context.req.param("usageId"),
+      taskKey: requiredString(body, "task_key"),
+    });
+    return context.json({ usage_event: usageEvent });
+  });
+
   app.get("/", (context) => context.html(renderDashboardHtml(defaultWorkspaceKey, null)));
   app.get("/tasks/:taskKey", (context) =>
     context.html(renderDashboardHtml(defaultWorkspaceKey, context.req.param("taskKey"))),
@@ -69,7 +193,7 @@ export function createHttpApp(options: CreateHttpAppOptions): Hono {
       {
         error: error instanceof Error ? error.message : String(error),
       },
-      500,
+      isRequestValidationError(error) ? 400 : 500,
     ),
   );
 
@@ -94,6 +218,96 @@ function parseTimeZoneOffset(value: string | undefined): number | undefined {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || Math.abs(parsed) > 14 * 60) return undefined;
   return parsed;
+}
+
+async function readJsonObject(context: Context): Promise<Record<string, unknown>> {
+  const body = await readOptionalJsonObject(context);
+  if (Object.keys(body).length === 0) throw new Error("Request body must be a JSON object.");
+  return body;
+}
+
+async function readOptionalJsonObject(context: Context): Promise<Record<string, unknown>> {
+  const contentType = context.req.header("content-type") ?? "";
+  if (!contentType.includes("application/json")) return {};
+  const value = (await context.req.json().catch(() => null)) as unknown;
+  if (value == null) return {};
+  if (!isRecord(value)) throw new Error("Request body must be a JSON object.");
+  return value;
+}
+
+function workspaceKeyFromRequest(
+  context: Context,
+  body: Record<string, unknown>,
+  defaultWorkspaceKey: string,
+): string {
+  return optionalString(body, "workspace") ?? context.req.query("workspace") ?? defaultWorkspaceKey;
+}
+
+function workspaceKeyFromUsageMessage(
+  context: Context,
+  body: Record<string, unknown>,
+  defaultWorkspaceKey: string,
+): string {
+  const workspace = isRecord(body.workspace) ? body.workspace : null;
+  return stringValue(workspace?.key) ?? context.req.query("workspace") ?? defaultWorkspaceKey;
+}
+
+function usageMessageWithWorkspace(
+  body: Record<string, unknown>,
+  workspaceKey: string,
+): Record<string, unknown> {
+  const workspace = isRecord(body.workspace) ? body.workspace : {};
+  return {
+    ...body,
+    workspace: {
+      ...workspace,
+      key: stringValue(workspace.key) ?? workspaceKey,
+    },
+  };
+}
+
+function requiredString(body: Record<string, unknown>, field: string): string {
+  const value = stringValue(body[field]);
+  if (!value) throw new Error(`Missing required field: ${field}`);
+  return value;
+}
+
+function optionalString(body: Record<string, unknown>, field: string): string | undefined {
+  return stringValue(body[field]) ?? undefined;
+}
+
+function optionalNullableString(body: Record<string, unknown>, field: string): string | null | undefined {
+  if (!Object.hasOwn(body, field)) return undefined;
+  if (body[field] == null) return null;
+  return requiredString(body, field);
+}
+
+function optionalBoolean(body: Record<string, unknown>, field: string): boolean | undefined {
+  if (!Object.hasOwn(body, field)) return undefined;
+  if (typeof body[field] !== "boolean") throw new Error(`Field must be boolean: ${field}`);
+  return body[field];
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function badRequest(context: Context, detail: string): Response {
+  return context.json({ error: "Bad Request", detail }, 400);
+}
+
+function isRequestValidationError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.startsWith("Missing required field:") ||
+    error.message.startsWith("Field must be boolean:") ||
+    error.message === "Request body must be a JSON object." ||
+    error.name === "ZodError"
+  );
 }
 
 async function authorizeRequest(

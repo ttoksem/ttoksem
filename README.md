@@ -9,14 +9,14 @@ Current scope:
 - Worker-compatible core service boundary
 - SQLite-first local adapter with explicit SQL
 - CLI entrypoint for workspace, task, usage, report, dashboard, and doctor workflows
-- Hono HTTP package and local server entrypoint for the read-only dashboard
+- Hono HTTP package and local server entrypoint for the dashboard and write API
 - Database access-key guard for local dashboard/API data
 
 The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, and a local read-only Hono dashboard.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, and write-capable HTTP API routes.
 
 Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, MCP-facing assignment workflows, and provider SDK collectors with exact usage capture.
 
@@ -88,7 +88,7 @@ Usage can still be recorded without a run. That keeps one-off/manual logging sim
 
 ttoksem does not model users, passwords, sessions, organizations, or RBAC in the MVP. Local CLI commands use the OS user boundary.
 
-Dashboard/API data is protected by database access keys. Tokens are shown once, while only `token_hash` and `token_prefix` are stored. Read-only dashboard APIs require `dashboard:read`. A key can optionally be restricted to specific workspace keys.
+Dashboard/API data is protected by database access keys. Tokens are shown once, while only `token_hash` and `token_prefix` are stored. Read-only dashboard APIs require `dashboard:read`; HTTP mutation routes require `api:write`. A key can optionally be restricted to specific workspace keys.
 
 See [docs/ACCESS-AUTH.md](docs/ACCESS-AUTH.md) for the current policy and commands.
 
@@ -144,6 +144,7 @@ pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-ch
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli pricing migrate-events --workspace ttoksem-dev
 pnpm cli auth key create --name "hwanghee dashboard" --scope dashboard:read
+pnpm cli auth key create --name "http writer" --scope api:write --workspace-scope ttoksem-dev
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli inbox show <inbox_group_id> --workspace ttoksem-dev
 pnpm cli inbox accept <inbox_group_id> --workspace ttoksem-dev --all

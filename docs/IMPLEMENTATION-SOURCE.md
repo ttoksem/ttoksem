@@ -31,8 +31,9 @@ Implemented first slice:
 - `report today`
 - `report task`
 - `dashboard overview`
-- read-only local Hono dashboard
+- local Hono dashboard and write-capable HTTP API routes
 - access-key guard for dashboard/API data
+- `api:write` scope enforcement for HTTP mutation routes
 - `doctor`
 
 Deferred from the design source:
@@ -40,8 +41,7 @@ Deferred from the design source:
 - D1 adapter
 - MCP tools
 - correction/adjustment records
-- write-capable HTTP API
-- write-scope enforcement for future HTTP/MCP mutation routes
+- write-scope enforcement for future HTTP MCP mutation routes
 - provider SDK collectors with exact provider usage capture
 - cross-currency reporting
 - prompt redaction automation
