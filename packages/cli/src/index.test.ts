@@ -245,6 +245,74 @@ describe("ttoksem CLI workflows", () => {
       expect(runCli(["pricing", "migrate-events", "--workspace", "cli-test"], env)).toContain(
         "pricing migrate-events checked=1 migrated=0 unchanged=1 still_unpriced=0",
       );
+
+      const openAiResponseFile = join(tempDir, "openai-response.json");
+      writeFileSync(
+        openAiResponseFile,
+        JSON.stringify({
+          id: "chatcmpl_cli_test",
+          object: "chat.completion",
+          model: "gpt-test",
+          usage: {
+            prompt_tokens: 200,
+            completion_tokens: 20,
+            total_tokens: 220,
+            prompt_tokens_details: {
+              cached_tokens: 25,
+            },
+            completion_tokens_details: {
+              reasoning_tokens: 3,
+            },
+          },
+        }),
+      );
+      expect(
+        runCli(
+          [
+            "usage",
+            "openai-response",
+            "--workspace",
+            "cli-test",
+            "--task",
+            "implement-cli-workflow-tests",
+            "--file",
+            openAiResponseFile,
+            "--operation",
+            "chat.completions.create",
+          ],
+          env,
+        ),
+      ).toMatch(/usage usage_[a-z0-9]+ openai\/gpt-test assigned/);
+      const providerStore = new SqliteLedgerStore(dbPath);
+      try {
+        await providerStore.migrate();
+        const workspace = await providerStore.getWorkspaceByKey("cli-test");
+        const providerEvent = await providerStore.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "openai-sdk",
+          "openai-sdk:chat.completions.create:chatcmpl_cli_test",
+        );
+        expect(providerEvent).toMatchObject({
+          provider: "openai",
+          model: "gpt-test",
+          usage_kind: "chat_completion",
+          input_tokens: 200,
+          output_tokens: 20,
+          total_tokens: 220,
+          accuracy_mode: "exact",
+          assignment_status: "assigned",
+          pricing_mode: "rule_calculated",
+          estimated_cost_nanos: 30000,
+        });
+        expect(codexRawUsage(providerEvent?.payload_json)).toMatchObject({
+          prompt_tokens: 200,
+          completion_tokens: 20,
+          total_tokens: 220,
+        });
+      } finally {
+        await providerStore.close();
+      }
+
       const dashboardOutput = runCli(["dashboard", "overview", "--workspace", "cli-test"], env);
       expect(dashboardOutput).toContain("Workspace dashboard: cli-test");
       expect(dashboardOutput).toContain("Summary");

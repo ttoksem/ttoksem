@@ -21,6 +21,7 @@ Implemented first slice:
 - `usage add`
 - `usage codex-turn`
 - `usage import-codex-sessions`
+- `usage openai-response`
 - `usage move`
 - `inbox list`
 - `auth key create/list/revoke`
@@ -42,6 +43,6 @@ Deferred from the design source:
 - MCP tools
 - correction/adjustment records
 - write-scope enforcement for future HTTP MCP mutation routes
-- provider SDK collectors with exact provider usage capture
+- provider SDK collectors beyond OpenAI response usage capture
 - cross-currency reporting
 - prompt redaction automation

@@ -16,9 +16,9 @@ The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, and write-capable HTTP API routes.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, and write-capable HTTP API routes.
 
-Post-MVP scope includes write-capable HTTP/MCP server surfaces, cross-currency reporting, redaction policy automation, MCP-facing assignment workflows, and provider SDK collectors with exact usage capture.
+Post-MVP scope includes cross-currency reporting, redaction policy automation, and optional deferred MCP-facing assignment workflows.
 
 ## Currency Policy
 
@@ -100,6 +100,7 @@ The split is not mainly for public npm publishing. It exists to keep runtime bou
 
 - `@ttoksem/schema`: shared validation and TypeScript types
 - `@ttoksem/core`: runtime-neutral ledger behavior
+- `@ttoksem/providers`: provider SDK response mappers
 - `@ttoksem/storage`: storage interfaces
 - `@ttoksem/storage-sqlite`: local SQLite adapter
 - `@ttoksem/http`: Hono routes for local dashboard/API surfaces
@@ -113,6 +114,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
 - [Access Key Auth](docs/ACCESS-AUTH.md): how local dashboard/API access is guarded without adding user accounts or RBAC.
 - [Codex Session Import](docs/examples/codex-session-import.md): how Codex agents or local hooks should import Codex App/CLI `token_count` records from local session JSONL files.
+- [OpenAI SDK Collector](docs/examples/openai-sdk-collector.md): how to turn OpenAI SDK response usage into exact ttoksem usage events.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 - [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
 
@@ -139,6 +141,7 @@ pnpm cli pricing import-litellm --workspace ttoksem-dev --source-snapshot-id pri
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli usage chat-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+pnpm cli usage openai-response --workspace ttoksem-dev --task implement-chat-usage-logging --file ./openai-response.json --operation chat.completions.create
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5 --dry-run
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5
 pnpm cli pricing reprice --workspace ttoksem-dev

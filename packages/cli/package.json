@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@ttoksem/core": "workspace:*",
+    "@ttoksem/providers": "workspace:*",
     "@ttoksem/schema": "workspace:*",
     "@ttoksem/server": "workspace:*",
     "@ttoksem/storage-sqlite": "workspace:*",
