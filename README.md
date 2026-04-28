@@ -8,6 +8,7 @@ Current scope:
 - Zod v4 schemas for initial ledger inputs and records
 - Worker-compatible core service boundary
 - SQLite-first local adapter with explicit SQL
+- Cloudflare D1 adapter and Worker entrypoint
 - CLI entrypoint for workspace, task, usage, report, dashboard, and doctor workflows
 - Hono HTTP package and local server entrypoint for the dashboard and write API
 - Database access-key guard for local dashboard/API data
@@ -16,7 +17,7 @@ The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, prompt snapshot retention/redaction modes, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, and write-capable HTTP API routes.
+The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, prompt snapshot retention/redaction modes, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, write-capable HTTP API routes, and a D1-backed Worker entrypoint.
 
 Post-MVP scope includes optional deferred MCP-facing assignment workflows.
 
@@ -118,9 +119,11 @@ The split is not mainly for public npm publishing. It exists to keep runtime bou
 - `@ttoksem/providers`: provider SDK response mappers
 - `@ttoksem/storage`: storage interfaces
 - `@ttoksem/storage-sqlite`: local SQLite adapter
+- `@ttoksem/storage-d1`: Cloudflare D1 adapter for Worker deployments
 - `@ttoksem/http`: Hono routes for local dashboard/API surfaces
 - `@ttoksem/cli`: Node.js CLI entrypoint
 - `@ttoksem/server`: local Node server entrypoint under `apps/server`
+- `@ttoksem/worker`: Cloudflare Worker entrypoint under `apps/worker`
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution model.
 
@@ -130,6 +133,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 - [Access Key Auth](docs/ACCESS-AUTH.md): how local dashboard/API access is guarded without adding user accounts or RBAC.
 - [Codex Session Import](docs/examples/codex-session-import.md): how Codex agents or local hooks should import Codex App/CLI `token_count` records from local session JSONL files.
 - [OpenAI SDK Collector](docs/examples/openai-sdk-collector.md): how to turn OpenAI SDK response usage into exact ttoksem usage events.
+- [Worker D1 Deployment](docs/WORKER-D1.md): how the D1-backed Worker entrypoint is wired.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 - [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
 

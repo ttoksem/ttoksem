@@ -8,7 +8,7 @@ ttoksem is not shaped as one package with one `src/` tree because the product is
 - HTTP API for local servers, Docker, app servers, and Workers
 - MCP tools for AI-agent control
 - SQLite locally
-- Cloudflare D1 later
+- Cloudflare D1 for Worker deployments
 
 Those entrypoints should not define different product semantics. They should call the same core service model.
 
@@ -33,6 +33,10 @@ packages/storage-sqlite
   Local SQLite implementation using explicit SQL.
   Node-specific and native-driver code belongs here.
 
+packages/storage-d1
+  Cloudflare D1 implementation of the same storage contract.
+  Worker-specific SQL driver code belongs here.
+
 packages/http
   Hono routes for local HTTP surfaces.
   Depends on core behavior and accepts injected services.
@@ -44,6 +48,10 @@ packages/cli
 apps/server
   Local Node server entrypoint.
   Wires Hono routes plus the SQLite adapter for dashboard use.
+
+apps/worker
+  Cloudflare Worker entrypoint.
+  Wires Hono routes plus the D1 adapter for dashboard/API use.
 ```
 
 ## Dependency Direction
@@ -55,8 +63,10 @@ schema
 storage -> schema
 core -> schema + storage
 storage-sqlite -> schema + storage
+storage-d1 -> schema + storage
 http -> core
 server -> core + http + storage-sqlite
+worker -> core + http + storage-d1
 cli -> core + server + storage-sqlite
 ```
 
@@ -119,7 +129,7 @@ The current structure supports several later deployment paths:
 - npm CLI: publish or bundle `packages/cli`
 - Docker: install workspace dependencies, build, then run a CLI or server entrypoint
 - Single binary-like bundle: bundle the CLI with tsup/esbuild
-- Worker app: add a D1 adapter and Worker entrypoint without importing Node-specific packages into core
+- Worker app: bind a Cloudflare D1 database to `TTOKSEM_DB` and serve the same Hono routes through `apps/worker`
 
 SQLite currently uses `better-sqlite3`, which is a native dependency. Fresh installs must allow its install/build script. The workspace config already lists it under `onlyBuiltDependencies`.
 

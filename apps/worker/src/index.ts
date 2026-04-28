@@ -1,0 +1,43 @@
+import { LedgerService } from "@ttoksem/core";
+import { createHttpApp } from "@ttoksem/http";
+import { D1LedgerStore, type D1Database } from "@ttoksem/storage-d1";
+
+export interface WorkerEnv {
+  TTOKSEM_DB: D1Database;
+  TTOKSEM_WORKSPACE_KEY?: string;
+  TTOKSEM_AUTH_MODE?: "access-key" | "none";
+}
+
+export default {
+  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+    const store = new D1LedgerStore(env.TTOKSEM_DB);
+    const service = new LedgerService({ store });
+    await service.init();
+    const authMode = env.TTOKSEM_AUTH_MODE ?? "access-key";
+    const app = createHttpApp({
+      service,
+      defaultWorkspaceKey: env.TTOKSEM_WORKSPACE_KEY ?? "ttoksem-dev",
+      auth:
+        authMode === "none"
+          ? { mode: "none" }
+          : {
+              mode: "access-key",
+              verifyAccessToken: async ({ workspaceKey, token, requiredScopes }) => {
+                const result = await service.verifyAccessKey({
+                  workspaceKey,
+                  tokenHash: await hashAccessToken(token),
+                  requiredScopes,
+                });
+                return result.allowed;
+              },
+            },
+    });
+    return app.fetch(request, env);
+  },
+};
+
+async function hashAccessToken(token: string): Promise<string> {
+  const bytes = new TextEncoder().encode(token);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}

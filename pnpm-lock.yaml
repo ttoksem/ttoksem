@@ -43,6 +43,25 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
 
+  apps/worker:
+    dependencies:
+      '@ttoksem/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ttoksem/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@ttoksem/storage-d1':
+        specifier: workspace:*
+        version: link:../../packages/storage-d1
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
+
   packages/cli:
     dependencies:
       '@ttoksem/core':
@@ -144,6 +163,28 @@ importers:
         specifier: workspace:*
         version: link:../schema
     devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)
+
+  packages/storage-d1:
+    dependencies:
+      '@ttoksem/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@ttoksem/storage':
+        specifier: workspace:*
+        version: link:../storage
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      better-sqlite3:
+        specifier: ^12.4.1
+        version: 12.9.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

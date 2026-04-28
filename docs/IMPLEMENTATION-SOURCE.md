@@ -36,11 +36,12 @@ Implemented first slice:
 - local Hono dashboard and write-capable HTTP API routes
 - access-key guard for dashboard/API data
 - `api:write` scope enforcement for HTTP mutation routes
+- `@ttoksem/storage-d1` adapter
+- `apps/worker` Cloudflare Worker entrypoint
 - `doctor`
 
 Deferred from the design source:
 
-- D1 adapter
 - MCP tools
 - correction/adjustment records
 - write-scope enforcement for future HTTP MCP mutation routes
