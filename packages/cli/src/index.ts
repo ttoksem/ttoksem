@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -250,6 +251,7 @@ usage
   .option("--thread-id <id>", "only import one Codex thread id")
   .option("--since <iso>", "only import token_count events at or after this UTC timestamp")
   .option("--model <model>", "model label when session metadata does not include one", "codex-app")
+  .option("--prompt-mode <mode>", "prompt snapshot mode: full or none", "full")
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
   .action(async (options: CodexSessionImportOptions) => {
@@ -642,6 +644,7 @@ interface CodexSessionImportOptions {
   threadId?: string;
   since?: string;
   model: string;
+  promptMode: "full" | "none";
   limit?: string;
   dryRun?: boolean;
 }
@@ -901,6 +904,7 @@ async function importCodexSessions(
   options: CodexSessionImportOptions,
 ): Promise<{ scannedFiles: number; tokenEvents: number; imported: number; skipped: number; errors: number }> {
   const files = codexSessionFiles(options);
+  parsePromptMode(options.promptMode);
   const limit = options.limit ? parsePositiveInteger(options.limit) : Number.POSITIVE_INFINITY;
   const sinceMs = options.since ? Date.parse(options.since) : null;
   if (sinceMs != null && !Number.isFinite(sinceMs)) throw new Error(`Invalid --since timestamp: ${options.since}`);
@@ -960,6 +964,7 @@ function parseCodexSessionUsage(
   sinceMs: number | null,
 ): AiUsageObserved[] {
   let session: CodexSessionMeta | null = null;
+  let promptGroup: CodexPromptGroup = emptyCodexPromptGroup();
   const messages: AiUsageObserved[] = [];
   const lines = readFileSync(file, "utf8").split(/\r?\n/);
   for (const line of lines) {
@@ -969,6 +974,10 @@ function parseCodexSessionUsage(
     const payload = isRecord(item.payload) ? item.payload : null;
     if (item.type === "session_meta" && payload) {
       session = codexSessionMeta(payload, file);
+      continue;
+    }
+    if (item.type === "event_msg" && payload?.type === "user_message") {
+      promptGroup = nextCodexPromptGroup(promptGroup, stringField(payload.message), stringField(item.timestamp));
       continue;
     }
     if (!session || item.type !== "event_msg" || !payload || payload.type !== "token_count") continue;
@@ -981,7 +990,7 @@ function parseCodexSessionUsage(
     const info = isRecord(payload.info) ? payload.info : null;
     const usage = isRecord(info?.last_token_usage) ? tokenUsage(info.last_token_usage) : null;
     if (!usage) continue;
-    messages.push(buildCodexSessionUsageMessage({ session, usage, timestamp, options }));
+    messages.push(buildCodexSessionUsageMessage({ session, usage, timestamp, promptGroup, options }));
   }
   return messages;
 }
@@ -990,10 +999,16 @@ function buildCodexSessionUsageMessage(input: {
   session: CodexSessionMeta;
   usage: CodexTokenUsage;
   timestamp: string;
+  promptGroup: CodexPromptGroup;
   options: CodexSessionImportOptions;
 }): AiUsageObserved {
   const model = input.session.model ?? input.options.model;
   const idempotencyKey = `codex-session:${input.session.id}:${input.timestamp}`;
+  const runId = codexPromptRunId(input.session, input.promptGroup);
+  const promptSnapshot =
+    input.options.promptMode === "full" && input.promptGroup.promptText
+      ? { mode: "full", prompt_text: input.promptGroup.promptText }
+      : { mode: "none" };
   return AiUsageObservedSchema.parse({
     schema_version: "1.0",
     message_id: `msg_${slug(idempotencyKey)}`,
@@ -1005,11 +1020,20 @@ function buildCodexSessionUsageMessage(input: {
     idempotency_key: idempotencyKey,
     payload: {
       task: input.options.task ? { key: slug(input.options.task) } : null,
-      run: { id: `run_codex_${input.session.id.replace(/[^a-zA-Z0-9]/g, "_")}` },
+      run: {
+        id: runId,
+        external_ref: {
+          system: "codex-session-prompt",
+          id: `${input.session.id}:${input.promptGroup.index}`,
+          prompt_hash: input.promptGroup.promptHash,
+          started_at: input.promptGroup.startedAt,
+        },
+      },
       usage: {
         provider: input.session.modelProvider ?? "openai",
         model,
         usage_kind: "conversation_turn",
+        started_at: input.promptGroup.startedAt ?? input.timestamp,
         input_tokens: input.usage.inputTokens,
         output_tokens: input.usage.outputTokens,
         cached_input_tokens: input.usage.cachedInputTokens,
@@ -1020,10 +1044,16 @@ function buildCodexSessionUsageMessage(input: {
         unpriced_reason: "missing_pricing_rule",
         raw_usage: input.usage.raw,
       },
-      prompt_snapshot: { mode: "none" },
+      prompt_snapshot: promptSnapshot,
       source_context: {
         tool: "codex",
         capture_mode: "codex_session_token_count",
+        user_message: input.promptGroup.promptText,
+        prompt_group: {
+          index: input.promptGroup.index,
+          prompt_hash: input.promptGroup.promptHash,
+          started_at: input.promptGroup.startedAt,
+        },
         session: {
           id: input.session.id,
           cwd: input.session.cwd,
@@ -1058,6 +1088,41 @@ interface CodexTokenUsage {
   raw: Record<string, unknown>;
 }
 
+interface CodexPromptGroup {
+  index: number;
+  promptText: string | null;
+  promptHash: string;
+  startedAt: string | null;
+}
+
+function emptyCodexPromptGroup(): CodexPromptGroup {
+  return {
+    index: 0,
+    promptText: null,
+    promptHash: "no-prompt",
+    startedAt: null,
+  };
+}
+
+function nextCodexPromptGroup(
+  previous: CodexPromptGroup,
+  promptText: string | null,
+  startedAt: string | null,
+): CodexPromptGroup {
+  return {
+    index: previous.index + 1,
+    promptText,
+    promptHash: promptText ? createHash("sha256").update(promptText, "utf8").digest("hex").slice(0, 12) : "no-prompt",
+    startedAt,
+  };
+}
+
+function codexPromptRunId(session: CodexSessionMeta, promptGroup: CodexPromptGroup): string {
+  const sessionId = session.id.replace(/[^a-zA-Z0-9]/g, "_");
+  const groupIndex = String(promptGroup.index).padStart(4, "0");
+  return `run_codex_${sessionId}_prompt_${groupIndex}_${promptGroup.promptHash}`;
+}
+
 function codexSessionMeta(payload: Record<string, unknown>, file: string): CodexSessionMeta {
   const id = stringField(payload.id) ?? sessionIdFromPath(file);
   if (!id) throw new Error(`Codex session id not found: ${file}`);
@@ -1081,6 +1146,11 @@ function tokenUsage(raw: Record<string, unknown>): CodexTokenUsage | null {
   const totalTokens = numberField(raw.total_tokens);
   if (inputTokens == null && outputTokens == null && totalTokens == null) return null;
   return { inputTokens, outputTokens, cachedInputTokens, reasoningOutputTokens, totalTokens, raw };
+}
+
+function parsePromptMode(value: string): "full" | "none" {
+  if (value === "full" || value === "none") return value;
+  throw new Error(`Invalid prompt mode: ${value}`);
 }
 
 function stringField(value: unknown): string | null {

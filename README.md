@@ -112,7 +112,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
 - [Access Key Auth](docs/ACCESS-AUTH.md): how local dashboard/API access is guarded without adding user accounts or RBAC.
-- [Codex Session Import](docs/examples/codex-session-import.md): how to manually import Codex App/CLI `token_count` records from local session JSONL files.
+- [Codex Session Import](docs/examples/codex-session-import.md): how Codex agents or local hooks should import Codex App/CLI `token_count` records from local session JSONL files.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 - [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
 
@@ -151,3 +151,5 @@ pnpm cli dashboard serve --workspace ttoksem-dev --port 4317
 ```
 
 If `usage chat-turn` or `usage import-codex-sessions` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. `usage codex-turn` remains available as the current Codex logging compatibility command.
+
+For Codex-agent workflows, `usage import-codex-sessions` is intended to be called by the agent, skill, or local hook as part of the work loop. The user should not need to run the import command manually after each request.

@@ -270,6 +270,17 @@ describe("ttoksem CLI workflows", () => {
             },
           }),
           JSON.stringify({
+            timestamp: "2026-04-27T00:10:01.000Z",
+            type: "event_msg",
+            payload: {
+              type: "user_message",
+              message: "import this Codex prompt",
+              images: [],
+              local_images: [],
+              text_elements: [],
+            },
+          }),
+          JSON.stringify({
             timestamp: "2026-04-27T00:10:05.000Z",
             type: "event_msg",
             payload: {
@@ -290,6 +301,33 @@ describe("ttoksem CLI workflows", () => {
                   total_tokens: 1040,
                 },
               },
+            },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-27T00:10:45.000Z",
+            type: "event_msg",
+            payload: {
+              type: "token_count",
+              info: {
+                last_token_usage: {
+                  input_tokens: 130,
+                  cached_input_tokens: 90,
+                  output_tokens: 20,
+                  reasoning_output_tokens: 5,
+                  total_tokens: 150,
+                },
+              },
+            },
+          }),
+          JSON.stringify({
+            timestamp: "2026-04-27T00:11:00.000Z",
+            type: "event_msg",
+            payload: {
+              type: "user_message",
+              message: "second Codex prompt",
+              images: [],
+              local_images: [],
+              text_elements: [],
             },
           }),
           JSON.stringify({
@@ -326,7 +364,7 @@ describe("ttoksem CLI workflows", () => {
           ],
           env,
         ),
-      ).toContain("codex import scanned_files=1 token_events=2 imported=2 skipped=0 errors=0");
+      ).toContain("codex import scanned_files=1 token_events=3 imported=3 skipped=0 errors=0");
       const codexStore = new SqliteLedgerStore(dbPath);
       try {
         await codexStore.migrate();
@@ -350,6 +388,28 @@ describe("ttoksem CLI workflows", () => {
         expect(codexRawUsage(imported?.payload_json)).toMatchObject({
           cached_input_tokens: 800,
           reasoning_output_tokens: 10,
+        });
+        expect(promptSnapshot(imported?.payload_json)).toMatchObject({
+          mode: "full",
+          prompt_text: "import this Codex prompt",
+        });
+        const samePromptImported = await codexStore.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-session",
+          "codex-session:019dd187-51b3-7e02-b2dc-311a2b503dd2:2026-04-27T00:10:45.000Z",
+        );
+        const secondPromptImported = await codexStore.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "codex-session",
+          "codex-session:019dd187-51b3-7e02-b2dc-311a2b503dd2:2026-04-27T00:11:05.000Z",
+        );
+        expect(imported?.run_id).toMatch(/^run_codex_.*_prompt_0001_/);
+        expect(samePromptImported?.run_id).toBe(imported?.run_id);
+        expect(secondPromptImported?.run_id).toMatch(/^run_codex_.*_prompt_0002_/);
+        expect(secondPromptImported?.run_id).not.toBe(imported?.run_id);
+        expect(promptSnapshot(secondPromptImported?.payload_json)).toMatchObject({
+          mode: "full",
+          prompt_text: "second Codex prompt",
         });
       } finally {
         await codexStore.close();
@@ -432,6 +492,11 @@ function codexRawUsage(payload: Record<string, unknown> | undefined): Record<str
   const payloadObject = asRecord(payload?.payload);
   const usage = asRecord(payloadObject?.usage);
   return asRecord(usage?.raw_usage);
+}
+
+function promptSnapshot(payload: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  const payloadObject = asRecord(payload?.payload);
+  return asRecord(payloadObject?.prompt_snapshot);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

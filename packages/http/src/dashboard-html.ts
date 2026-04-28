@@ -1036,6 +1036,12 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
+    .elapsed-time {
+      color: var(--accent-2);
+      font-family: var(--font-mono);
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
+    }
     .row-link {
       display: inline-flex;
       max-width: 100%;
@@ -1359,7 +1365,6 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-      timeZoneName: "short",
     });
     const authToken = initAuthToken();
     const dashboardState = {
@@ -1479,10 +1484,43 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       if (Number.isNaN(date.getTime())) return String(value);
       return dateTimeFormatter.format(date);
     }
+    function elapsedFrom(baseValue, value) {
+      if (!baseValue || !value) return "-";
+      const baseMs = Date.parse(baseValue);
+      const valueMs = Date.parse(value);
+      if (!Number.isFinite(baseMs) || !Number.isFinite(valueMs)) return shortDate(value);
+      const diffMs = valueMs - baseMs;
+      const sign = diffMs < 0 ? "-" : "+";
+      const totalMinutes = Math.round(Math.abs(diffMs) / 60000);
+      const days = Math.floor(totalMinutes / 1440);
+      const hours = Math.floor((totalMinutes % 1440) / 60);
+      const minutes = totalMinutes % 60;
+      if (days > 0) return sign + days + "d " + hours + "h";
+      if (hours > 0) return sign + hours + "h " + String(minutes).padStart(2, "0") + "m";
+      return sign + minutes + "m";
+    }
+    function elapsedTimeCell(baseValue, value) {
+      return '<span class="elapsed-time" title="' + text(shortDate(value)) + '">' + text(elapsedFrom(baseValue, value)) + '</span>';
+    }
+    function runStartTime(row) {
+      return row.started_at || row.first_activity_at || row.last_activity_at;
+    }
     function promptSnippet(value) {
       const raw = String(value || "").replace(/\\s+/g, " ").trim();
       if (!raw) return "";
       return raw.length > 140 ? raw.slice(0, 137) + "..." : raw;
+    }
+    function titledText(title, display) {
+      const visible = display == null || display === "" ? title : display;
+      return '<span title="' + text(title || visible || "") + '">' + text(visible || "") + '</span>';
+    }
+    function promptPreview(value, fallback) {
+      const raw = String(value || "").replace(/\\s+/g, " ").trim();
+      return raw ? titledText(raw, promptSnippet(raw)) : text(fallback || "-");
+    }
+    function promptBlock(value, className) {
+      const raw = String(value || "").replace(/\\s+/g, " ").trim();
+      return raw ? '<div class="' + text(className) + '" title="' + text(raw) + '">' + text(promptSnippet(raw)) + '</div>' : "";
     }
     function taskHref(taskKey, workspace) {
       return '/tasks/' + encodeURIComponent(taskKey) + '?workspace=' + encodeURIComponent(workspace);
@@ -1493,11 +1531,11 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     function renderTaskLabel(row, workspace) {
       const key = row.task_key || "unassigned";
       const title = taskTitle(row);
-      const keyHtml = title === key ? "" : '<span class="task-key">' + text(key) + '</span>';
+      const keyHtml = title === key ? "" : '<span class="task-key" title="' + text(key) + '">' + text(key) + '</span>';
       if (key === "unassigned") {
-        return '<div class="task-label"><strong class="task-title">' + text(title) + '</strong>' + keyHtml + '</div>';
+        return '<div class="task-label"><strong class="task-title" title="' + text(title) + '">' + text(title) + '</strong>' + keyHtml + '</div>';
       }
-      return '<div class="task-label"><a class="row-link task-title" href="' + text(taskHref(key, workspace)) + '">' + text(title) + '</a>' + keyHtml + '</div>';
+      return '<div class="task-label"><a class="row-link task-title" title="' + text(title) + '" href="' + text(taskHref(key, workspace)) + '">' + text(title) + '</a>' + keyHtml + '</div>';
     }
     function renderSignals(signals) {
       return (signals || []).map((signal) => '<span class="signal ' + signalClass(signal) + '">' + text(signal) + '</span>').join("");
@@ -1603,7 +1641,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         const label = truncate(taskTitle(row), 27);
         const value = money(row.estimated_total, data.summary.currency) + " · " + share + "%";
         const title = taskTitle(row) + " · " + value;
-        const labelText = '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end">' + text(label) + '</text>';
+        const labelText = '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end"><title>' + text(taskTitle(row)) + '</title>' + text(label) + '</text>';
         const linkedLabel = row.task_key && row.task_key !== "unassigned"
           ? '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + labelText + '</a>'
           : labelText;
@@ -1661,7 +1699,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         const title = taskTitle(row) + " · " + money(row.estimated_total, data.summary.currency) + " · " + plural(row.event_count, "turn") + " · " + integer(row.token_count) + " tokens";
         const circle = '<circle class="portfolio-dot ' + portfolioTone(row) + '" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1) + '"><title>' + text(title) + '</title></circle>';
         const label = index < 3
-          ? '<text class="chart-label" x="' + Math.min(cx + r + 7, width - 180).toFixed(1) + '" y="' + Math.max(top + 13, cy + 4).toFixed(1) + '">' + text(truncate(taskTitle(row), 24)) + '</text>'
+          ? '<text class="chart-label" x="' + Math.min(cx + r + 7, width - 180).toFixed(1) + '" y="' + Math.max(top + 13, cy + 4).toFixed(1) + '"><title>' + text(taskTitle(row)) + '</title>' + text(truncate(taskTitle(row), 24)) + '</text>'
           : "";
         return row.task_key
           ? '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + circle + label + '</a>'
@@ -1685,7 +1723,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       const highTurn = rows.filter((row) => (row.signals || []).includes("many turns") || row.event_count >= 5);
       const cleanup = (data.summary.unassigned_count || 0) + (data.summary.unpriced_count || 0);
       const topShare = top ? percent(top.estimated_total, data.summary.estimated_total) : 0;
-      const topLabel = top ? '<a href="' + text(taskHref(top.task_key, workspace)) + '">' + text(truncate(taskTitle(top), 34)) + '</a>' : "No task";
+      const topLabel = top ? '<a title="' + text(taskTitle(top)) + '" href="' + text(taskHref(top.task_key, workspace)) + '">' + text(truncate(taskTitle(top), 34)) + '</a>' : "No task";
       return '<div class="portfolio-readout">' +
         '<div class="readout-card"><span>Largest outlier</span><strong>' + topLabel + '</strong><small>' + text(top ? money(top.estimated_total, data.summary.currency) + " · " + topShare + "% of workspace" : "No cost driver yet") + '</small></div>' +
         '<div class="readout-card"><span>Work drag</span><strong>' + text(plural(highTurn.length, "high-turn task")) + '</strong><small>Review scope or split long conversations.</small></div>' +
@@ -1893,8 +1931,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       }
       document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 260px;">Task</th><th style="width: 82px;">Status</th><th style="width: 330px;">Insight</th><th style="width: 162px;">Signals</th><th class="num" style="width: 70px;">Turns</th><th class="num" style="width: 64px;">Runs</th><th class="num" style="width: 88px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 84px;">Unpriced</th><th style="width: 146px;">First</th><th style="width: 146px;">Last</th></tr></thead><tbody>' +
         page.rows.map((row) => {
-          const prompt = promptSnippet(row.latest_prompt);
-          const promptHtml = prompt ? '<div class="prompt-snippet">' + text(prompt) + '</div>' : "";
+          const promptHtml = promptBlock(row.latest_prompt, "prompt-snippet");
           return '<tr><td>' + renderTaskLabel(row, workspace) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text"><div class="insight-text">' + text(row.insight) + '</div>' + promptHtml + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
@@ -1929,7 +1966,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 240px;">Task</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
         page.rows.map((row) => {
           const task = renderTaskLabel(row, workspace);
-          return '<tr><td class="date-cell">' + text(shortDate(row.occurred_at)) + '</td><td>' + task + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>';
+          return '<tr><td class="date-cell" title="' + text(shortDate(row.occurred_at)) + '">' + text(shortDate(row.occurred_at)) + '</td><td>' + task + '</td><td title="' + text(row.provider_model) + '">' + text(row.provider_model) + '</td><td title="' + text(row.usage_kind) + '">' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + promptPreview(row.prompt) + '</td></tr>';
         }).join("") +
         '</tbody></table>';
     }
@@ -1956,7 +1993,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       const modelRows = models.length === 0 ? '<div class="empty">No model usage.</div>' :
         '<div class="mix-list">' + models.map((row) => {
           const width = Math.max(4, Math.round((row.estimated_total / maxCost) * 100));
-          return '<div class="mix-row"><div><div class="mix-title">' + text(row.key) + '</div><div class="mix-meta">' + text(plural(row.event_count, "request") + " · " + integer(row.token_count) + " tokens") + '</div></div><div class="mix-cost">' + text(money(row.estimated_total, data.summary.currency)) + '</div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div></div>';
+          return '<div class="mix-row"><div><div class="mix-title" title="' + text(row.key) + '">' + text(row.key) + '</div><div class="mix-meta">' + text(plural(row.event_count, "request") + " · " + integer(row.token_count) + " tokens") + '</div></div><div class="mix-cost">' + text(money(row.estimated_total, data.summary.currency)) + '</div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div></div>';
         }).join("") + '</div>';
       const pricingRows = (data.pricing_breakdown || []).map((row) =>
         '<div class="readout-card"><span>' + text(row.key) + '</span><strong>' + text(plural(row.event_count, "row")) + '</strong><small>' + text(money(row.estimated_total, data.summary.currency)) + '</small></div>'
@@ -2047,13 +2084,21 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       const insight = data.insight;
       document.getElementById("taskSignalCount").textContent = integer((insight.signals || []).length);
       document.getElementById("taskSignalPanel").innerHTML =
-        '<div class="attention-list"><div class="attention-row"><span class="pill ' + pillClass(insight.status) + '">' + text(insight.status) + '</span><div><div class="attention-title">' + text(insight.insight) + '</div><div class="attention-body">' + text(promptSnippet(insight.latest_prompt) || "No prompt snapshot.") + '</div><div class="signal-list">' + renderSignals(insight.signals) + '</div></div><div class="attention-metric">' + text(money(insight.estimated_total, detailCurrency(data))) + '</div></div></div>';
+        '<div class="attention-list"><div class="attention-row"><span class="pill ' + pillClass(insight.status) + '">' + text(insight.status) + '</span><div><div class="attention-title">' + text(insight.insight) + '</div><div class="attention-body">' + promptPreview(insight.latest_prompt, "No prompt snapshot.") + '</div><div class="signal-list">' + renderSignals(insight.signals) + '</div></div><div class="attention-metric">' + text(money(insight.estimated_total, detailCurrency(data))) + '</div></div></div>';
     }
     function eventTokenTotal(row) {
       return Number(row.total_tokens || row.tokens || 0);
     }
     function runDisplayId(value) {
-      return value || "no-run";
+      const raw = String(value || "no-run");
+      const promptMatch = raw.match(/_prompt_(\\d+)_([a-z0-9]+)$/i);
+      if (promptMatch) return "prompt " + Number(promptMatch[1]) + " · " + promptMatch[2].slice(0, 6);
+      if (raw.length <= 32) return raw;
+      return raw.slice(0, 18) + "..." + raw.slice(-8);
+    }
+    function runLabel(value) {
+      const raw = String(value || "no-run");
+      return titledText(raw, runDisplayId(raw));
     }
     function tokenSplit(row) {
       const input = Number(row.input_tokens || 0);
@@ -2093,8 +2138,8 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         const share = percent(tokens, totalTokens);
         const label = truncate(runDisplayId(row.run_id), 24);
         const value = integer(tokens) + " tokens · " + share + "%";
-        const title = runDisplayId(row.run_id) + " · " + plural(row.event_count, "event") + " · " + integer(tokens) + " tokens · " + money(row.estimated_total, currency);
-        return '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end">' + text(label) + '</text>' +
+        const title = String(row.run_id || "no-run") + " · " + plural(row.event_count, "event") + " · " + integer(tokens) + " tokens · " + money(row.estimated_total, currency);
+        return '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end"><title>' + text(title) + '</title>' + text(label) + '</text>' +
           '<rect class="chart-bar" x="' + left + '" y="' + y + '" width="' + barWidth.toFixed(1) + '" height="16" rx="5"><title>' + text(title) + '</title></rect>' +
           '<text class="chart-value" x="' + (left + plotWidth + 10) + '" y="' + (y + 14) + '">' + text(value) + '</text>';
       }).join("");
@@ -2137,7 +2182,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         const barHeight = Math.max(2, top + plotHeight - y);
         const output = Math.min(Number(row.output_tokens || 0), tokens);
         const outputHeight = tokens > 0 ? Math.max(0, (output / tokens) * barHeight) : 0;
-        const title = shortDate(row.occurred_at) + " · " + integer(tokens) + " tokens · " + runDisplayId(row.run_id) + " · " + money(row.cost, row.currency || currency);
+        const title = shortDate(row.occurred_at) + " · " + integer(tokens) + " tokens · " + String(row.run_id || "no-run") + " · " + money(row.cost, row.currency || currency);
         const tone = tokens === maxEventTokens && maxEventTokens > 0 ? " hot" : " soft";
         const base = '<rect class="chart-bar' + tone + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + barHeight.toFixed(1) + '" rx="4"><title>' + text(title) + '</title></rect>';
         const outputBar = outputHeight > 1
@@ -2171,7 +2216,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
           const tokens = eventTokenTotal(row);
           const width = percent(tokens, maxTokens);
           const prompt = promptSnippet(row.prompt);
-          return '<div class="driver-row"><div class="driver-top"><div><strong>' + text(shortDate(row.occurred_at)) + '</strong><div class="driver-meta"><span>' + text(runDisplayId(row.run_id)) + '</span><span>' + text(row.provider_model) + '</span><span>' + text(row.usage_kind) + '</span><span>' + text(integer(row.input_tokens || 0) + " in / " + integer(row.output_tokens || 0) + " out") + '</span></div></div><div class="driver-cost">' + text(integer(tokens) + " tokens") + '</div></div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div>' + tokenSplit(row) + '<div class="driver-meta"><span>' + text(money(row.cost, row.currency || currency)) + '</span><span>' + text(row.confidence) + '</span>' + (prompt ? '<span>' + text(prompt) + '</span>' : "") + '</div></div>';
+          return '<div class="driver-row"><div class="driver-top"><div><strong title="' + text(shortDate(row.occurred_at)) + '">' + text(shortDate(row.occurred_at)) + '</strong><div class="driver-meta"><span>' + runLabel(row.run_id) + '</span><span title="' + text(row.provider_model) + '">' + text(row.provider_model) + '</span><span title="' + text(row.usage_kind) + '">' + text(row.usage_kind) + '</span><span>' + text(integer(row.input_tokens || 0) + " in / " + integer(row.output_tokens || 0) + " out") + '</span></div></div><div class="driver-cost">' + text(integer(tokens) + " tokens") + '</div></div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div>' + tokenSplit(row) + '<div class="driver-meta"><span>' + text(money(row.cost, row.currency || currency)) + '</span><span>' + text(row.confidence) + '</span>' + (prompt ? '<span title="' + text(String(row.prompt || "")) + '">' + text(prompt) + '</span>' : "") + '</div></div>';
         }).join("") +
         '</div></div>';
     }
@@ -2188,8 +2233,11 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         return;
       }
       const currency = detailCurrency(data);
-      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 230px;">Run</th><th style="width: 90px;">Status</th><th style="width: 120px;">Source</th><th class="num" style="width: 88px;">Events</th><th class="num" style="width: 98px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 158px;">Started</th><th style="width: 158px;">First</th><th style="width: 158px;">Last</th></tr></thead><tbody>' +
-        data.runs.map((row) => '<tr><td>' + text(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td>' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, currency)) + '</td><td class="date-cell">' + text(shortDate(row.started_at)) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>').join("") +
+      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 230px;">Run</th><th style="width: 90px;">Status</th><th style="width: 120px;">Source</th><th class="num" style="width: 88px;">Events</th><th class="num" style="width: 98px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 158px;">Started</th><th style="width: 96px;">First +</th><th style="width: 96px;">Last +</th></tr></thead><tbody>' +
+        data.runs.map((row) => {
+          const start = runStartTime(row);
+          return '<tr><td>' + runLabel(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td title="' + text(row.source) + '">' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, currency)) + '</td><td class="date-cell" title="' + text(shortDate(start)) + '">' + text(shortDate(start)) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.first_activity_at) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.last_activity_at) + '</td></tr>';
+        }).join("") +
         '</tbody></table>';
     }
     function renderTaskEvents(data) {
@@ -2200,7 +2248,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       }
       const currency = detailCurrency(data);
       document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 170px;">Run</th><th style="width: 220px;">Provider</th><th style="width: 145px;">Kind</th><th class="num" style="width: 82px;">Input</th><th class="num" style="width: 82px;">Output</th><th class="num" style="width: 92px;">Total</th><th class="num" style="width: 118px;">Cost</th><th style="width: 124px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
-        data.recent.map((row) => '<tr><td class="date-cell">' + text(shortDate(row.occurred_at)) + '</td><td>' + text(runDisplayId(row.run_id)) + '</td><td>' + text(row.provider_model) + '</td><td>' + text(row.usage_kind) + '</td><td class="num">' + integer(row.input_tokens || 0) + '</td><td class="num">' + integer(row.output_tokens || 0) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + text(promptSnippet(row.prompt) || "-") + '</td></tr>').join("") +
+        data.recent.map((row) => '<tr><td class="date-cell" title="' + text(shortDate(row.occurred_at)) + '">' + text(shortDate(row.occurred_at)) + '</td><td>' + runLabel(row.run_id) + '</td><td title="' + text(row.provider_model) + '">' + text(row.provider_model) + '</td><td title="' + text(row.usage_kind) + '">' + text(row.usage_kind) + '</td><td class="num">' + integer(row.input_tokens || 0) + '</td><td class="num">' + integer(row.output_tokens || 0) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + promptPreview(row.prompt) + '</td></tr>').join("") +
         '</tbody></table>';
     }
     async function loadTaskDetail(workspace, taskKey) {

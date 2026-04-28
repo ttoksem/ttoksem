@@ -137,7 +137,11 @@ One recommended behavior:
 2. If the task is not clear, record the event as unassigned or suggested.
 3. Let the user correct assignment with explicit commands.
 4. Prefer recoverable records over perfect real-time classification.
+5. When local Codex session logs are available, the assistant should run
+   usage import-codex-sessions itself instead of asking the user to run it.
 ```
+
+In other words, "manual" means "CLI-based local import" rather than "the user must type the CLI command." A Codex agent, local skill, or workflow hook can own the CLI call.
 
 ## Topic Change Signals
 

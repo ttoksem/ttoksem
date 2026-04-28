@@ -1,14 +1,32 @@
 # Codex Session Import
 
-Codex App/CLI writes local session JSONL files under `~/.codex/sessions`. Those files include `token_count` events with `info.last_token_usage`, which is closer to actual local Codex usage than manual character-based estimates.
+Codex App/CLI writes local session JSONL files under `~/.codex/sessions`. Those files include `token_count` events with `info.last_token_usage`, which is closer to actual local Codex usage than character-based estimates.
 
-ttoksem can import those records manually through the CLI:
+This example is written for Codex agents as well as humans. In a Codex workflow, the user should not have to run this command after every request. The agent, skill, or local workflow hook should call the ttoksem CLI importer when it has access to the local session files.
+
+## Agent-Operated Logging
+
+When a Codex agent is working in a ttoksem-tracked workspace, it should treat session import as part of its own operating loop:
+
+```text
+1. Choose the current goal task if the user goal is clear.
+2. Omit --task when the goal is ambiguous so usage lands in the inbox.
+3. Prefer the current thread id when available.
+4. Use --since for incremental backfill after the last imported event.
+5. Run --dry-run before broad imports.
+6. Run the import itself; do not ask the user to type the command.
+7. Verify with dashboard overview, task report, or direct event counts.
+```
+
+This is still a CLI-based local import, not a background daemon and not provider API billing. The important point is ownership: in an agent workflow, invoking the CLI is the agent's responsibility.
+
+## Basic Import
 
 ```bash
 pnpm cli usage import-codex-sessions \
   --workspace ttoksem-dev \
-  --task improve-wide-task-dashboard \
-  --thread-id 019dd187-51b3-7e02-b2dc-311a2b503dd2 \
+  --task <current-goal-task-key> \
+  --thread-id <codex-thread-id> \
   --model gpt-5.5 \
   --dry-run
 ```
@@ -18,12 +36,26 @@ If the dry run looks right, run the same command without `--dry-run`:
 ```bash
 pnpm cli usage import-codex-sessions \
   --workspace ttoksem-dev \
-  --task improve-wide-task-dashboard \
-  --thread-id 019dd187-51b3-7e02-b2dc-311a2b503dd2 \
+  --task <current-goal-task-key> \
+  --thread-id <codex-thread-id> \
   --model gpt-5.5
 ```
 
-Use `--file <session.jsonl>` when the exact session file is known. Use `--since <UTC-ISO>` for a recent range. If the current user goal is ambiguous, omit `--task`; the imported events remain unassigned for later inbox cleanup.
+Use `--file <session.jsonl>` when the exact session file is known. Use `--since <UTC-ISO>` for a recent range. If the current user goal is ambiguous, omit `--task`; the imported events remain unassigned for later inbox cleanup. Do not keep passing an old task key just because it was used in the previous import.
+
+For an incremental agent import, use the latest imported timestamp as the next lower bound:
+
+```bash
+sqlite3 .ttoksem/ttoksem.db \
+  "SELECT MAX(occurred_at) FROM usage_events WHERE source='codex-session';"
+
+pnpm cli usage import-codex-sessions \
+  --workspace ttoksem-dev \
+  --task <current-goal-task-key> \
+  --thread-id <codex-thread-id> \
+  --model gpt-5.5 \
+  --since 2026-04-28T04:23:05.263Z
+```
 
 The importer creates one usage event per `token_count.info.last_token_usage` item. It preserves:
 
@@ -32,6 +64,8 @@ The importer creates one usage event per `token_count.info.last_token_usage` ite
 - `output_tokens`
 - `reasoning_output_tokens`
 - `total_tokens`
+- the latest Codex `user_message` before the token count as `payload.prompt_snapshot.prompt_text`
+- a run id per Codex prompt group, so multiple `token_count` events caused by the same user prompt are shown as one run
 - raw token usage under `payload.usage.raw_usage`
 - session metadata under `payload.source_context.session`
 
@@ -42,6 +76,14 @@ codex-session:<thread-id>:<timestamp>
 ```
 
 That makes repeated imports safe. Existing records are reused instead of duplicated.
+
+## What Gets Stored
+
+Imported session records store usage measurements and the latest user prompt that preceded the token count. By default the importer sets `prompt_snapshot.mode = "full"` when a local `user_message` is available. Use `--prompt-mode none` only when prompt retention is not appropriate for that workspace.
+
+Run grouping is prompt-based inside the Codex session. A Codex session can contain many user requests, and each request can produce several `token_count` events while tools, edits, tests, and final responses happen. ttoksem treats the latest `user_message` group as the run boundary, not the whole Codex session. That keeps the task detail report useful for finding which prompt/request consumed the most tokens.
+
+The importer does not reconstruct the full assistant response. If a workflow needs a manually curated prompt/response pair for a specific turn, record that turn separately with `usage codex-turn` and a deliberate prompt retention policy.
 
 ## Pricing
 
