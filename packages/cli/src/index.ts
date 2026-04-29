@@ -15,7 +15,7 @@ import {
   type AiUsageObserved,
   type UsageEventRecord,
 } from "@ttoksem/schema";
-import { openAiUsageObservedFromResponse } from "@ttoksem/providers";
+import { openAiUsageObservedFromResponse, anthropicUsageObservedFromResponse } from "@ttoksem/providers";
 import { serveDashboard } from "@ttoksem/server";
 import { SqliteLedgerStore } from "@ttoksem/storage-sqlite";
 import {
@@ -396,6 +396,40 @@ usage
     await service.init();
     const response = readJsonRecord(options.file);
     const message = openAiUsageObservedFromResponse({
+      workspaceKey: options.workspace,
+      taskKey: options.task ? slug(options.task) : null,
+      runId: options.runId ?? null,
+      model: options.model ?? null,
+      operation: options.operation,
+      occurredAt: options.occurredAt ?? null,
+      observedCost: parseOptionalNumber(options.observedCost),
+      currency: options.currency,
+      idempotencyKey: options.idempotencyKey ?? null,
+      response,
+    });
+    const event = await service.recordUsage(message);
+    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    await close();
+  });
+
+usage
+  .command("anthropic-response")
+  .description("Record exact usage from an Anthropic SDK response JSON file")
+  .requiredOption("--file <path>", "Anthropic SDK response JSON file")
+  .requiredOption("--workspace <key>", "workspace key")
+  .option("--task <key>", "task key; omit when the goal is not clear")
+  .option("--run-id <id>", "existing or explicit run id")
+  .option("--model <model>", "model label when the response does not include one")
+  .option("--operation <name>", "SDK operation name", "anthropic.sdk")
+  .option("--occurred-at <iso>", "usage timestamp; defaults to now")
+  .option("--observed-cost <amount>", "provider-observed cost if known")
+  .option("--currency <code>", "ISO currency code", "USD")
+  .option("--idempotency-key <key>", "idempotency key")
+  .action(async (options: AnthropicResponseOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const response = readJsonRecord(options.file);
+    const message = anthropicUsageObservedFromResponse({
       workspaceKey: options.workspace,
       taskKey: options.task ? slug(options.task) : null,
       runId: options.runId ?? null,
@@ -924,6 +958,19 @@ interface ClaudeSessionImportOptions {
 }
 
 interface OpenAiResponseOptions {
+  file: string;
+  workspace: string;
+  task?: string;
+  runId?: string;
+  model?: string;
+  operation: string;
+  occurredAt?: string;
+  observedCost?: string;
+  currency: string;
+  idempotencyKey?: string;
+}
+
+interface AnthropicResponseOptions {
   file: string;
   workspace: string;
   task?: string;

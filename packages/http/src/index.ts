@@ -2,7 +2,12 @@ import { type Context } from "hono";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { renderDashboardHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
-import { AiUsageObservedSchema } from "@ttoksem/schema";
+import {
+  AiUsageObservedSchema,
+  WorkspaceRecordSchema,
+  TaskRecordSchema,
+  UsageEventRecordSchema,
+} from "@ttoksem/schema";
 
 export interface CreateHttpAppOptions {
   service: LedgerService;
@@ -21,7 +26,18 @@ export type HttpAuthOptions =
       }): Promise<boolean>;
     };
 
-// ── OpenAPI schemas ──────────────────────────────────────────────────────────
+// ── Shared query params ───────────────────────────────────────────────────────
+
+const WorkspaceQuery = z.object({ workspace: z.string().optional() });
+const TaskKeyParam = z.object({ taskKey: z.string() });
+
+// ── Response schemas ──────────────────────────────────────────────────────────
+
+const ErrorSchema = z.object({ error: z.string(), detail: z.string().optional() });
+
+const WorkspaceResponseSchema = z.object({ workspace: WorkspaceRecordSchema });
+const TaskResponseSchema = z.object({ task: TaskRecordSchema });
+const UsageEventResponseSchema = z.object({ usage_event: UsageEventRecordSchema });
 
 const TaskStatsSchema = z.object({
   key: z.string(),
@@ -34,235 +50,264 @@ const TaskStatsSchema = z.object({
   last_activity_at: z.string().nullable(),
 });
 
-const ErrorSchema = z.object({
-  error: z.string(),
-  detail: z.string().optional(),
+const InboxAssignResultSchema = z.object({
+  group: z.unknown(),
+  task: z.object({ key: z.string(), name: z.string() }),
+  assigned_count: z.number().int(),
+  skipped_count: z.number().int(),
+  assigned_event_ids: z.array(z.string()),
+  skipped_event_ids: z.array(z.string()),
 });
 
 // ── Route definitions ─────────────────────────────────────────────────────────
 
-const routeTaskActive = createRoute({
-  method: "get",
-  path: "/api/tasks/active",
-  tags: ["Tasks"],
-  summary: "Get the most recently started active task key",
+const routeHealth = createRoute({
+  method: "get", path: "/health", tags: ["System"],
+  summary: "Health check",
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ ok: z.boolean(), service: z.string() }) } }, description: "OK" },
+  },
+});
+
+const routeCreateWorkspace = createRoute({
+  method: "post", path: "/api/workspaces", tags: ["Workspaces"],
+  summary: "Create or activate a workspace",
+  request: { body: { content: { "application/json": { schema: z.object({ key: z.string(), name: z.string().optional(), root_path: z.string().nullable().optional() }) } } } },
+  responses: {
+    201: { content: { "application/json": { schema: WorkspaceResponseSchema } }, description: "Workspace created" },
+    400: { content: { "application/json": { schema: ErrorSchema } }, description: "Bad request" },
+  },
+});
+
+const routeStartTask = createRoute({
+  method: "post", path: "/api/tasks", tags: ["Tasks"],
+  summary: "Create or activate a task",
   request: {
-    query: z.object({ workspace: z.string().optional() }),
+    query: WorkspaceQuery,
+    body: { content: { "application/json": { schema: z.object({ key: z.string(), name: z.string().optional(), description: z.string().nullable().optional(), workspace: z.string().optional() }) } } },
   },
   responses: {
-    200: {
-      content: { "application/json": { schema: z.object({ key: z.string().nullable() }) } },
-      description: "Active task key, or null if none",
-    },
+    201: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task started" },
+    400: { content: { "application/json": { schema: ErrorSchema } }, description: "Bad request" },
+  },
+});
+
+const routeUpdateTask = createRoute({
+  method: "patch", path: "/api/tasks/{taskKey}", tags: ["Tasks"],
+  summary: "Update task name or description",
+  request: {
+    params: TaskKeyParam,
+    query: WorkspaceQuery,
+    body: { content: { "application/json": { schema: z.object({ name: z.string().optional(), description: z.string().nullable().optional(), workspace: z.string().optional() }) } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task updated" },
+    400: { content: { "application/json": { schema: ErrorSchema } }, description: "Bad request" },
+  },
+});
+
+const routeCloseTask = createRoute({
+  method: "post", path: "/api/tasks/{taskKey}/close", tags: ["Tasks"],
+  summary: "Close a task",
+  request: { params: TaskKeyParam, query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task closed" },
+  },
+});
+
+const routeTaskActive = createRoute({
+  method: "get", path: "/api/tasks/active", tags: ["Tasks"],
+  summary: "Get the most recently started active task key",
+  request: { query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ key: z.string().nullable() }) } }, description: "Active task key or null" },
   },
 });
 
 const routeTaskStats = createRoute({
-  method: "get",
-  path: "/api/tasks/{taskKey}/stats",
-  tags: ["Tasks"],
-  summary: "Get run count, event count, and cost stats for a task",
+  method: "get", path: "/api/tasks/{taskKey}/stats", tags: ["Tasks"],
+  summary: "Get run count, event count, and cost for a task",
+  request: { params: TaskKeyParam, query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: TaskStatsSchema } }, description: "Task stats" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Task not found" },
+  },
+});
+
+const routeDashboard = createRoute({
+  method: "get", path: "/api/dashboard", tags: ["Dashboard"],
+  summary: "Get workspace dashboard data",
   request: {
-    params: z.object({ taskKey: z.string() }),
-    query: z.object({ workspace: z.string().optional() }),
+    query: WorkspaceQuery.extend({
+      taskLimit: z.string().optional(),
+      recentLimit: z.string().optional(),
+      dayLimit: z.string().optional(),
+      tzOffsetMinutes: z.string().optional(),
+    }),
   },
   responses: {
-    200: {
-      content: { "application/json": { schema: TaskStatsSchema } },
-      description: "Task stats",
-    },
-    404: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Task not found",
-    },
+    200: { content: { "application/json": { schema: z.unknown() } }, description: "Dashboard data" },
+  },
+});
+
+const routeDashboardTask = createRoute({
+  method: "get", path: "/api/tasks/{taskKey}", tags: ["Dashboard"],
+  summary: "Get task detail dashboard data",
+  request: {
+    params: TaskKeyParam,
+    query: WorkspaceQuery.extend({
+      eventLimit: z.string().optional(),
+      dayLimit: z.string().optional(),
+      runLimit: z.string().optional(),
+      tzOffsetMinutes: z.string().optional(),
+    }),
+  },
+  responses: {
+    200: { content: { "application/json": { schema: z.unknown() } }, description: "Task dashboard data" },
+  },
+});
+
+const routeRecordUsage = createRoute({
+  method: "post", path: "/api/usage/events", tags: ["Usage"],
+  summary: "Record a usage event",
+  request: { body: { content: { "application/json": { schema: AiUsageObservedSchema } } } },
+  responses: {
+    201: { content: { "application/json": { schema: UsageEventResponseSchema } }, description: "Usage event recorded" },
+    400: { content: { "application/json": { schema: ErrorSchema } }, description: "Bad request" },
+  },
+});
+
+const routeMoveUsage = createRoute({
+  method: "post", path: "/api/usage/events/{usageId}/move", tags: ["Usage"],
+  summary: "Move a usage event to a different task",
+  request: {
+    params: z.object({ usageId: z.string() }),
+    query: WorkspaceQuery,
+    body: { content: { "application/json": { schema: z.object({ task_key: z.string(), workspace: z.string().optional() }) } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: UsageEventResponseSchema } }, description: "Usage event moved" },
   },
 });
 
 const routeUsageLastImport = createRoute({
-  method: "get",
-  path: "/api/usage/last-import",
-  tags: ["Usage"],
-  summary: "Get the occurred_at of the last imported event for a given source",
-  request: {
-    query: z.object({
-      workspace: z.string().optional(),
-      source: z.string().default("claude-session"),
-    }),
-  },
+  method: "get", path: "/api/usage/last-import", tags: ["Usage"],
+  summary: "Get the occurred_at of the last imported event for a source",
+  request: { query: WorkspaceQuery.extend({ source: z.string().default("claude-session") }) },
   responses: {
-    200: {
-      content: { "application/json": { schema: z.object({ occurred_at: z.string().nullable() }) } },
-      description: "Last import timestamp",
-    },
+    200: { content: { "application/json": { schema: z.object({ occurred_at: z.string().nullable() }) } }, description: "Last import timestamp" },
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+const routeAssignInboxGroup = createRoute({
+  method: "post", path: "/api/inbox/{groupId}/assign", tags: ["Inbox"],
+  summary: "Assign an inbox group to a task",
+  request: {
+    params: z.object({ groupId: z.string() }),
+    query: WorkspaceQuery,
+    body: { content: { "application/json": { schema: z.object({ task_key: z.string(), all: z.boolean().optional(), workspace: z.string().optional() }) } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: InboxAssignResultSchema } }, description: "Group assigned" },
+  },
+});
+
+const routeAcceptInboxGroup = createRoute({
+  method: "post", path: "/api/inbox/{groupId}/accept", tags: ["Inbox"],
+  summary: "Accept an inbox group using its suggested task",
+  request: {
+    params: z.object({ groupId: z.string() }),
+    query: WorkspaceQuery,
+    body: { content: { "application/json": { schema: z.object({ all: z.boolean().optional(), workspace: z.string().optional() }).optional() } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: InboxAssignResultSchema } }, description: "Group accepted" },
+  },
+});
+
+const routeAssignInboxEvent = createRoute({
+  method: "post", path: "/api/inbox/events/{usageId}/assign", tags: ["Inbox"],
+  summary: "Assign a single inbox event to a task",
+  request: {
+    params: z.object({ usageId: z.string() }),
+    query: WorkspaceQuery,
+    body: { content: { "application/json": { schema: z.object({ task_key: z.string(), workspace: z.string().optional() }) } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: UsageEventResponseSchema } }, description: "Event assigned" },
+  },
+});
+
+// ── App factory ───────────────────────────────────────────────────────────────
 
 export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   const app = new OpenAPIHono();
   const defaultWorkspaceKey = options.defaultWorkspaceKey ?? "ttoksem-dev";
 
-  app.get("/health", (context) =>
-    context.json({
-      ok: true,
-      service: "ttoksem-http",
-    }),
-  );
+  // ── System ─────────────────────────────────────────────────────────────────
 
-  app.get("/api/dashboard", async (context) => {
-    const workspaceKey = context.req.query("workspace") ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["dashboard:read"]);
-    if (authResponse) return authResponse;
-    const data = await options.service.dashboard({
-      workspace: workspaceResolver(workspaceKey),
-      taskLimit: parseLimit(context.req.query("taskLimit"), 80),
-      recentLimit: parseLimit(context.req.query("recentLimit"), 80),
-      dayLimit: parseLimit(context.req.query("dayLimit"), 30),
-      timeZoneOffsetMinutes: parseTimeZoneOffset(context.req.query("tzOffsetMinutes")),
-    });
-    return context.json(data);
-  });
+  app.openapi(routeHealth, (c) => c.json({ ok: true, service: "ttoksem-http" }, 200));
 
-  app.get("/api/tasks/:taskKey", async (context) => {
-    const workspaceKey = context.req.query("workspace") ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["dashboard:read"]);
-    if (authResponse) return authResponse;
-    const data = await options.service.dashboardTask({
-      workspace: workspaceResolver(workspaceKey),
-      taskKey: context.req.param("taskKey"),
-      recentLimit: parseLimit(context.req.query("eventLimit"), 150),
-      dayLimit: parseLimit(context.req.query("dayLimit"), 60),
-      runLimit: parseLimit(context.req.query("runLimit"), 150),
-      timeZoneOffsetMinutes: parseTimeZoneOffset(context.req.query("tzOffsetMinutes")),
-    });
-    return context.json(data);
-  });
+  // ── Workspaces ─────────────────────────────────────────────────────────────
 
-  app.post("/api/workspaces", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = requiredString(body, "key");
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
+  app.openapi(routeCreateWorkspace, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = body.key;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
     const workspace = await options.service.createWorkspace({
       key: workspaceKey,
-      name: optionalString(body, "name"),
-      rootPath: optionalNullableString(body, "root_path") ?? optionalNullableString(body, "rootPath"),
+      name: body.name,
+      rootPath: body.root_path,
     });
-    return context.json({ workspace }, 201);
+    return c.json({ workspace }, 201);
   });
 
-  app.post("/api/tasks", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
-    const key = requiredString(body, "key");
+  // ── Tasks ──────────────────────────────────────────────────────────────────
+
+  app.openapi(routeStartTask, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const key = body.key;
     const task = await options.service.startTask({
       workspace: workspaceResolver(workspaceKey),
       key,
-      name: optionalString(body, "name") ?? key,
-      description: optionalNullableString(body, "description"),
+      name: body.name ?? key,
+      description: body.description,
     });
-    return context.json({ task }, 201);
+    return c.json({ task }, 201);
   });
 
-  app.patch("/api/tasks/:taskKey", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
+  app.openapi(routeUpdateTask, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
     const update = {
       workspace: workspaceResolver(workspaceKey),
-      key: context.req.param("taskKey"),
-      ...(Object.hasOwn(body, "name") ? { name: requiredString(body, "name") } : {}),
-      ...(Object.hasOwn(body, "description")
-        ? { description: optionalNullableString(body, "description") }
-        : {}),
+      key: c.req.valid("param").taskKey,
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.description !== undefined ? { description: body.description } : {}),
     };
-    if (!Object.hasOwn(update, "name") && !Object.hasOwn(update, "description")) {
-      return badRequest(context, "Provide name or description.");
+    if (!("name" in update) && !("description" in update)) {
+      return c.json({ error: "Bad Request", detail: "Provide name or description." }, 400);
     }
     const task = await options.service.updateTask(update);
-    return context.json({ task });
+    return c.json({ task }, 200);
   });
 
-  app.post("/api/tasks/:taskKey/close", async (context) => {
-    const body = await readOptionalJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
+  app.openapi(routeCloseTask, async (c) => {
+    const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
     const task = await options.service.closeTask({
       workspace: workspaceResolver(workspaceKey),
-      key: context.req.param("taskKey"),
+      key: c.req.valid("param").taskKey,
     });
-    return context.json({ task });
+    return c.json({ task }, 200);
   });
-
-  app.post("/api/usage/events", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = workspaceKeyFromUsageMessage(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
-    const message = AiUsageObservedSchema.parse(usageMessageWithWorkspace(body, workspaceKey));
-    const usageEvent = await options.service.recordUsage(message);
-    return context.json({ usage_event: usageEvent }, 201);
-  });
-
-  app.post("/api/usage/events/:usageId/move", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
-    const usageEvent = await options.service.moveUsage({
-      workspace: workspaceResolver(workspaceKey),
-      usageEventId: context.req.param("usageId"),
-      taskKey: requiredString(body, "task_key"),
-    });
-    return context.json({ usage_event: usageEvent });
-  });
-
-  app.post("/api/inbox/:groupId/assign", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
-    const result = await options.service.assignInboxGroup({
-      workspace: workspaceResolver(workspaceKey),
-      groupId: context.req.param("groupId"),
-      taskKey: requiredString(body, "task_key"),
-      all: optionalBoolean(body, "all"),
-    });
-    return context.json(result);
-  });
-
-  app.post("/api/inbox/:groupId/accept", async (context) => {
-    const body = await readOptionalJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
-    const result = await options.service.acceptInboxGroup({
-      workspace: workspaceResolver(workspaceKey),
-      groupId: context.req.param("groupId"),
-      all: optionalBoolean(body, "all"),
-    });
-    return context.json(result);
-  });
-
-  app.post("/api/inbox/events/:usageId/assign", async (context) => {
-    const body = await readJsonObject(context);
-    const workspaceKey = workspaceKeyFromRequest(context, body, defaultWorkspaceKey);
-    const authResponse = await authorizeRequest(context, options.auth, workspaceKey, ["api:write"]);
-    if (authResponse) return authResponse;
-    const usageEvent = await options.service.assignInboxEvent({
-      workspace: workspaceResolver(workspaceKey),
-      usageEventId: context.req.param("usageId"),
-      taskKey: requiredString(body, "task_key"),
-    });
-    return context.json({ usage_event: usageEvent });
-  });
-
-  // ── OpenAPI routes ──────────────────────────────────────────────────────────
 
   app.openapi(routeTaskActive, async (c) => {
     const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
@@ -279,13 +324,78 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
     const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
     if (authResponse) return authResponse as never;
-    const { taskKey } = c.req.valid("param");
     try {
-      const stats = await options.service.getTaskStats({ workspace: workspaceResolver(workspaceKey), key: taskKey });
+      const stats = await options.service.getTaskStats({
+        workspace: workspaceResolver(workspaceKey),
+        key: c.req.valid("param").taskKey,
+      });
       return c.json(stats, 200);
     } catch {
       return c.json({ error: "Task not found" }, 404);
     }
+  });
+
+  // ── Dashboard ──────────────────────────────────────────────────────────────
+
+  app.openapi(routeDashboard, async (c) => {
+    const q = c.req.valid("query");
+    const workspaceKey = q.workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const data = await options.service.dashboard({
+      workspace: workspaceResolver(workspaceKey),
+      taskLimit: parseLimit(q.taskLimit, 80),
+      recentLimit: parseLimit(q.recentLimit, 80),
+      dayLimit: parseLimit(q.dayLimit, 30),
+      timeZoneOffsetMinutes: parseTimeZoneOffset(q.tzOffsetMinutes),
+    });
+    return c.json(data, 200);
+  });
+
+  app.openapi(routeDashboardTask, async (c) => {
+    const q = c.req.valid("query");
+    const workspaceKey = q.workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const data = await options.service.dashboardTask({
+      workspace: workspaceResolver(workspaceKey),
+      taskKey: c.req.valid("param").taskKey,
+      recentLimit: parseLimit(q.eventLimit, 150),
+      dayLimit: parseLimit(q.dayLimit, 60),
+      runLimit: parseLimit(q.runLimit, 150),
+      timeZoneOffsetMinutes: parseTimeZoneOffset(q.tzOffsetMinutes),
+    });
+    return c.json(data, 200);
+  });
+
+  // ── Usage ──────────────────────────────────────────────────────────────────
+
+  app.openapi(routeRecordUsage, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = (typeof body.workspace === "object" && body.workspace !== null && "key" in body.workspace
+      ? String(body.workspace.key)
+      : undefined) ?? c.req.query("workspace") ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const message = AiUsageObservedSchema.parse({
+      ...body,
+      workspace: { ...(typeof body.workspace === "object" && body.workspace !== null ? body.workspace : {}), key: workspaceKey },
+    });
+    const usageEvent = await options.service.recordUsage(message);
+    return c.json({ usage_event: usageEvent }, 201);
+  });
+
+  app.openapi(routeMoveUsage, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const usageEvent = await options.service.moveUsage({
+      workspace: workspaceResolver(workspaceKey),
+      usageEventId: c.req.valid("param").usageId,
+      taskKey: body.task_key,
+    });
+    return c.json({ usage_event: usageEvent }, 200);
   });
 
   app.openapi(routeUsageLastImport, async (c) => {
@@ -297,12 +407,57 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     return c.json({ occurred_at }, 200);
   });
 
+  // ── Inbox ──────────────────────────────────────────────────────────────────
+
+  app.openapi(routeAssignInboxGroup, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const result = await options.service.assignInboxGroup({
+      workspace: workspaceResolver(workspaceKey),
+      groupId: c.req.valid("param").groupId,
+      taskKey: body.task_key,
+      all: body.all,
+    });
+    return c.json(result, 200);
+  });
+
+  app.openapi(routeAcceptInboxGroup, async (c) => {
+    const body = c.req.valid("json") ?? {};
+    const workspaceKey = (body as Record<string, unknown>).workspace as string | undefined
+      ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const result = await options.service.acceptInboxGroup({
+      workspace: workspaceResolver(workspaceKey),
+      groupId: c.req.valid("param").groupId,
+      all: (body as Record<string, unknown>).all as boolean | undefined,
+    });
+    return c.json(result, 200);
+  });
+
+  app.openapi(routeAssignInboxEvent, async (c) => {
+    const body = c.req.valid("json");
+    const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const usageEvent = await options.service.assignInboxEvent({
+      workspace: workspaceResolver(workspaceKey),
+      usageEventId: c.req.valid("param").usageId,
+      taskKey: body.task_key,
+    });
+    return c.json({ usage_event: usageEvent }, 200);
+  });
+
+  // ── OpenAPI spec ───────────────────────────────────────────────────────────
+
   app.doc("/openapi.json", {
     openapi: "3.0.0",
     info: { title: "ttoksem API", version: "0.0.0" },
   });
 
-  // ── HTML dashboard ──────────────────────────────────────────────────────────
+  // ── HTML dashboard ─────────────────────────────────────────────────────────
 
   app.get("/", (context) => context.html(renderDashboardHtml(defaultWorkspaceKey, null)));
   app.get("/tasks/:taskKey", (context) =>
@@ -311,9 +466,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 
   app.onError((error, context) =>
     context.json(
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
+      { error: error instanceof Error ? error.message : String(error) },
       isRequestValidationError(error) ? 400 : 500,
     ),
   );
@@ -324,9 +477,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 export type HttpApp = ReturnType<typeof createHttpApp>;
 
 function workspaceResolver(workspaceKey: string): WorkspaceResolver {
-  return {
-    key: workspaceKey,
-  };
+  return { key: workspaceKey };
 }
 
 function parseLimit(value: string | undefined, fallback: number): number {
@@ -341,86 +492,6 @@ function parseTimeZoneOffset(value: string | undefined): number | undefined {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || Math.abs(parsed) > 14 * 60) return undefined;
   return parsed;
-}
-
-async function readJsonObject(context: Context): Promise<Record<string, unknown>> {
-  const body = await readOptionalJsonObject(context);
-  if (Object.keys(body).length === 0) throw new Error("Request body must be a JSON object.");
-  return body;
-}
-
-async function readOptionalJsonObject(context: Context): Promise<Record<string, unknown>> {
-  const contentType = context.req.header("content-type") ?? "";
-  if (!contentType.includes("application/json")) return {};
-  const value = (await context.req.json().catch(() => null)) as unknown;
-  if (value == null) return {};
-  if (!isRecord(value)) throw new Error("Request body must be a JSON object.");
-  return value;
-}
-
-function workspaceKeyFromRequest(
-  context: Context,
-  body: Record<string, unknown>,
-  defaultWorkspaceKey: string,
-): string {
-  return optionalString(body, "workspace") ?? context.req.query("workspace") ?? defaultWorkspaceKey;
-}
-
-function workspaceKeyFromUsageMessage(
-  context: Context,
-  body: Record<string, unknown>,
-  defaultWorkspaceKey: string,
-): string {
-  const workspace = isRecord(body.workspace) ? body.workspace : null;
-  return stringValue(workspace?.key) ?? context.req.query("workspace") ?? defaultWorkspaceKey;
-}
-
-function usageMessageWithWorkspace(
-  body: Record<string, unknown>,
-  workspaceKey: string,
-): Record<string, unknown> {
-  const workspace = isRecord(body.workspace) ? body.workspace : {};
-  return {
-    ...body,
-    workspace: {
-      ...workspace,
-      key: stringValue(workspace.key) ?? workspaceKey,
-    },
-  };
-}
-
-function requiredString(body: Record<string, unknown>, field: string): string {
-  const value = stringValue(body[field]);
-  if (!value) throw new Error(`Missing required field: ${field}`);
-  return value;
-}
-
-function optionalString(body: Record<string, unknown>, field: string): string | undefined {
-  return stringValue(body[field]) ?? undefined;
-}
-
-function optionalNullableString(body: Record<string, unknown>, field: string): string | null | undefined {
-  if (!Object.hasOwn(body, field)) return undefined;
-  if (body[field] == null) return null;
-  return requiredString(body, field);
-}
-
-function optionalBoolean(body: Record<string, unknown>, field: string): boolean | undefined {
-  if (!Object.hasOwn(body, field)) return undefined;
-  if (typeof body[field] !== "boolean") throw new Error(`Field must be boolean: ${field}`);
-  return body[field];
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function badRequest(context: Context, detail: string): Response {
-  return context.json({ error: "Bad Request", detail }, 400);
 }
 
 function isRequestValidationError(error: unknown): boolean {
@@ -443,20 +514,14 @@ async function authorizeRequest(
   const token = bearerToken(context) ?? context.req.query("token");
   if (!token) {
     return context.json(
-      {
-        error: "Unauthorized",
-        detail: "Provide a database access key with Authorization: Bearer <token>.",
-      },
+      { error: "Unauthorized", detail: "Provide a database access key with Authorization: Bearer <token>." },
       401,
     );
   }
   const allowed = await auth.verifyAccessToken({ workspaceKey, token, requiredScopes });
   if (!allowed) {
     return context.json(
-      {
-        error: "Forbidden",
-        detail: `Access key is missing required scope: ${requiredScopes.join(",")}.`,
-      },
+      { error: "Forbidden", detail: `Access key is missing required scope: ${requiredScopes.join(",")}.` },
       403,
     );
   }

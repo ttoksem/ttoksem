@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openAiUsageObservedFromResponse } from "./index.js";
+import { openAiUsageObservedFromResponse, anthropicUsageObservedFromResponse } from "./index.js";
 
 describe("openAiUsageObservedFromResponse", () => {
   it("maps OpenAI Responses usage into a canonical usage message", () => {
@@ -80,6 +80,81 @@ describe("openAiUsageObservedFromResponse", () => {
       cached_input_tokens: 5,
       reasoning_output_tokens: 2,
       observed_cost: 0.0012,
+      observed_currency: "USD",
+      pricing_mode: "provider_reported",
+    });
+  });
+});
+
+describe("anthropicUsageObservedFromResponse", () => {
+  it("maps Anthropic Messages usage into a canonical usage message", () => {
+    const message = anthropicUsageObservedFromResponse({
+      workspaceKey: "test",
+      taskKey: "capture-anthropic",
+      runId: "run_anthropic_001",
+      operation: "messages.create",
+      occurredAt: "2026-04-29T00:00:00.000Z",
+      response: {
+        id: "msg_001",
+        type: "message",
+        model: "claude-sonnet-4-6",
+        usage: {
+          input_tokens: 200,
+          output_tokens: 50,
+          cache_read_input_tokens: 80,
+          cache_creation_input_tokens: 30,
+        },
+      },
+    });
+
+    expect(message).toMatchObject({
+      source: { system: "anthropic-sdk" },
+      workspace: { key: "test" },
+      idempotency_key: "anthropic-sdk:messages.create:msg_001",
+      payload: {
+        task: { key: "capture-anthropic" },
+        run: { id: "run_anthropic_001" },
+        usage: {
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          usage_kind: "message",
+          input_tokens: 200,
+          output_tokens: 50,
+          cached_input_tokens: 80,
+          cache_write_input_tokens: 30,
+          total_tokens: 250,
+          accuracy_mode: "exact",
+        },
+      },
+    });
+  });
+
+  it("maps usage without cache fields and with provider-reported cost", () => {
+    const message = anthropicUsageObservedFromResponse({
+      workspaceKey: "test",
+      operation: "messages.create",
+      occurredAt: "2026-04-29T00:00:00.000Z",
+      observedCost: 0.005,
+      response: {
+        id: "msg_002",
+        model: "claude-haiku-4-5-20251001",
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+        },
+      },
+    });
+
+    expect(message.payload.usage).toMatchObject({
+      provider: "anthropic",
+      model: "claude-haiku-4-5-20251001",
+      usage_kind: "message",
+      input_tokens: 100,
+      output_tokens: 20,
+      cached_input_tokens: null,
+      cache_write_input_tokens: null,
+      total_tokens: 120,
+      observed_cost: 0.005,
       observed_currency: "USD",
       pricing_mode: "provider_reported",
     });

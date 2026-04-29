@@ -134,6 +134,114 @@ function usageKindForResponse(response: Record<string, unknown>): string {
   return "chat_completion";
 }
 
+// ── Anthropic SDK collector ───────────────────────────────────────────────────
+
+export interface AnthropicUsageObservedInput {
+  workspaceKey: string;
+  response: Record<string, unknown>;
+  taskKey?: string | null;
+  runId?: string | null;
+  model?: string | null;
+  operation?: string | null;
+  occurredAt?: string | null;
+  observedCost?: number | null;
+  currency?: string | null;
+  idempotencyKey?: string | null;
+  sourceActor?: string | null;
+  promptSnapshot?: Record<string, unknown> | null;
+}
+
+export function anthropicUsageObservedFromResponse(input: AnthropicUsageObservedInput): AiUsageObserved {
+  const usage = anthropicUsageFromResponse(input.response);
+  const model = stringField(input.response.model) ?? input.model;
+  if (!model) throw new Error("Anthropic response model is required.");
+  const responseId = stringField(input.response.id);
+  const operation = input.operation ?? "anthropic.sdk";
+  const observedCost = input.observedCost ?? null;
+  const currency = input.currency ?? "USD";
+
+  return AiUsageObservedSchema.parse({
+    schema_version: "1.0",
+    message_id: messageId("msg_anthropic", operation, responseId ?? `${input.occurredAt ?? Date.now()}`),
+    kind: "ingest_message",
+    type: "ai.usage.observed",
+    occurred_at: input.occurredAt ?? new Date().toISOString(),
+    source: {
+      system: "anthropic-sdk",
+      actor: input.sourceActor ?? "provider-sdk",
+    },
+    workspace: { key: input.workspaceKey },
+    idempotency_key: input.idempotencyKey ?? (responseId ? `anthropic-sdk:${operation}:${responseId}` : undefined),
+    payload: {
+      task: input.taskKey ? { key: input.taskKey } : null,
+      run: input.runId ? { id: input.runId } : null,
+      usage: {
+        provider: "anthropic",
+        model,
+        usage_kind: "message",
+        input_tokens: usage.inputTokens,
+        output_tokens: usage.outputTokens,
+        cached_input_tokens: usage.cacheReadInputTokens,
+        cache_write_input_tokens: usage.cacheCreationInputTokens,
+        total_tokens: usage.totalTokens,
+        observed_cost: observedCost,
+        observed_currency: observedCost == null ? null : currency,
+        accuracy_mode: "exact",
+        pricing_mode: observedCost == null ? null : "provider_reported",
+        raw_usage: usage.raw,
+      },
+      prompt_snapshot: input.promptSnapshot ?? undefined,
+      source_context: {
+        tool: "anthropic-sdk",
+        capture_mode: "provider_sdk_response",
+        provider_sdk: {
+          provider: "anthropic",
+          operation,
+          response_id: responseId,
+        },
+        token_estimation: {
+          input: { mode: "observed", method: "provider_reported", scope: "provider_usage", tokens: usage.inputTokens },
+          output: { mode: "observed", method: "provider_reported", scope: "provider_usage", tokens: usage.outputTokens },
+          total_tokens: usage.totalTokens,
+        },
+      },
+    },
+  });
+}
+
+interface AnthropicUsageFields {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number | null;
+  cacheCreationInputTokens: number | null;
+  totalTokens: number;
+  raw: Record<string, unknown>;
+}
+
+function anthropicUsageFromResponse(response: Record<string, unknown>): AnthropicUsageFields {
+  const usage = recordField(response.usage);
+  if (!usage) throw new Error("Anthropic response usage is required.");
+
+  const inputTokens = numberField(usage.input_tokens);
+  const outputTokens = numberField(usage.output_tokens);
+  if (inputTokens == null && outputTokens == null) {
+    throw new Error("Anthropic response usage must include input_tokens and output_tokens.");
+  }
+  const normalizedInput = inputTokens ?? 0;
+  const normalizedOutput = outputTokens ?? 0;
+
+  return {
+    inputTokens: normalizedInput,
+    outputTokens: normalizedOutput,
+    cacheReadInputTokens: numberField(usage.cache_read_input_tokens),
+    cacheCreationInputTokens: numberField(usage.cache_creation_input_tokens),
+    totalTokens: normalizedInput + normalizedOutput,
+    raw: usage,
+  };
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
 function messageId(prefix: string, operation: string, value: string): string {
   return `${prefix}_${slug(`${operation}_${value}`).slice(0, 80)}`;
 }
