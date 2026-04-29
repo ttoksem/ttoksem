@@ -260,6 +260,10 @@ usage
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
+  .option(
+    "--allow-multi-prompt-group",
+    "permit --task with imports that contain more than one prompt group; default refuses to prevent forcing mixed goals into one task",
+  )
   .action(async (options: CodexSessionImportOptions) => {
     const { service, close } = await makeService();
     await service.init();
@@ -314,6 +318,10 @@ usage
   .option("--limit <count>", "maximum assistant events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
   .option("--no-subagents", "skip subagent JSONL files (default: include)")
+  .option(
+    "--allow-multi-prompt-group",
+    "permit --task with imports that contain more than one prompt group; default refuses to prevent forcing mixed goals into one task",
+  )
   .action(async (options: ClaudeSessionImportOptions) => {
     const { service, close } = await makeService();
     await service.init();
@@ -832,6 +840,7 @@ interface CodexSessionImportOptions {
   promptMode: PromptMode;
   limit?: string;
   dryRun?: boolean;
+  allowMultiPromptGroup?: boolean;
 }
 
 interface ClaudeTurnOptions {
@@ -867,6 +876,7 @@ interface ClaudeSessionImportOptions {
   limit?: string;
   dryRun?: boolean;
   subagents: boolean;
+  allowMultiPromptGroup?: boolean;
 }
 
 interface OpenAiResponseOptions {
@@ -1171,30 +1181,37 @@ async function importCodexSessions(
   const limit = options.limit ? parsePositiveInteger(options.limit) : Number.POSITIVE_INFINITY;
   const sinceMs = options.since ? Date.parse(options.since) : null;
   if (sinceMs != null && !Number.isFinite(sinceMs)) throw new Error(`Invalid --since timestamp: ${options.since}`);
-  let tokenEvents = 0;
+
+  const allMessages: AiUsageObserved[] = [];
+  for (const file of files) {
+    const messages = parseCodexSessionUsage(file, options, sinceMs);
+    allMessages.push(...messages);
+  }
+  const limited = Number.isFinite(limit) ? allMessages.slice(0, limit) : allMessages;
+
+  const preview = analyzeImport(limited, files.length);
+  printImportPreview(preview, "codex import");
+  checkMultiPromptGroupGuard(preview, options.task, !!options.allowMultiPromptGroup, "codex import");
+
   let imported = 0;
   let skipped = 0;
   let errors = 0;
-
-  for (const file of files) {
-    const messages = parseCodexSessionUsage(file, options, sinceMs);
-    for (const message of messages) {
-      if (tokenEvents >= limit) return { scannedFiles: files.length, tokenEvents, imported, skipped, errors };
-      tokenEvents += 1;
-      if (options.dryRun) {
-        skipped += 1;
-        continue;
-      }
-      try {
-        await service.recordUsage(message);
-        imported += 1;
-      } catch (error) {
-        errors += 1;
-        console.error(`codex import error file=${file} idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`);
-      }
+  for (const message of limited) {
+    if (options.dryRun) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await service.recordUsage(message);
+      imported += 1;
+    } catch (error) {
+      errors += 1;
+      console.error(
+        `codex import error idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  return { scannedFiles: files.length, tokenEvents, imported, skipped, errors };
+  return { scannedFiles: files.length, tokenEvents: limited.length, imported, skipped, errors };
 }
 
 function codexSessionFiles(options: CodexSessionImportOptions): string[] {
@@ -1411,6 +1428,160 @@ function tokenUsage(raw: Record<string, unknown>): CodexTokenUsage | null {
   return { inputTokens, outputTokens, cachedInputTokens, reasoningOutputTokens, totalTokens, raw };
 }
 
+interface ImportPreview {
+  scannedFiles: number;
+  totalEvents: number;
+  promptGroups: number;
+  distinctPromptHashes: number;
+  timeRange: { start: string | null; end: string | null };
+  modelCounts: Map<string, number>;
+  tokensTotal: number;
+  groups: ImportPreviewGroup[];
+}
+
+interface ImportPreviewGroup {
+  index: number;
+  runId: string;
+  promptHash: string;
+  promptText: string | null;
+  events: number;
+  firstAt: string;
+  lastAt: string;
+  models: Set<string>;
+  tokens: number;
+}
+
+function analyzeImport(messages: AiUsageObserved[], scannedFiles: number): ImportPreview {
+  const groupsByRunId = new Map<string, ImportPreviewGroup>();
+  const modelCounts = new Map<string, number>();
+  const promptHashes = new Set<string>();
+  let totalTokens = 0;
+  let minAt: string | null = null;
+  let maxAt: string | null = null;
+
+  for (const message of messages) {
+    const payload = (message as { payload?: Record<string, unknown> }).payload ?? {};
+    const occurredAt = (message as { occurred_at?: string }).occurred_at ?? "";
+    const run = isRecord(payload.run) ? payload.run : null;
+    const sourceContext = isRecord(payload.source_context) ? payload.source_context : null;
+    const promptGroupRecord = sourceContext && isRecord(sourceContext.prompt_group) ? sourceContext.prompt_group : null;
+    const usage = isRecord(payload.usage) ? payload.usage : null;
+    const runId = stringField(run?.id) ?? "no_run";
+    const promptHash = stringField(promptGroupRecord?.prompt_hash) ?? "no-hash";
+    const groupIndex = numberField(promptGroupRecord?.index) ?? 0;
+    const promptText = stringField(sourceContext?.user_message);
+    const model = stringField(usage?.model) ?? "unknown";
+    const inputTok = numberField(usage?.input_tokens) ?? 0;
+    const outputTok = numberField(usage?.output_tokens) ?? 0;
+    const cachedTok = numberField(usage?.cached_input_tokens) ?? 0;
+    const cacheWriteTok = numberField(usage?.cache_write_input_tokens) ?? 0;
+    const reasoningTok = numberField(usage?.reasoning_output_tokens) ?? 0;
+    const totalRaw = numberField(usage?.total_tokens);
+    const eventTokens = totalRaw ?? inputTok + outputTok + cachedTok + cacheWriteTok + reasoningTok;
+
+    promptHashes.add(promptHash);
+    totalTokens += eventTokens;
+    modelCounts.set(model, (modelCounts.get(model) ?? 0) + 1);
+    if (occurredAt && (!minAt || occurredAt < minAt)) minAt = occurredAt;
+    if (occurredAt && (!maxAt || occurredAt > maxAt)) maxAt = occurredAt;
+
+    let group = groupsByRunId.get(runId);
+    if (!group) {
+      group = {
+        index: groupIndex,
+        runId,
+        promptHash,
+        promptText,
+        events: 0,
+        firstAt: occurredAt,
+        lastAt: occurredAt,
+        models: new Set(),
+        tokens: 0,
+      };
+      groupsByRunId.set(runId, group);
+    }
+    group.events += 1;
+    if (occurredAt && (!group.firstAt || occurredAt < group.firstAt)) group.firstAt = occurredAt;
+    if (occurredAt && occurredAt > group.lastAt) group.lastAt = occurredAt;
+    group.models.add(model);
+    group.tokens += eventTokens;
+    if (!group.promptText && promptText) group.promptText = promptText;
+  }
+
+  const groups = Array.from(groupsByRunId.values()).sort((a, b) => a.index - b.index);
+
+  return {
+    scannedFiles,
+    totalEvents: messages.length,
+    promptGroups: groupsByRunId.size,
+    distinctPromptHashes: promptHashes.size,
+    timeRange: { start: minAt, end: maxAt },
+    modelCounts,
+    tokensTotal: totalTokens,
+    groups,
+  };
+}
+
+function printImportPreview(preview: ImportPreview, label: string): void {
+  const models = Array.from(preview.modelCounts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([m, c]) => `${m}:${c}`)
+    .join(",");
+  console.error(`${label} preview:`);
+  console.error(`  scanned_files=${preview.scannedFiles}`);
+  console.error(`  events=${preview.totalEvents}`);
+  console.error(`  prompt_groups=${preview.promptGroups}`);
+  console.error(`  distinct_prompt_hashes=${preview.distinctPromptHashes}`);
+  console.error(`  models=${models || "none"}`);
+  console.error(`  time_range=${preview.timeRange.start ?? "?"}..${preview.timeRange.end ?? "?"}`);
+  console.error(`  tokens_total=${preview.tokensTotal}`);
+  if (preview.groups.length === 0) return;
+  console.error(`prompt groups:`);
+  for (const group of preview.groups) {
+    const idxStr = String(group.index).padStart(4, "0");
+    const promptSnippet = group.promptText
+      ? truncatePromptText(group.promptText.replace(/\s+/g, " "), 80)
+      : "(no prompt)";
+    const modelList = Array.from(group.models).sort().join(",");
+    console.error(
+      `  [${idxStr}] hash=${group.promptHash} events=${group.events} tokens=${group.tokens} models=${modelList} prompt=${JSON.stringify(promptSnippet)}`,
+    );
+  }
+}
+
+function checkMultiPromptGroupGuard(
+  preview: ImportPreview,
+  taskKey: string | undefined,
+  allow: boolean,
+  label: string,
+): void {
+  if (!taskKey || allow || preview.promptGroups <= 1) return;
+  const samples = preview.groups
+    .slice(0, 3)
+    .map((group) => {
+      const idxStr = String(group.index).padStart(4, "0");
+      const promptSnippet = group.promptText
+        ? truncatePromptText(group.promptText.replace(/\s+/g, " "), 60)
+        : "(no prompt)";
+      return `  [${idxStr}] ${promptSnippet}`;
+    })
+    .join("\n");
+  const moreNote =
+    preview.groups.length > 3 ? `\n  ... ${preview.groups.length - 3} more group(s)` : "";
+  throw new Error(
+    `${label} refused: --task ${taskKey} was passed, but this import contains ${preview.promptGroups} distinct prompt groups.\n` +
+      `Multi-goal imports should land in the inbox. Either:\n` +
+      `  - omit --task and use \`pnpm cli inbox accept inbox_<group_id> --task <key> --all\` per group\n` +
+      `  - pass --allow-multi-prompt-group if you have verified all groups belong to the same goal\n` +
+      `Sample groups:\n${samples}${moreNote}`,
+  );
+}
+
+function truncatePromptText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
 function buildClaudeTurnMessage(options: ClaudeTurnOptions): AiUsageObserved {
   const promptMode = parsePromptMode(options.promptMode);
   const promptText = readOptionalText(options.promptText, options.promptFile);
@@ -1492,30 +1663,37 @@ async function importClaudeSessions(
   const limit = options.limit ? parsePositiveInteger(options.limit) : Number.POSITIVE_INFINITY;
   const sinceMs = options.since ? Date.parse(options.since) : null;
   if (sinceMs != null && !Number.isFinite(sinceMs)) throw new Error(`Invalid --since timestamp: ${options.since}`);
-  let assistantEvents = 0;
+
+  const allMessages: AiUsageObserved[] = [];
+  for (const file of files) {
+    const messages = parseClaudeSessionUsage(file, options, sinceMs);
+    allMessages.push(...messages);
+  }
+  const limited = Number.isFinite(limit) ? allMessages.slice(0, limit) : allMessages;
+
+  const preview = analyzeImport(limited, files.length);
+  printImportPreview(preview, "claude import");
+  checkMultiPromptGroupGuard(preview, options.task, !!options.allowMultiPromptGroup, "claude import");
+
   let imported = 0;
   let skipped = 0;
   let errors = 0;
-
-  for (const file of files) {
-    const messages = parseClaudeSessionUsage(file, options, sinceMs);
-    for (const message of messages) {
-      if (assistantEvents >= limit) return { scannedFiles: files.length, assistantEvents, imported, skipped, errors };
-      assistantEvents += 1;
-      if (options.dryRun) {
-        skipped += 1;
-        continue;
-      }
-      try {
-        await service.recordUsage(message);
-        imported += 1;
-      } catch (error) {
-        errors += 1;
-        console.error(`claude import error file=${file} idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`);
-      }
+  for (const message of limited) {
+    if (options.dryRun) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await service.recordUsage(message);
+      imported += 1;
+    } catch (error) {
+      errors += 1;
+      console.error(
+        `claude import error idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  return { scannedFiles: files.length, assistantEvents, imported, skipped, errors };
+  return { scannedFiles: files.length, assistantEvents: limited.length, imported, skipped, errors };
 }
 
 function claudeSessionFiles(options: ClaudeSessionImportOptions): string[] {

@@ -75,6 +75,40 @@ claude-session:<session-id>:<assistant-event-uuid>
 
 That makes repeated imports safe. Existing records are reused instead of duplicated.
 
+## Pre-Import Preview And Multi-Goal Guard
+
+Every `import-claude-sessions` invocation prints a stderr preview before any writes happen. The preview is the AI's primary judgment basis for the next decision (assign to a task vs. land in the inbox). Sample output:
+
+```text
+claude import preview:
+  scanned_files=1
+  events=4
+  prompt_groups=2
+  distinct_prompt_hashes=2
+  models=claude-sonnet-4-6:4
+  time_range=2026-04-29T05:00:05.000Z..2026-04-29T05:01:05.000Z
+  tokens_total=47
+prompt groups:
+  [0001] hash=ab12cd34ef56 events=2 tokens=25 models=claude-sonnet-4-6 prompt="first goal prompt"
+  [0002] hash=ff77ee66dd55 events=2 tokens=22 models=claude-sonnet-4-6 prompt="second unrelated prompt"
+```
+
+The preview is printed in dry-run, normal, and refusal modes. It always reflects the rows that would be (or were) written, after `--since`/`--limit`/`--no-subagents` filtering.
+
+When `--task` is passed AND the import contains more than one prompt group, the importer **refuses** by default:
+
+```text
+claude import refused: --task <key> was passed, but this import contains 2 distinct prompt groups.
+Multi-goal imports should land in the inbox. Either:
+  - omit --task and use `pnpm cli inbox accept inbox_<group_id> --task <key> --all` per group
+  - pass --allow-multi-prompt-group if you have verified all groups belong to the same goal
+Sample groups:
+  [0001] first goal prompt
+  [0002] second unrelated prompt
+```
+
+The override exists for the legitimate case where a user keeps the same goal across multiple prompts ("yes, continue", "looks good, ship it"). Pass `--allow-multi-prompt-group` only after reading the preview and confirming.
+
 ## Multi-Goal Sessions
 
 A single Claude Code session often spans several user goals. The importer does not classify goals — that is a human or higher-level agent decision. When goals are likely to be mixed, **omit `--task`** at import time and assign through the inbox:

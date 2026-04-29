@@ -77,6 +77,19 @@ codex-session:<thread-id>:<timestamp>
 
 That makes repeated imports safe. Existing records are reused instead of duplicated.
 
+## Pre-Import Preview And Multi-Goal Guard
+
+Every `import-codex-sessions` invocation prints a stderr preview before any writes happen. The preview is the AI's primary judgment basis for the next decision (assign to a task vs. land in the inbox). It lists prompt groups, distinct prompt hashes, time range, model distribution, and per-group event/token counts.
+
+When `--task` is passed AND the import contains more than one prompt group, the importer **refuses** by default. The refusal output explains the two safe options:
+
+- omit `--task` and use `pnpm cli inbox accept inbox_<group_id> --task <key> --all` per prompt group
+- pass `--allow-multi-prompt-group` if you have verified all groups belong to the same goal
+
+The override exists for the legitimate case where the user kept the same goal across multiple prompts ("continue", "looks good"). Use it only after reading the preview.
+
+See [Claude Code Session Import — Pre-Import Preview And Multi-Goal Guard](./claude-session-import.md#pre-import-preview-and-multi-goal-guard) for sample output; the Codex importer prints the same shape with the `codex import` label.
+
 ## What Gets Stored
 
 Imported session records store usage measurements and the latest user prompt that preceded the token count. By default the importer sets `prompt_snapshot.mode = "full"` when a local `user_message` is available.

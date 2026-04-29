@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -429,6 +429,7 @@ describe("ttoksem CLI workflows", () => {
             codexSessionFile,
             "--model",
             "gpt-5.5",
+            "--allow-multi-prompt-group",
           ],
           env,
         ),
@@ -932,6 +933,7 @@ describe("ttoksem CLI workflows", () => {
             projectsDir,
             "--claude-home",
             tempDir,
+            "--allow-multi-prompt-group",
           ],
           env,
         ),
@@ -1018,10 +1020,206 @@ describe("ttoksem CLI workflows", () => {
             tempDir,
             "--no-subagents",
             "--dry-run",
+            "--allow-multi-prompt-group",
           ],
           env,
         ),
       ).toContain("claude import scanned_files=1 assistant_events=3 imported=0 skipped=3 errors=0");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("refuses --task on multi-prompt-group imports without --allow-multi-prompt-group and shows preview details", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-multi-group-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      runCli(["workspace", "init", "--key", "guard-test", "--root", tempDir], env);
+      runCli(
+        [
+          "task",
+          "start",
+          "implement-guard",
+          "--workspace",
+          "guard-test",
+          "--name",
+          "Implement multi-prompt-group guard",
+        ],
+        env,
+      );
+
+      const sessionId = "guard-session-uuid";
+      const sessionFile = join(tempDir, `${sessionId}.jsonl`);
+      writeFileSync(
+        sessionFile,
+        [
+          JSON.stringify({
+            type: "user",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            timestamp: "2026-04-29T05:00:00.000Z",
+            uuid: "guard-user-1",
+            message: { role: "user", content: "first goal prompt" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-g1",
+            timestamp: "2026-04-29T05:00:05.000Z",
+            uuid: "guard-asst-1",
+            message: {
+              id: "msg_g1",
+              model: "claude-sonnet-4-6",
+              usage: { input_tokens: 5, output_tokens: 20 },
+            },
+          }),
+          JSON.stringify({
+            type: "user",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            timestamp: "2026-04-29T05:01:00.000Z",
+            uuid: "guard-user-2",
+            message: { role: "user", content: "second unrelated prompt" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-g2",
+            timestamp: "2026-04-29T05:01:05.000Z",
+            uuid: "guard-asst-2",
+            message: {
+              id: "msg_g2",
+              model: "claude-sonnet-4-6",
+              usage: { input_tokens: 4, output_tokens: 18 },
+            },
+          }),
+        ].join("\n"),
+      );
+
+      // B1: refusal when --task is passed with multi-prompt-group import
+      const refusal = runCliCaptureBoth(
+        [
+          "usage",
+          "import-claude-sessions",
+          "--workspace",
+          "guard-test",
+          "--task",
+          "implement-guard",
+          "--file",
+          sessionFile,
+          "--claude-home",
+          tempDir,
+        ],
+        env,
+      );
+      expect(refusal.status).not.toBe(0);
+      expect(refusal.stderr).toContain("claude import refused");
+      expect(refusal.stderr).toContain("2 distinct prompt groups");
+      expect(refusal.stderr).toContain("--allow-multi-prompt-group");
+      // A1: preview is printed even on refusal so the AI sees what would have been imported
+      expect(refusal.stderr).toContain("claude import preview:");
+      expect(refusal.stderr).toContain("prompt_groups=2");
+      expect(refusal.stderr).toContain("first goal prompt");
+      expect(refusal.stderr).toContain("second unrelated prompt");
+
+      // B1: succeeds with --allow-multi-prompt-group escape hatch
+      const allowed = runCliCaptureBoth(
+        [
+          "usage",
+          "import-claude-sessions",
+          "--workspace",
+          "guard-test",
+          "--task",
+          "implement-guard",
+          "--file",
+          sessionFile,
+          "--claude-home",
+          tempDir,
+          "--allow-multi-prompt-group",
+        ],
+        env,
+      );
+      expect(allowed.status).toBe(0);
+      expect(allowed.stdout).toContain(
+        "claude import scanned_files=1 assistant_events=2 imported=2 skipped=0 errors=0",
+      );
+      expect(allowed.stderr).toContain("claude import preview:");
+
+      // No --task means inbox flow, multi-group is fine without escape hatch
+      const inboxFlow = runCliCaptureBoth(
+        [
+          "usage",
+          "import-claude-sessions",
+          "--workspace",
+          "guard-test",
+          "--file",
+          sessionFile,
+          "--claude-home",
+          tempDir,
+          "--dry-run",
+        ],
+        env,
+      );
+      expect(inboxFlow.status).toBe(0);
+      expect(inboxFlow.stderr).toContain("prompt_groups=2");
+
+      // Single-prompt-group import with --task should NOT require the flag
+      const singleGroupFile = join(tempDir, "single-group.jsonl");
+      writeFileSync(
+        singleGroupFile,
+        [
+          JSON.stringify({
+            type: "user",
+            sessionId: "single-session",
+            cwd: tempDir,
+            version: "2.0.30",
+            timestamp: "2026-04-29T06:00:00.000Z",
+            uuid: "single-user-1",
+            message: { role: "user", content: "single goal prompt" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId: "single-session",
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-s1",
+            timestamp: "2026-04-29T06:00:05.000Z",
+            uuid: "single-asst-1",
+            message: {
+              id: "msg_s1",
+              model: "claude-sonnet-4-6",
+              usage: { input_tokens: 6, output_tokens: 22 },
+            },
+          }),
+        ].join("\n"),
+      );
+      const singleGroup = runCliCaptureBoth(
+        [
+          "usage",
+          "import-claude-sessions",
+          "--workspace",
+          "guard-test",
+          "--task",
+          "implement-guard",
+          "--file",
+          singleGroupFile,
+          "--claude-home",
+          tempDir,
+        ],
+        env,
+      );
+      expect(singleGroup.status).toBe(0);
+      expect(singleGroup.stdout).toContain(
+        "claude import scanned_files=1 assistant_events=1 imported=1 skipped=0 errors=0",
+      );
+      expect(singleGroup.stderr).toContain("prompt_groups=1");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -1034,6 +1232,22 @@ function runCli(args: string[], env: NodeJS.ProcessEnv): string {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
+}
+
+function runCliCaptureBoth(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): { stdout: string; stderr: string; status: number } {
+  const result = spawnSync("tsx", [cliPath, ...args], {
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return {
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    status: result.status ?? 1,
+  };
 }
 
 function tokenEstimationInputMode(payload: Record<string, unknown> | undefined): string | null {
