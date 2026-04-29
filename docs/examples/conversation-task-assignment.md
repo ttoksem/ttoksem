@@ -188,7 +188,7 @@ ambiguous prompt group inside a mixed run  -> leave it in inbox; do not force-as
 
 Forcing every event into one task because a `--task` was already typed once is a common mistake. Importers are bulk operations, not turn-by-turn classifiers; the inbox is the classifier surface.
 
-The CLI itself enforces this: when `--task` is passed AND the import contains more than one prompt group, both `import-codex-sessions` and `import-claude-sessions` print a stderr preview (events, distinct prompt groups, model distribution, time range, per-group prompt snippets) and then refuse with a non-zero exit. Pass `--allow-multi-prompt-group` only when you have read the preview and confirmed all groups belong to the same goal.
+The CLI helps with this: every `import-codex-sessions` and `import-claude-sessions` invocation prints a stderr preview (events, distinct prompt groups, model distribution, time range, per-group prompt snippets). When `--task` is passed AND the import contains more than one prompt group, the CLI also prints a stderr warning suggesting `pnpm cli usage move` to relocate any events that turn out to belong under a different goal. The warning is judgment basis, not a gate — the AI/user decides whether to act on it.
 
 See also: [Codex Session Import](./codex-session-import.md), [Claude Code Session Import](./claude-session-import.md).
 

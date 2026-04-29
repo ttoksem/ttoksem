@@ -429,7 +429,6 @@ describe("ttoksem CLI workflows", () => {
             codexSessionFile,
             "--model",
             "gpt-5.5",
-            "--allow-multi-prompt-group",
           ],
           env,
         ),
@@ -933,7 +932,6 @@ describe("ttoksem CLI workflows", () => {
             projectsDir,
             "--claude-home",
             tempDir,
-            "--allow-multi-prompt-group",
           ],
           env,
         ),
@@ -1020,7 +1018,6 @@ describe("ttoksem CLI workflows", () => {
             tempDir,
             "--no-subagents",
             "--dry-run",
-            "--allow-multi-prompt-group",
           ],
           env,
         ),
@@ -1030,7 +1027,7 @@ describe("ttoksem CLI workflows", () => {
     }
   }, 20_000);
 
-  it("refuses --task on multi-prompt-group imports without --allow-multi-prompt-group and shows preview details", async () => {
+  it("warns but does not refuse --task on multi-prompt-group imports, and prints preview details", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-multi-group-test-"));
     const dbPath = join(tempDir, "ttoksem.db");
     const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
@@ -1103,8 +1100,8 @@ describe("ttoksem CLI workflows", () => {
         ].join("\n"),
       );
 
-      // B1: refusal when --task is passed with multi-prompt-group import
-      const refusal = runCliCaptureBoth(
+      // B1 (warn-only): --task with multi-prompt-group succeeds but emits stderr warning
+      const result = runCliCaptureBoth(
         [
           "usage",
           "import-claude-sessions",
@@ -1119,40 +1116,21 @@ describe("ttoksem CLI workflows", () => {
         ],
         env,
       );
-      expect(refusal.status).not.toBe(0);
-      expect(refusal.stderr).toContain("claude import refused");
-      expect(refusal.stderr).toContain("2 distinct prompt groups");
-      expect(refusal.stderr).toContain("--allow-multi-prompt-group");
-      // A1: preview is printed even on refusal so the AI sees what would have been imported
-      expect(refusal.stderr).toContain("claude import preview:");
-      expect(refusal.stderr).toContain("prompt_groups=2");
-      expect(refusal.stderr).toContain("first goal prompt");
-      expect(refusal.stderr).toContain("second unrelated prompt");
-
-      // B1: succeeds with --allow-multi-prompt-group escape hatch
-      const allowed = runCliCaptureBoth(
-        [
-          "usage",
-          "import-claude-sessions",
-          "--workspace",
-          "guard-test",
-          "--task",
-          "implement-guard",
-          "--file",
-          sessionFile,
-          "--claude-home",
-          tempDir,
-          "--allow-multi-prompt-group",
-        ],
-        env,
-      );
-      expect(allowed.status).toBe(0);
-      expect(allowed.stdout).toContain(
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
         "claude import scanned_files=1 assistant_events=2 imported=2 skipped=0 errors=0",
       );
-      expect(allowed.stderr).toContain("claude import preview:");
+      // Preview is always printed
+      expect(result.stderr).toContain("claude import preview:");
+      expect(result.stderr).toContain("prompt_groups=2");
+      expect(result.stderr).toContain("first goal prompt");
+      expect(result.stderr).toContain("second unrelated prompt");
+      // Warning content
+      expect(result.stderr).toContain("claude import warning:");
+      expect(result.stderr).toContain("2 distinct prompt groups");
+      expect(result.stderr).toContain("usage move");
 
-      // No --task means inbox flow, multi-group is fine without escape hatch
+      // No --task means inbox flow, multi-group is fine and emits no warning
       const inboxFlow = runCliCaptureBoth(
         [
           "usage",
@@ -1169,8 +1147,10 @@ describe("ttoksem CLI workflows", () => {
       );
       expect(inboxFlow.status).toBe(0);
       expect(inboxFlow.stderr).toContain("prompt_groups=2");
+      // Without --task, no warning fires even with multiple groups
+      expect(inboxFlow.stderr).not.toContain("claude import warning:");
 
-      // Single-prompt-group import with --task should NOT require the flag
+      // Single-prompt-group import with --task: no warning
       const singleGroupFile = join(tempDir, "single-group.jsonl");
       writeFileSync(
         singleGroupFile,
@@ -1220,6 +1200,7 @@ describe("ttoksem CLI workflows", () => {
         "claude import scanned_files=1 assistant_events=1 imported=1 skipped=0 errors=0",
       );
       expect(singleGroup.stderr).toContain("prompt_groups=1");
+      expect(singleGroup.stderr).not.toContain("claude import warning:");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

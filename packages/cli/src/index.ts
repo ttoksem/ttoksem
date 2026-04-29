@@ -260,10 +260,6 @@ usage
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
-  .option(
-    "--allow-multi-prompt-group",
-    "permit --task with imports that contain more than one prompt group; default refuses to prevent forcing mixed goals into one task",
-  )
   .action(async (options: CodexSessionImportOptions) => {
     const { service, close } = await makeService();
     await service.init();
@@ -318,10 +314,6 @@ usage
   .option("--limit <count>", "maximum assistant events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
   .option("--no-subagents", "skip subagent JSONL files (default: include)")
-  .option(
-    "--allow-multi-prompt-group",
-    "permit --task with imports that contain more than one prompt group; default refuses to prevent forcing mixed goals into one task",
-  )
   .action(async (options: ClaudeSessionImportOptions) => {
     const { service, close } = await makeService();
     await service.init();
@@ -840,7 +832,6 @@ interface CodexSessionImportOptions {
   promptMode: PromptMode;
   limit?: string;
   dryRun?: boolean;
-  allowMultiPromptGroup?: boolean;
 }
 
 interface ClaudeTurnOptions {
@@ -876,7 +867,6 @@ interface ClaudeSessionImportOptions {
   limit?: string;
   dryRun?: boolean;
   subagents: boolean;
-  allowMultiPromptGroup?: boolean;
 }
 
 interface OpenAiResponseOptions {
@@ -1191,7 +1181,7 @@ async function importCodexSessions(
 
   const preview = analyzeImport(limited, files.length);
   printImportPreview(preview, "codex import");
-  checkMultiPromptGroupGuard(preview, options.task, !!options.allowMultiPromptGroup, "codex import");
+  warnMultiPromptGroup(preview, options.task, "codex import");
 
   let imported = 0;
   let skipped = 0;
@@ -1549,13 +1539,12 @@ function printImportPreview(preview: ImportPreview, label: string): void {
   }
 }
 
-function checkMultiPromptGroupGuard(
+function warnMultiPromptGroup(
   preview: ImportPreview,
   taskKey: string | undefined,
-  allow: boolean,
   label: string,
 ): void {
-  if (!taskKey || allow || preview.promptGroups <= 1) return;
+  if (!taskKey || preview.promptGroups <= 1) return;
   const samples = preview.groups
     .slice(0, 3)
     .map((group) => {
@@ -1568,11 +1557,11 @@ function checkMultiPromptGroupGuard(
     .join("\n");
   const moreNote =
     preview.groups.length > 3 ? `\n  ... ${preview.groups.length - 3} more group(s)` : "";
-  throw new Error(
-    `${label} refused: --task ${taskKey} was passed, but this import contains ${preview.promptGroups} distinct prompt groups.\n` +
-      `Multi-goal imports should land in the inbox. Either:\n` +
-      `  - omit --task and use \`pnpm cli inbox accept inbox_<group_id> --task <key> --all\` per group\n` +
-      `  - pass --allow-multi-prompt-group if you have verified all groups belong to the same goal\n` +
+  console.error(
+    `${label} warning: --task ${taskKey} was passed with ${preview.promptGroups} distinct prompt groups. ` +
+      `All events will be assigned to ${taskKey}; if this import covers multiple goals, ` +
+      `move the wrong ones with \`pnpm cli usage move <usage_id> --task <key>\` or ` +
+      `\`pnpm cli inbox assign-event <usage_id> --task <key>\` after the fact.\n` +
       `Sample groups:\n${samples}${moreNote}`,
   );
 }
@@ -1673,7 +1662,7 @@ async function importClaudeSessions(
 
   const preview = analyzeImport(limited, files.length);
   printImportPreview(preview, "claude import");
-  checkMultiPromptGroupGuard(preview, options.task, !!options.allowMultiPromptGroup, "claude import");
+  warnMultiPromptGroup(preview, options.task, "claude import");
 
   let imported = 0;
   let skipped = 0;

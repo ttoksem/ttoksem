@@ -95,19 +95,19 @@ prompt groups:
 
 The preview is printed in dry-run, normal, and refusal modes. It always reflects the rows that would be (or were) written, after `--since`/`--limit`/`--no-subagents` filtering.
 
-When `--task` is passed AND the import contains more than one prompt group, the importer **refuses** by default:
+When `--task` is passed AND the import contains more than one prompt group, the importer **warns** but proceeds (does not refuse):
 
 ```text
-claude import refused: --task <key> was passed, but this import contains 2 distinct prompt groups.
-Multi-goal imports should land in the inbox. Either:
-  - omit --task and use `pnpm cli inbox accept inbox_<group_id> --task <key> --all` per group
-  - pass --allow-multi-prompt-group if you have verified all groups belong to the same goal
+claude import warning: --task <key> was passed with 2 distinct prompt groups.
+All events will be assigned to <key>; if this import covers multiple goals,
+move the wrong ones with `pnpm cli usage move <usage_id> --task <key>` or
+`pnpm cli inbox assign-event <usage_id> --task <key>` after the fact.
 Sample groups:
   [0001] first goal prompt
   [0002] second unrelated prompt
 ```
 
-The override exists for the legitimate case where a user keeps the same goal across multiple prompts ("yes, continue", "looks good, ship it"). Pass `--allow-multi-prompt-group` only after reading the preview and confirming.
+This is intentionally a warning, not a refusal. The principle is: surface judgment basis, do not gate the action. The AI agent reads the warning, decides whether the multi-goal import is intended (e.g., follow-up prompts under the same goal) or a mistake to fix with a follow-up `usage move`.
 
 ## Multi-Goal Sessions
 
