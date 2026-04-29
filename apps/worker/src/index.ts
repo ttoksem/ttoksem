@@ -6,6 +6,7 @@ export interface WorkerEnv {
   TTOKSEM_DB: D1Database;
   TTOKSEM_WORKSPACE_KEY?: string;
   TTOKSEM_AUTH_MODE?: "access-key" | "none";
+  TTOKSEM_SERVER_URL?: string;
 }
 
 export default {
@@ -17,6 +18,7 @@ export default {
     const app = createHttpApp({
       service,
       defaultWorkspaceKey: env.TTOKSEM_WORKSPACE_KEY ?? "ttoksem-dev",
+      serverUrl: env.TTOKSEM_SERVER_URL,
       auth:
         authMode === "none"
           ? { mode: "none" }

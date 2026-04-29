@@ -10,6 +10,8 @@ export interface ServeDashboardOptions {
   hostname?: string;
   port?: number;
   authMode?: "access-key" | "none";
+  /** Override the server URL advertised in /openapi.json. Defaults to http://{hostname}:{port}. */
+  serverUrl?: string;
 }
 
 export interface RunningDashboardServer {
@@ -20,12 +22,14 @@ export interface RunningDashboardServer {
 export async function serveDashboard(options: ServeDashboardOptions): Promise<RunningDashboardServer> {
   const hostname = options.hostname ?? "127.0.0.1";
   const port = options.port ?? 4317;
+  const serverUrl = options.serverUrl ?? `http://${hostname}:${port}`;
   const store = new SqliteLedgerStore(options.dbPath);
   const service = new LedgerService({ store });
   await service.init();
   const app = createHttpApp({
     service,
     defaultWorkspaceKey: options.workspaceKey,
+    serverUrl,
     auth:
       options.authMode === "none"
         ? { mode: "none" }
