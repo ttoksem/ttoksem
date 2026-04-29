@@ -608,12 +608,13 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     return context.html(renderDashboardHtml(defaultWorkspaceKey, context.req.param("taskKey")));
   });
 
-  app.onError((error, context) =>
-    context.json(
-      { error: error instanceof Error ? error.message : String(error) },
-      isRequestValidationError(error) ? 400 : 500,
-    ),
-  );
+  app.onError((error, context) => {
+    const message = error instanceof Error ? error.message : String(error);
+    let status: 400 | 404 | 500 = 500;
+    if (isRequestValidationError(error)) status = 400;
+    else if (isNotFoundError(error)) status = 404;
+    return context.json({ error: message }, status);
+  });
 
   return app;
 }
@@ -646,6 +647,12 @@ function isRequestValidationError(error: unknown): boolean {
     error.message === "Request body must be a JSON object." ||
     error.name === "ZodError"
   );
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  // Service throws "Task not found.", "Task not found: <key>", "Workspace not found.", etc.
+  return /\bnot found\b/i.test(error.message);
 }
 
 async function authorizeRequest(

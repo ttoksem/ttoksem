@@ -944,8 +944,16 @@ body {
                   </tr></thead>
                   <tbody>
                     {d.tasks.map(t => (
-                      <tr key={t.id} style={{cursor: "pointer"}} onClick={() => onNav && onNav("task", t.id)}>
-                        <td className="mono" style={{fontSize: 13}}>{t.id}</td>
+                      <tr key={t.id} style={{cursor: "pointer"}} onClick={() => {
+                        if (!onNav) return;
+                        // "unassigned" is a synthetic bucket for inbox events, not a real task.
+                        if (t.id === "unassigned") onNav("inbox");
+                        else onNav("task", t.id);
+                      }}>
+                        <td className="mono" style={{fontSize: 13}}>
+                          {t.id}
+                          {t.id === "unassigned" && <span className="chip chip--orange" style={{fontSize: 9, marginLeft: 8}}>inbox</span>}
+                        </td>
                         <td><span className="chip" style={{fontSize: 11}}>{t.model}</span></td>
                         <td className="tnum" style={{textAlign: "right"}}>{t.events}</td>
                         <td className="tnum" style={{textAlign: "right"}}>{t.runs}</td>
@@ -1438,6 +1446,7 @@ body {
       const [dashData, setDashData] = React.useState(null);
       const [taskData, setTaskData] = React.useState(null);
       const [taskLoading, setTaskLoading] = React.useState(false);
+      const [taskError, setTaskError] = React.useState(null);
       const [inboxData, setInboxData] = React.useState(null);
       const [pricingData, setPricingData] = React.useState(null);
 
@@ -1464,15 +1473,21 @@ body {
 
       async function fetchTask(workspaceKey, taskKey) {
         setTaskLoading(true);
+        setTaskError(null);
         try {
           const res = await fetch(\`/api/tasks/\${encodeURIComponent(taskKey)}?workspace=\${encodeURIComponent(workspaceKey)}\`, {
             headers: authHeaders(),
           });
+          if (res.status === 404) {
+            setTaskError(\`Task "\${taskKey}" not found.\`);
+            return;
+          }
           if (!res.ok) throw new Error(\`HTTP \${res.status}: \${res.statusText}\`);
           const api = await res.json();
           setTaskData(mapTaskDetail(api, dashData));
         } catch (e) {
           console.error("Task load error:", e);
+          setTaskError(e.message || "Failed to load task.");
         } finally {
           setTaskLoading(false);
         }
@@ -1565,6 +1580,17 @@ body {
       );
 
       if (view === "task") {
+        if (taskError) {
+          return <>
+            {themeBtn}
+            <div style={{maxWidth: 600, margin: "120px auto", padding: 32, background: "var(--surface-lifted)", border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-xl)", textAlign: "center"}}>
+              <div className="eyebrow" style={{justifyContent: "center", marginBottom: 12}}>error</div>
+              <div style={{fontSize: 18, fontWeight: 500, marginBottom: 8}}>Task unavailable</div>
+              <div style={{fontSize: 14, color: "var(--text-slate)", marginBottom: 24}}>{taskError}</div>
+              <button className="btn btn--primary btn--sm" onClick={() => handleNav("pro")}>Back to dashboard</button>
+            </div>
+          </>;
+        }
         const td = taskLoading ? null : taskData;
         return <>
           {themeBtn}
