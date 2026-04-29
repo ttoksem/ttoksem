@@ -9,23 +9,47 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ttoksem Dashboard</title>
+  <script>
+    (() => {
+      try {
+        const theme = localStorage.getItem("ttoksemTheme") === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = theme;
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+      }
+    })();
+  </script>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f7f8fb;
-      --panel: #ffffff;
-      --line: #d8dde8;
-      --text: #1d2430;
+      color-scheme: dark;
+      --bg: #141413;
+      --panel: #1d1b19;
+      --surface: #24211f;
+      --surface-alt: #2b2724;
+      --table-head: #211f1d;
+      --line: rgba(243, 240, 238, 0.13);
+      --soft-line: rgba(243, 240, 238, 0.08);
+      --text: #f3f0ee;
       --ink: var(--text);
-      --muted: #657084;
-      --accent: #1b7f6b;
-      --accent-2: #2c5f9e;
-      --warn: #b45309;
-      --bad: #b42318;
-      --ok-bg: #e8f5f1;
-      --warn-bg: #fff4df;
-      --bad-bg: #fdebea;
-      --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --muted: #b8aea6;
+      --accent: #f37338;
+      --accent-strong: #cf4500;
+      --accent-2: #f79e1b;
+      --link: #8fb1ff;
+      --warn: #f79e1b;
+      --bad: #ff6b5f;
+      --ok-bg: rgba(243, 115, 56, 0.14);
+      --warn-bg: rgba(247, 158, 27, 0.16);
+      --bad-bg: rgba(255, 107, 95, 0.14);
+      --input-bg: rgba(252, 251, 250, 0.08);
+      --button-bg: #f3f0ee;
+      --button-fg: #141413;
+      --button-border: #f3f0ee;
+      --progress-bg: rgba(243, 240, 238, 0.13);
+      --chart-soft: #9a6a46;
+      --shadow-soft: rgba(0, 0, 0, 0.24) 0px 24px 48px 0px;
+      --shadow-nav: rgba(0, 0, 0, 0.22) 0px 4px 24px 0px;
+      --font-ui: "Sofia Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       --fs-2xs: 10px;
       --fs-xs: 11px;
@@ -41,11 +65,41 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       --lh-tight: 1.15;
       --lh-title: 1.25;
       --lh-copy: 1.35;
-      --fw-normal: 400;
-      --fw-medium: 600;
-      --fw-semibold: 700;
-      --fw-bold: 800;
+      --fw-normal: 450;
+      --fw-medium: 500;
+      --fw-semibold: 600;
+      --fw-bold: 700;
       font-family: var(--font-ui);
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f3f0ee;
+      --panel: #fcfbfa;
+      --surface: #ffffff;
+      --surface-alt: #f4f4f4;
+      --table-head: #f8f5f1;
+      --line: rgba(20, 20, 19, 0.14);
+      --soft-line: rgba(20, 20, 19, 0.08);
+      --text: #141413;
+      --ink: #141413;
+      --muted: #696969;
+      --accent: #cf4500;
+      --accent-strong: #9a3a0a;
+      --accent-2: #3860be;
+      --link: #3860be;
+      --warn: #9a3a0a;
+      --bad: #b42318;
+      --ok-bg: #fff4eb;
+      --warn-bg: #fff4df;
+      --bad-bg: #fdebea;
+      --input-bg: #ffffff;
+      --button-bg: #141413;
+      --button-fg: #f3f0ee;
+      --button-border: #141413;
+      --progress-bg: #e8e2da;
+      --chart-soft: #d1cdc7;
+      --shadow-soft: rgba(0, 0, 0, 0.08) 0px 24px 48px 0px;
+      --shadow-nav: rgba(0, 0, 0, 0.04) 0px 4px 24px 0px;
     }
     * { box-sizing: border-box; }
     body {
@@ -55,11 +109,15 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       font-size: var(--fs-base);
       line-height: var(--lh-copy);
       letter-spacing: 0;
-      min-width: 1000px;
+      min-width: 0;
+      transition: background-color 180ms ease, color 180ms ease;
     }
     header {
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: 18px 0 10px;
+      background: var(--bg);
     }
     .wrap {
       width: min(1680px, calc(100% - 24px));
@@ -71,12 +129,20 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       justify-content: space-between;
       min-height: 60px;
       gap: 16px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 12px 18px 12px 24px;
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      box-shadow: var(--shadow-nav);
+      backdrop-filter: blur(18px);
+      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
     }
     h1 {
       margin: 0;
       font-size: var(--fs-brand);
       line-height: var(--lh-tight);
-      font-weight: var(--fw-semibold);
+      font-weight: var(--fw-medium);
+      letter-spacing: -0.02em;
     }
     .workspace {
       color: var(--muted);
@@ -91,38 +157,70 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     input {
       height: 36px;
-      min-width: 180px;
+      min-width: 0;
+      width: 180px;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 0 10px;
+      border-radius: 999px;
+      padding: 0 14px;
       color: var(--text);
-      background: #fff;
+      background: var(--input-bg);
       font: inherit;
+      transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
     }
     button {
       height: 36px;
-      border: 1px solid #166d5d;
-      background: var(--accent);
-      color: #fff;
-      border-radius: 6px;
-      padding: 0 12px;
+      border: 1.5px solid var(--button-border);
+      background: var(--button-bg);
+      color: var(--button-fg);
+      border-radius: 20px;
+      padding: 0 18px;
       font: inherit;
       font-weight: var(--fw-semibold);
       cursor: pointer;
+      letter-spacing: -0.02em;
+      transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 120ms ease;
+    }
+    button:active {
+      transform: translateY(1px) scale(0.99);
+    }
+    input:focus-visible,
+    button:focus-visible,
+    a:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
     button:disabled {
       cursor: default;
       opacity: 0.45;
     }
     main {
-      padding: 12px 0 30px;
+      padding: 18px 0 40px;
+    }
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 104px;
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--text);
+    }
+    .theme-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--ok-bg);
+    }
+    .theme-toggle[aria-pressed="false"] .theme-dot {
+      background: var(--accent-2);
     }
     .grid {
       display: grid;
       gap: 10px;
     }
     .kpis {
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     }
     .workspace-stage {
       grid-template-columns: minmax(0, 1fr) 300px;
@@ -193,7 +291,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       justify-content: space-between;
       gap: 14px;
       align-items: start;
-      border-bottom: 1px solid #edf1f6;
+      border-bottom: 1px solid var(--soft-line);
       padding-bottom: 10px;
     }
     .report-title strong {
@@ -216,7 +314,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       display: flex;
       justify-content: space-between;
       gap: 12px;
-      border-bottom: 1px solid #f0f3f8;
+      border-bottom: 1px solid var(--soft-line);
       padding-bottom: 7px;
       font-variant-numeric: tabular-nums;
     }
@@ -231,10 +329,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       padding: 14px;
     }
     .report-tile {
-      border: 1px solid #edf1f6;
-      border-radius: 8px;
-      background: #fbfcfe;
-      padding: 10px;
+      border: 1px solid var(--soft-line);
+      border-radius: 24px;
+      background: var(--surface);
+      padding: 12px;
       min-width: 0;
     }
     .report-tile h3 {
@@ -270,26 +368,40 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 40px;
       min-width: 0;
       overflow: hidden;
+      box-shadow: var(--shadow-soft);
+      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
     }
     .panel-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
-      padding: 14px 16px;
+      padding: 16px 20px;
       border-bottom: 1px solid var(--line);
     }
     h2 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       margin: 0;
       font-size: var(--fs-title);
       line-height: var(--lh-title);
       font-weight: var(--fw-semibold);
+      letter-spacing: -0.02em;
+    }
+    h2::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      flex: 0 0 auto;
     }
     a {
-      color: var(--accent-2);
+      color: var(--link);
       text-decoration: none;
     }
     a:hover {
@@ -297,13 +409,20 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     .page-title {
       display: flex;
-      align-items: end;
+      align-items: center;
       justify-content: space-between;
       gap: 16px;
       margin: 4px 0 14px;
+      padding: 20px 24px;
+      border: 1px solid var(--line);
+      border-radius: 40px;
+      background: var(--panel);
+      box-shadow: var(--shadow-soft);
     }
     .page-title h1 {
       font-size: var(--fs-brand);
+      font-weight: var(--fw-medium);
+      letter-spacing: -0.02em;
     }
     .title-meta {
       color: var(--muted);
@@ -312,7 +431,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     .kpi {
       min-height: 74px;
-      padding: 10px 12px;
+      padding: 16px 18px;
     }
     .kpi-label {
       color: var(--muted);
@@ -322,10 +441,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     .kpi-value {
       margin-top: 6px;
-      font-size: var(--fs-kpi);
+      font-size: var(--fs-card);
       line-height: var(--lh-tight);
       font-weight: var(--fw-bold);
-      white-space: nowrap;
+      overflow-wrap: anywhere;
     }
     .kpi-sub {
       margin-top: 6px;
@@ -379,10 +498,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       display: grid;
       gap: 9px;
       min-width: 0;
-      border: 1px solid #edf1f6;
-      border-radius: 8px;
-      padding: 11px;
-      background: #fbfcfe;
+      border: 1px solid var(--soft-line);
+      border-radius: 24px;
+      padding: 14px;
+      background: var(--surface);
     }
     .chart-head {
       display: flex;
@@ -414,7 +533,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       overflow: visible;
     }
     .chart-grid {
-      stroke: #e7ebf2;
+      stroke: var(--soft-line);
       stroke-width: 1;
     }
     .chart-axis {
@@ -437,7 +556,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       opacity: .86;
     }
     .chart-bar.soft {
-      fill: #9eb8db;
+      fill: var(--chart-soft);
       opacity: .95;
     }
     .chart-bar.hot {
@@ -452,7 +571,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       stroke-linejoin: round;
     }
     .chart-dot {
-      fill: #fff;
+      fill: var(--panel);
       stroke: var(--accent);
       stroke-width: 2;
     }
@@ -476,7 +595,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       background: var(--accent);
     }
     .legend-swatch.soft {
-      background: #9eb8db;
+      background: var(--chart-soft);
     }
     .chart-empty {
       min-height: 118px;
@@ -484,9 +603,9 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       place-items: center;
       color: var(--muted);
       font-size: var(--fs-base);
-      border: 1px dashed #d7deea;
-      border-radius: 8px;
-      background: #fff;
+      border: 1px dashed var(--line);
+      border-radius: 24px;
+      background: var(--surface);
     }
     .portfolio-view {
       display: grid;
@@ -502,10 +621,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     .readout-card {
       min-width: 0;
-      border: 1px solid #edf1f6;
-      border-radius: 8px;
+      border: 1px solid var(--soft-line);
+      border-radius: 24px;
       padding: 9px 10px;
-      background: #fbfcfe;
+      background: var(--surface);
     }
     .readout-card span {
       display: block;
@@ -532,7 +651,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     .portfolio-dot {
       fill: var(--accent);
       fill-opacity: .82;
-      stroke: #fff;
+      stroke: var(--panel);
       stroke-width: 2;
     }
     .portfolio-dot.warn {
@@ -577,7 +696,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       height: 8px;
       overflow: hidden;
       border-radius: 999px;
-      background: #e8ecf4;
+      background: var(--progress-bg);
     }
     .lifecycle-segment {
       position: absolute;
@@ -633,10 +752,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     .metric-box {
       min-width: 0;
-      border: 1px solid #edf1f6;
-      border-radius: 8px;
+      border: 1px solid var(--soft-line);
+      border-radius: 24px;
       padding: 10px 11px;
-      background: #fbfcfe;
+      background: var(--surface);
     }
     .metric-label {
       color: var(--muted);
@@ -662,7 +781,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       height: 10px;
       overflow: hidden;
       border-radius: 999px;
-      background: #e8ecf4;
+      background: var(--progress-bg);
     }
     .progress-segment {
       min-width: 0;
@@ -673,10 +792,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       background: var(--accent);
     }
     .progress-segment.open {
-      background: #2c5f9e;
+      background: var(--accent-2);
     }
     .progress-segment.closed {
-      background: #8b95a6;
+      background: var(--muted);
     }
     .progress-segment.unassigned,
     .progress-segment.warn {
@@ -735,7 +854,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       gap: 7px;
       min-width: 0;
       padding-bottom: 10px;
-      border-bottom: 1px solid #eef1f6;
+      border-bottom: 1px solid var(--soft-line);
     }
     .driver-row:last-child {
       padding-bottom: 0;
@@ -784,7 +903,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       height: 8px;
       overflow: hidden;
       border-radius: 999px;
-      background: #e8ecf4;
+      background: var(--progress-bg);
     }
     .token-split span {
       display: block;
@@ -792,7 +911,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       height: 100%;
     }
     .token-split .input {
-      background: #9eb8db;
+      background: var(--chart-soft);
     }
     .token-split .output {
       background: var(--accent);
@@ -851,7 +970,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     th, td {
       padding: 9px 10px;
-      border-bottom: 1px solid #eef1f6;
+      border-bottom: 1px solid var(--soft-line);
       text-align: left;
       vertical-align: middle;
       overflow: hidden;
@@ -862,7 +981,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       color: var(--muted);
       font-size: var(--fs-sm);
       font-weight: var(--fw-semibold);
-      background: #fbfcfe;
+      background: var(--table-head);
     }
     tr:last-child td { border-bottom: 0; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -882,7 +1001,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       width: 64px;
       height: 8px;
       border-radius: 999px;
-      background: #e7ebf2;
+      background: var(--progress-bg);
       overflow: hidden;
       flex: 0 0 auto;
     }
@@ -890,7 +1009,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       display: block;
       height: 100%;
       width: 0;
-      background: var(--accent-2);
+      background: var(--accent);
     }
     .pill {
       display: inline-flex;
@@ -926,7 +1045,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       gap: 10px;
       align-items: center;
       min-height: 58px;
-      border-bottom: 1px solid #eef1f6;
+      border-bottom: 1px solid var(--soft-line);
     }
     .attention-row:last-child {
       border-bottom: 0;
@@ -993,8 +1112,8 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       min-height: 20px;
       padding: 0 7px;
       border-radius: 999px;
-      background: #edf4ff;
-      color: #2c5f9e;
+      background: var(--ok-bg);
+      color: var(--accent);
       font-size: var(--fs-sm);
       font-weight: var(--fw-medium);
     }
@@ -1071,7 +1190,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       height: 28px;
       padding: 0;
       border-color: var(--line);
-      background: #fff;
+      background: var(--surface);
       color: var(--text);
       font-size: var(--fs-base);
       line-height: var(--lh-tight);
@@ -1129,8 +1248,8 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     .daily-bars > div {
       flex: 1;
       min-width: 10px;
-      background: var(--accent-2);
-      border-radius: 3px 3px 0 0;
+      background: var(--accent);
+      border-radius: 999px 999px 0 0;
       opacity: 0.84;
     }
     .daily-bars.single > div {
@@ -1143,9 +1262,21 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     }
     .error { color: var(--bad); }
     @media (max-width: 900px) {
-      body { min-width: 900px; }
+      body { min-width: 0; }
+      .topbar {
+        align-items: flex-start;
+        border-radius: 36px;
+        flex-wrap: wrap;
+      }
+      .toolbar {
+        width: 100%;
+        flex-wrap: wrap;
+      }
+      .toolbar input {
+        flex: 1 1 180px;
+      }
       .kpis {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
       }
       .workspace-stage,
       .report-board,
@@ -1170,6 +1301,9 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         grid-template-columns: 1fr;
       }
       #taskTable .driver-list {
+        grid-template-columns: 1fr;
+      }
+      .task-driver-grid {
         grid-template-columns: 1fr;
       }
       .workspace-stage > .panel:first-child,
@@ -1228,6 +1362,10 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       </div>
       <form class="toolbar" id="workspaceForm">
         <input id="workspaceInput" name="workspace" autocomplete="off" aria-label="Workspace">
+        <button type="button" class="theme-toggle" id="themeToggle" aria-pressed="true">
+          <span class="theme-dot" aria-hidden="true"></span>
+          <span id="themeLabel">Dark</span>
+        </button>
         <button type="submit">Refresh</button>
       </form>
     </div>
@@ -1351,6 +1489,8 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
     const workspaceInput = document.getElementById("workspaceInput");
     const workspaceLabel = document.getElementById("workspaceLabel");
     const form = document.getElementById("workspaceForm");
+    const themeToggle = document.getElementById("themeToggle");
+    const themeLabel = document.getElementById("themeLabel");
     const PAGE_SIZE = {
       tasks: 6,
       insights: 8,
@@ -1377,6 +1517,7 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
       },
     };
     workspaceInput.value = new URLSearchParams(location.search).get("workspace") || defaultWorkspace;
+    initThemeControls();
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const workspace = workspaceInput.value.trim() || defaultWorkspace;
@@ -1419,6 +1560,32 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
         '"': "&quot;",
         "'": "&#039;",
       })[char]);
+    }
+    function themeFromStorage() {
+      try {
+        return localStorage.getItem("ttoksemTheme") === "light" ? "light" : "dark";
+      } catch {
+        return "dark";
+      }
+    }
+    function applyTheme(theme) {
+      const normalized = theme === "light" ? "light" : "dark";
+      document.documentElement.dataset.theme = normalized;
+      try {
+        localStorage.setItem("ttoksemTheme", normalized);
+      } catch {
+        // Ignore storage failures; the visible theme can still update for this page load.
+      }
+      if (themeToggle) themeToggle.setAttribute("aria-pressed", normalized === "dark" ? "true" : "false");
+      if (themeLabel) themeLabel.textContent = normalized === "dark" ? "Dark" : "Light";
+    }
+    function initThemeControls() {
+      applyTheme(themeFromStorage());
+      if (!themeToggle) return;
+      themeToggle.addEventListener("click", () => {
+        const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        applyTheme(nextTheme);
+      });
     }
     function initAuthToken() {
       const params = new URLSearchParams(location.search);
