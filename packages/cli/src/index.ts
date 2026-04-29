@@ -271,6 +271,60 @@ usage
   });
 
 usage
+  .command("claude-turn")
+  .description("Record an estimated Claude (Claude Code/Claude.app) chat turn")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--task <key>", "task key; omit when the goal is not clear")
+  .option("--run-id <id>", "existing or explicit run id")
+  .option("--model <model>", "model label", "claude-chat")
+  .option("--started-at <iso>", "turn start timestamp")
+  .option("--ended-at <iso>", "turn end timestamp")
+  .option("--duration-ms <ms>", "turn duration in milliseconds")
+  .option("--input-tokens <count>", "estimated input token count")
+  .option("--output-tokens <count>", "estimated output token count")
+  .option("--input-chars <count>", "input character count to estimate tokens")
+  .option("--output-chars <count>", "output character count to estimate tokens")
+  .option("--prompt-text <text>", "full prompt text to store")
+  .option("--response-text <text>", "full assistant response text to store")
+  .option("--prompt-file <path>", "file containing full prompt text to store")
+  .option("--response-file <path>", "file containing full assistant response text to store")
+  .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
+  .option("--idempotency-key <key>", "idempotency key")
+  .action(async (options: ClaudeTurnOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const message = buildClaudeTurnMessage(options);
+    const event = await service.recordUsage(message);
+    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    await close();
+  });
+
+usage
+  .command("import-claude-sessions")
+  .description("Import Claude Code session JSONL events from ~/.claude/projects")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--task <key>", "task key to attach imported usage")
+  .option("--file <path>", "single Claude Code session JSONL file")
+  .option("--projects-dir <path>", "Claude Code projects directory; defaults to $CLAUDE_HOME/projects")
+  .option("--claude-home <path>", "Claude home directory", process.env.CLAUDE_HOME ?? "~/.claude")
+  .option("--thread-id <id>", "only import one Claude session id")
+  .option("--since <iso>", "only import assistant events at or after this UTC timestamp")
+  .option("--model <model>", "model label when an assistant event does not include one", "claude-app")
+  .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
+  .option("--limit <count>", "maximum assistant events to import")
+  .option("--dry-run", "scan and print counts without writing usage events")
+  .option("--no-subagents", "skip subagent JSONL files (default: include)")
+  .action(async (options: ClaudeSessionImportOptions) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const result = await importClaudeSessions(service, options);
+    console.log(
+      `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+    );
+    await close();
+  });
+
+usage
   .command("openai-response")
   .description("Record exact usage from an OpenAI SDK response JSON file")
   .requiredOption("--file <path>", "OpenAI SDK response JSON file")
@@ -778,6 +832,41 @@ interface CodexSessionImportOptions {
   promptMode: PromptMode;
   limit?: string;
   dryRun?: boolean;
+}
+
+interface ClaudeTurnOptions {
+  workspace: string;
+  task?: string;
+  runId?: string;
+  model: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: string;
+  inputTokens?: string;
+  outputTokens?: string;
+  inputChars?: string;
+  outputChars?: string;
+  promptText?: string;
+  responseText?: string;
+  promptFile?: string;
+  responseFile?: string;
+  promptMode: PromptMode;
+  idempotencyKey?: string;
+}
+
+interface ClaudeSessionImportOptions {
+  workspace: string;
+  task?: string;
+  file?: string;
+  projectsDir?: string;
+  claudeHome: string;
+  threadId?: string;
+  since?: string;
+  model: string;
+  promptMode: PromptMode;
+  limit?: string;
+  dryRun?: boolean;
+  subagents: boolean;
 }
 
 interface OpenAiResponseOptions {
@@ -1320,6 +1409,400 @@ function tokenUsage(raw: Record<string, unknown>): CodexTokenUsage | null {
   const totalTokens = numberField(raw.total_tokens);
   if (inputTokens == null && outputTokens == null && totalTokens == null) return null;
   return { inputTokens, outputTokens, cachedInputTokens, reasoningOutputTokens, totalTokens, raw };
+}
+
+function buildClaudeTurnMessage(options: ClaudeTurnOptions): AiUsageObserved {
+  const promptMode = parsePromptMode(options.promptMode);
+  const promptText = readOptionalText(options.promptText, options.promptFile);
+  const responseText = readOptionalText(options.responseText, options.responseFile);
+  const promptSnapshot = buildPromptSnapshot({
+    mode: promptMode,
+    promptText,
+    responseText,
+  });
+  const inputEstimate = estimateTokenCount({
+    tokens: options.inputTokens,
+    chars: options.inputChars,
+    text: promptText,
+    scope: "user_prompt_only",
+    textSource: "prompt_text",
+    charsSource: "input_chars_option",
+    tokensSource: "input_tokens_option",
+  });
+  const outputEstimate = estimateTokenCount({
+    tokens: options.outputTokens,
+    chars: options.outputChars,
+    text: responseText,
+    scope: "assistant_response_text",
+    textSource: "response_text",
+    charsSource: "output_chars_option",
+    tokensSource: "output_tokens_option",
+  });
+  const inputTokens = inputEstimate.tokens;
+  const outputTokens = outputEstimate.tokens;
+  const totalTokens =
+    inputTokens == null && outputTokens == null ? null : (inputTokens ?? 0) + (outputTokens ?? 0);
+  const accuracyMode = tokenAccuracyMode(inputEstimate.mode, outputEstimate.mode);
+  return AiUsageObservedSchema.parse({
+    schema_version: "1.0",
+    message_id: `msg_claude_${Date.now()}`,
+    kind: "ingest_message",
+    type: "ai.usage.observed",
+    occurred_at: new Date().toISOString(),
+    source: { system: "claude-chat", actor: "assistant:auto-log" },
+    workspace: { key: options.workspace },
+    idempotency_key: options.idempotencyKey,
+    payload: {
+      task: options.task ? { key: slug(options.task) } : null,
+      run: runRef(options),
+      usage: {
+        provider: "anthropic",
+        model: options.model,
+        usage_kind: "conversation_turn",
+        started_at: options.startedAt ?? null,
+        ended_at: options.endedAt ?? null,
+        duration_ms: parseOptionalInteger(options.durationMs),
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+        accuracy_mode: accuracyMode,
+        pricing_mode: "unpriced",
+        unpriced_reason: "missing_pricing_rule",
+      },
+      prompt_snapshot: promptSnapshot.snapshot,
+      source_context: {
+        tool: "claude-chat",
+        capture_mode: "assistant_estimated_turn",
+        token_estimation: {
+          input: inputEstimate.context,
+          output: outputEstimate.context,
+          total_tokens: totalTokens,
+        },
+      },
+    },
+  });
+}
+
+async function importClaudeSessions(
+  service: LedgerService,
+  options: ClaudeSessionImportOptions,
+): Promise<{ scannedFiles: number; assistantEvents: number; imported: number; skipped: number; errors: number }> {
+  const files = claudeSessionFiles(options);
+  parsePromptMode(options.promptMode);
+  const limit = options.limit ? parsePositiveInteger(options.limit) : Number.POSITIVE_INFINITY;
+  const sinceMs = options.since ? Date.parse(options.since) : null;
+  if (sinceMs != null && !Number.isFinite(sinceMs)) throw new Error(`Invalid --since timestamp: ${options.since}`);
+  let assistantEvents = 0;
+  let imported = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const file of files) {
+    const messages = parseClaudeSessionUsage(file, options, sinceMs);
+    for (const message of messages) {
+      if (assistantEvents >= limit) return { scannedFiles: files.length, assistantEvents, imported, skipped, errors };
+      assistantEvents += 1;
+      if (options.dryRun) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        await service.recordUsage(message);
+        imported += 1;
+      } catch (error) {
+        errors += 1;
+        console.error(`claude import error file=${file} idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+  return { scannedFiles: files.length, assistantEvents, imported, skipped, errors };
+}
+
+function claudeSessionFiles(options: ClaudeSessionImportOptions): string[] {
+  if (options.file) return [resolveImportPath(options.file)];
+  const claudeHome = resolveImportPath(options.claudeHome);
+  const projectsDir = options.projectsDir ? resolveImportPath(options.projectsDir) : join(claudeHome, "projects");
+  if (!existsSync(projectsDir)) throw new Error(`Claude projects directory not found: ${projectsDir}`);
+  const files = collectJsonlFiles(projectsDir);
+  const filtered = options.subagents
+    ? files
+    : files.filter((path) => !path.includes(`${"/"}subagents${"/"}`));
+  return filtered.sort();
+}
+
+function parseClaudeSessionUsage(
+  file: string,
+  options: ClaudeSessionImportOptions,
+  sinceMs: number | null,
+): AiUsageObserved[] {
+  let session: ClaudeSessionMeta | null = null;
+  let promptGroup: ClaudeSessionPromptGroup = emptyClaudePromptGroup();
+  const messages: AiUsageObserved[] = [];
+  const lines = readFileSync(file, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let item: unknown;
+    try {
+      item = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(item)) continue;
+    session = updateClaudeSessionMeta(session, item, file);
+    if (item.type === "user") {
+      const text = claudeUserPromptText(item);
+      if (text != null) {
+        promptGroup = nextClaudePromptGroup(promptGroup, text, stringField(item.timestamp));
+      }
+      continue;
+    }
+    if (item.type !== "assistant") continue;
+    if (options.threadId && session?.id !== options.threadId) continue;
+    const message = isRecord(item.message) ? item.message : null;
+    const usageRaw = message && isRecord(message.usage) ? message.usage : null;
+    if (!usageRaw) continue;
+    const timestamp = stringField(item.timestamp);
+    if (!timestamp) continue;
+    const occurredMs = Date.parse(timestamp);
+    if (!Number.isFinite(occurredMs)) continue;
+    if (sinceMs != null && occurredMs < sinceMs) continue;
+    const usage = claudeTokenUsage(usageRaw);
+    if (!usage) continue;
+    if (!session) session = fallbackClaudeSessionMeta(item, file);
+    const eventUuid = stringField(item.uuid) ?? `${session.id}:${timestamp}`;
+    const messageId = stringField(message?.id);
+    const requestId = stringField(item.requestId);
+    const model = stringField(message?.model) ?? session.model ?? options.model;
+    messages.push(
+      buildClaudeSessionUsageMessage({
+        session: { ...session, model },
+        usage,
+        timestamp,
+        promptGroup,
+        options,
+        eventUuid,
+        messageId,
+        requestId,
+      }),
+    );
+  }
+  return messages;
+}
+
+function buildClaudeSessionUsageMessage(input: {
+  session: ClaudeSessionMeta;
+  usage: ClaudeTokenUsage;
+  timestamp: string;
+  promptGroup: ClaudeSessionPromptGroup;
+  options: ClaudeSessionImportOptions;
+  eventUuid: string;
+  messageId: string | null;
+  requestId: string | null;
+}): AiUsageObserved {
+  const idempotencyKey = `claude-session:${input.session.id}:${input.eventUuid}`;
+  const runId = claudePromptRunId(input.session, input.promptGroup);
+  const promptSnapshot = buildPromptSnapshot({
+    mode: input.options.promptMode,
+    promptText: input.promptGroup.promptText,
+  });
+  return AiUsageObservedSchema.parse({
+    schema_version: "1.0",
+    message_id: `msg_${slug(idempotencyKey)}`,
+    kind: "ingest_message",
+    type: "ai.usage.observed",
+    occurred_at: input.timestamp,
+    source: { system: "claude-session", actor: "claude-local-import" },
+    workspace: { key: input.options.workspace },
+    idempotency_key: idempotencyKey,
+    payload: {
+      task: input.options.task ? { key: slug(input.options.task) } : null,
+      run: {
+        id: runId,
+        external_ref: {
+          system: "claude-session-prompt",
+          id: `${input.session.id}:${input.promptGroup.index}`,
+          prompt_hash: input.promptGroup.promptHash,
+          started_at: input.promptGroup.startedAt,
+        },
+      },
+      usage: {
+        provider: "anthropic",
+        model: input.session.model,
+        usage_kind: "conversation_turn",
+        started_at: input.promptGroup.startedAt ?? input.timestamp,
+        input_tokens: input.usage.inputTokens,
+        output_tokens: input.usage.outputTokens,
+        cached_input_tokens: input.usage.cachedInputTokens,
+        cache_write_input_tokens: input.usage.cacheWriteInputTokens,
+        total_tokens: input.usage.totalTokens,
+        accuracy_mode: "exact",
+        pricing_mode: "unpriced",
+        unpriced_reason: "missing_pricing_rule",
+        raw_usage: input.usage.raw,
+      },
+      prompt_snapshot: promptSnapshot.snapshot,
+      source_context: {
+        tool: "claude-code",
+        capture_mode: "claude_session_assistant_event",
+        user_message: promptSnapshot.contextPromptText,
+        prompt_group: {
+          index: input.promptGroup.index,
+          prompt_hash: input.promptGroup.promptHash,
+          started_at: input.promptGroup.startedAt,
+        },
+        session: {
+          id: input.session.id,
+          cwd: input.session.cwd,
+          source: input.session.source,
+          originator: input.session.originator,
+          cli_version: input.session.cliVersion,
+          file: input.session.file,
+          is_subagent: input.session.isSubagent,
+        },
+        message_id: input.messageId,
+        request_id: input.requestId,
+        token_usage: input.usage.raw,
+      },
+    },
+  });
+}
+
+interface ClaudeSessionMeta {
+  id: string;
+  cwd: string | null;
+  source: string | null;
+  originator: string | null;
+  cliVersion: string | null;
+  model: string | null;
+  file: string;
+  isSubagent: boolean;
+}
+
+interface ClaudeTokenUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheWriteInputTokens: number | null;
+  totalTokens: number | null;
+  raw: Record<string, unknown>;
+}
+
+interface ClaudeSessionPromptGroup {
+  index: number;
+  promptText: string | null;
+  promptHash: string;
+  startedAt: string | null;
+}
+
+function emptyClaudePromptGroup(): ClaudeSessionPromptGroup {
+  return { index: 0, promptText: null, promptHash: "no-prompt", startedAt: null };
+}
+
+function nextClaudePromptGroup(
+  previous: ClaudeSessionPromptGroup,
+  promptText: string | null,
+  startedAt: string | null,
+): ClaudeSessionPromptGroup {
+  return {
+    index: previous.index + 1,
+    promptText,
+    promptHash: promptText ? createHash("sha256").update(promptText, "utf8").digest("hex").slice(0, 12) : "no-prompt",
+    startedAt,
+  };
+}
+
+function claudePromptRunId(session: ClaudeSessionMeta, promptGroup: ClaudeSessionPromptGroup): string {
+  const sessionId = session.id.replace(/[^a-zA-Z0-9]/g, "_");
+  const groupIndex = String(promptGroup.index).padStart(4, "0");
+  return `run_claude_${sessionId}_prompt_${groupIndex}_${promptGroup.promptHash}`;
+}
+
+function updateClaudeSessionMeta(
+  current: ClaudeSessionMeta | null,
+  item: Record<string, unknown>,
+  file: string,
+): ClaudeSessionMeta | null {
+  const sessionId = stringField(item.sessionId);
+  if (!sessionId && !current) return null;
+  if (current && (!sessionId || sessionId === current.id)) {
+    if (current.cwd && current.cliVersion && current.source && current.model) return current;
+    const next = { ...current };
+    if (!next.cwd) next.cwd = stringField(item.cwd);
+    if (!next.cliVersion) next.cliVersion = stringField(item.version);
+    if (!next.source) next.source = stringField(item.entrypoint);
+    if (!next.model) {
+      const message = isRecord(item.message) ? item.message : null;
+      next.model = stringField(message?.model);
+    }
+    return next;
+  }
+  return {
+    id: sessionId ?? claudeSessionIdFromPath(file),
+    cwd: stringField(item.cwd),
+    source: stringField(item.entrypoint),
+    originator: stringField(item.userType) ?? "claude-code",
+    cliVersion: stringField(item.version),
+    model: null,
+    file,
+    isSubagent: file.includes(`${"/"}subagents${"/"}`),
+  };
+}
+
+function claudeSessionIdFromPath(file: string): string {
+  const base = file.split("/").pop() ?? file;
+  return base.replace(/\.jsonl$/, "");
+}
+
+function fallbackClaudeSessionMeta(item: Record<string, unknown>, file: string): ClaudeSessionMeta {
+  const sessionId = stringField(item.sessionId) ?? claudeSessionIdFromPath(file);
+  return {
+    id: sessionId,
+    cwd: stringField(item.cwd),
+    source: stringField(item.entrypoint),
+    originator: stringField(item.userType) ?? "claude-code",
+    cliVersion: stringField(item.version),
+    model: null,
+    file,
+    isSubagent: file.includes(`${"/"}subagents${"/"}`),
+  };
+}
+
+function claudeUserPromptText(item: Record<string, unknown>): string | null {
+  const message = isRecord(item.message) ? item.message : null;
+  if (!message) return null;
+  const content = message.content;
+  if (typeof content === "string") return content.trim() ? content : null;
+  if (!Array.isArray(content)) return null;
+  const parts: string[] = [];
+  for (const block of content) {
+    if (!isRecord(block)) continue;
+    if (block.type === "text" && typeof block.text === "string") parts.push(block.text);
+  }
+  if (parts.length === 0) return null;
+  const joined = parts.join("\n").trim();
+  return joined ? joined : null;
+}
+
+function claudeTokenUsage(raw: Record<string, unknown>): ClaudeTokenUsage | null {
+  const inputTokens = numberField(raw.input_tokens);
+  const outputTokens = numberField(raw.output_tokens);
+  const cachedInputTokens = numberField(raw.cache_read_input_tokens);
+  const cacheWriteInputTokens = numberField(raw.cache_creation_input_tokens);
+  const totalTokensRaw = numberField(raw.total_tokens);
+  if (
+    inputTokens == null &&
+    outputTokens == null &&
+    cachedInputTokens == null &&
+    cacheWriteInputTokens == null &&
+    totalTokensRaw == null
+  )
+    return null;
+  const totalTokens =
+    totalTokensRaw ??
+    (inputTokens == null && outputTokens == null && cachedInputTokens == null && cacheWriteInputTokens == null
+      ? null
+      : (inputTokens ?? 0) + (outputTokens ?? 0) + (cachedInputTokens ?? 0) + (cacheWriteInputTokens ?? 0));
+  return { inputTokens, outputTokens, cachedInputTokens, cacheWriteInputTokens, totalTokens, raw };
 }
 
 function buildPromptSnapshot(input: {

@@ -79,7 +79,7 @@ Stored timestamps are UTC ISO text. The browser dashboard keeps those source val
 
 ## Prompt Retention Policy
 
-`usage chat-turn` and `usage import-codex-sessions` default to `--prompt-mode full` for local Codex logging, because the task and run reports use prompt samples to explain where tokens were spent.
+`usage chat-turn`, `usage import-codex-sessions`, `usage claude-turn`, and `usage import-claude-sessions` default to `--prompt-mode full` for local Codex/Claude logging, because the task and run reports use prompt samples to explain where tokens were spent.
 
 Sensitive workspaces can choose stricter modes:
 
@@ -132,6 +132,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
 - [Access Key Auth](docs/ACCESS-AUTH.md): how local dashboard/API access is guarded without adding user accounts or RBAC.
 - [Codex Session Import](docs/examples/codex-session-import.md): how Codex agents or local hooks should import Codex App/CLI `token_count` records from local session JSONL files.
+- [Claude Code Session Import](docs/examples/claude-session-import.md): how Claude Code agents or local hooks should import `~/.claude/projects` session JSONL files, including multi-goal inbox flow and Anthropic pricing setup.
 - [OpenAI SDK Collector](docs/examples/openai-sdk-collector.md): how to turn OpenAI SDK response usage into exact ttoksem usage events.
 - [Worker D1 Deployment](docs/WORKER-D1.md): how the D1-backed Worker entrypoint is wired.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
@@ -163,6 +164,9 @@ pnpm cli usage chat-turn --workspace ttoksem-dev --task implement-chat-usage-log
 pnpm cli usage openai-response --workspace ttoksem-dev --task implement-chat-usage-logging --file ./openai-response.json --operation chat.completions.create
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5 --dry-run
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5
+pnpm cli usage claude-turn --workspace ttoksem-dev --task implement-chat-usage-logging --prompt-text "manual claude turn" --input-chars 80 --output-chars 200
+pnpm cli usage import-claude-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --dry-run
+pnpm cli usage import-claude-sessions --workspace ttoksem-dev --task implement-chat-usage-logging
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli pricing migrate-events --workspace ttoksem-dev
 pnpm cli auth key create --name "hwanghee dashboard" --scope dashboard:read

@@ -163,6 +163,33 @@ new setup or debugging target
 new research topic unrelated to the current implementation
 ```
 
+## Long Sessions Crossing Multiple Goals
+
+A single Codex or Claude Code session can span several user goals. The session importers do not classify goals — they only group events by prompt run. When a long session is likely to contain mixed goals, **omit `--task` at import time** so events land in the inbox, then assign per prompt group:
+
+```bash
+pnpm cli usage import-claude-sessions --workspace ttoksem-dev --file <session.jsonl>
+pnpm cli usage import-codex-sessions  --workspace ttoksem-dev --thread-id <thread-id>
+```
+
+```bash
+pnpm cli inbox list --workspace ttoksem-dev
+pnpm cli inbox accept inbox_<group_id_a> --workspace ttoksem-dev --task convert-agent-to-claude-md --all
+pnpm cli inbox accept inbox_<group_id_b> --workspace ttoksem-dev --task implement-claude-session-import --all
+```
+
+Decision rule for the importer's `--task` flag:
+
+```text
+single goal across the whole import        -> pass --task
+mixed goals OR uncertain                   -> omit --task, use the inbox
+ambiguous prompt group inside a mixed run  -> leave it in inbox; do not force-assign
+```
+
+Forcing every event into one task because a `--task` was already typed once is a common mistake. Importers are bulk operations, not turn-by-turn classifiers; the inbox is the classifier surface.
+
+See also: [Codex Session Import](./codex-session-import.md), [Claude Code Session Import](./claude-session-import.md).
+
 ## Slash Commands As Overrides
 
 Slash or text commands are useful, but they should be overrides rather than the main workflow.

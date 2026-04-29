@@ -760,6 +760,272 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("records a Claude turn and imports Claude Code session JSONL events with subagents", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-claude-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      expect(runCli(["workspace", "init", "--key", "claude-test", "--root", tempDir], env)).toContain(
+        "workspace claude-test",
+      );
+      expect(
+        runCli(
+          [
+            "task",
+            "start",
+            "implement-claude-import",
+            "--workspace",
+            "claude-test",
+            "--name",
+            "Implement Claude import",
+          ],
+          env,
+        ),
+      ).toContain("task implement-claude-import active");
+
+      const claudeTurnOutput = runCli(
+        [
+          "usage",
+          "claude-turn",
+          "--workspace",
+          "claude-test",
+          "--task",
+          "implement-claude-import",
+          "--prompt-text",
+          "claude turn manual log",
+          "--input-chars",
+          "20",
+          "--output-chars",
+          "40",
+          "--idempotency-key",
+          "claude-turn-001",
+        ],
+        env,
+      );
+      expect(claudeTurnOutput).toContain("anthropic/claude-chat");
+      expect(claudeTurnOutput).toContain("assigned");
+
+      const sessionId = "5bc0e0da-9308-4593-aabd-d8884aa7bea6";
+      const projectsDir = join(tempDir, "claude-projects");
+      const projectDir = join(projectsDir, "-Users-johwanghee-Documents-hwanghee-ttoksem");
+      const subagentsDir = join(projectDir, sessionId, "subagents");
+      const sessionFile = join(projectDir, `${sessionId}.jsonl`);
+      const subagentFile = join(subagentsDir, "agent-abc123.jsonl");
+      const fs = await import("node:fs");
+      fs.mkdirSync(subagentsDir, { recursive: true });
+      writeFileSync(
+        sessionFile,
+        [
+          JSON.stringify({
+            type: "user",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            entrypoint: "cli",
+            promptId: "p1",
+            timestamp: "2026-04-29T00:10:00.000Z",
+            uuid: "u-user-1",
+            message: { role: "user", content: "first claude prompt" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-1",
+            timestamp: "2026-04-29T00:10:05.000Z",
+            uuid: "u-asst-1",
+            message: {
+              id: "msg_a1",
+              model: "claude-sonnet-4-6",
+              usage: {
+                input_tokens: 10,
+                output_tokens: 50,
+                cache_read_input_tokens: 1200,
+                cache_creation_input_tokens: 800,
+              },
+            },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-2",
+            timestamp: "2026-04-29T00:10:20.000Z",
+            uuid: "u-asst-2",
+            message: {
+              id: "msg_a2",
+              model: "claude-sonnet-4-6",
+              usage: { input_tokens: 5, output_tokens: 30, cache_read_input_tokens: 1300 },
+            },
+          }),
+          JSON.stringify({
+            type: "user",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            promptId: "p2",
+            timestamp: "2026-04-29T00:11:00.000Z",
+            uuid: "u-user-2",
+            message: {
+              role: "user",
+              content: [{ type: "text", text: "second claude prompt" }],
+            },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId,
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-3",
+            timestamp: "2026-04-29T00:11:05.000Z",
+            uuid: "u-asst-3",
+            message: {
+              id: "msg_a3",
+              model: "claude-sonnet-4-6",
+              usage: { input_tokens: 7, output_tokens: 25 },
+            },
+          }),
+        ].join("\n"),
+      );
+      writeFileSync(
+        subagentFile,
+        [
+          JSON.stringify({
+            type: "user",
+            sessionId: "agent-abc123",
+            cwd: tempDir,
+            version: "2.0.30",
+            timestamp: "2026-04-29T00:12:00.000Z",
+            uuid: "sa-user-1",
+            message: { role: "user", content: "subagent prompt" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            sessionId: "agent-abc123",
+            cwd: tempDir,
+            version: "2.0.30",
+            requestId: "req-sa-1",
+            timestamp: "2026-04-29T00:12:05.000Z",
+            uuid: "sa-asst-1",
+            message: {
+              id: "msg_sa1",
+              model: "claude-sonnet-4-6",
+              usage: { input_tokens: 4, output_tokens: 12 },
+            },
+          }),
+        ].join("\n"),
+      );
+
+      expect(
+        runCli(
+          [
+            "usage",
+            "import-claude-sessions",
+            "--workspace",
+            "claude-test",
+            "--task",
+            "implement-claude-import",
+            "--projects-dir",
+            projectsDir,
+            "--claude-home",
+            tempDir,
+          ],
+          env,
+        ),
+      ).toContain("claude import scanned_files=2 assistant_events=4 imported=4 skipped=0 errors=0");
+
+      const store = new SqliteLedgerStore(dbPath);
+      try {
+        await store.migrate();
+        const workspace = await store.getWorkspaceByKey("claude-test");
+        const firstAssistant = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "claude-session",
+          `claude-session:${sessionId}:u-asst-1`,
+        );
+        expect(firstAssistant).toMatchObject({
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          usage_kind: "conversation_turn",
+          input_tokens: 10,
+          output_tokens: 50,
+          accuracy_mode: "exact",
+          assignment_status: "assigned",
+        });
+        expect(firstAssistant?.run_id).toMatch(/^run_claude_.*_prompt_0001_/);
+        const firstRaw = codexRawUsage(firstAssistant?.payload_json);
+        expect(firstRaw).toMatchObject({
+          input_tokens: 10,
+          output_tokens: 50,
+          cache_read_input_tokens: 1200,
+          cache_creation_input_tokens: 800,
+        });
+        expect(promptSnapshot(firstAssistant?.payload_json)).toMatchObject({
+          mode: "full",
+          prompt_text: "first claude prompt",
+        });
+
+        const sameRunAssistant = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "claude-session",
+          `claude-session:${sessionId}:u-asst-2`,
+        );
+        const secondPromptAssistant = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "claude-session",
+          `claude-session:${sessionId}:u-asst-3`,
+        );
+        expect(sameRunAssistant?.run_id).toBe(firstAssistant?.run_id);
+        expect(secondPromptAssistant?.run_id).toMatch(/^run_claude_.*_prompt_0002_/);
+        expect(secondPromptAssistant?.run_id).not.toBe(firstAssistant?.run_id);
+        expect(promptSnapshot(secondPromptAssistant?.payload_json)).toMatchObject({
+          mode: "full",
+          prompt_text: "second claude prompt",
+        });
+
+        const subagentImported = await store.getUsageEventByIdempotency(
+          workspace?.id ?? "",
+          "claude-session",
+          `claude-session:agent-abc123:sa-asst-1`,
+        );
+        expect(subagentImported).toMatchObject({
+          provider: "anthropic",
+          input_tokens: 4,
+          output_tokens: 12,
+        });
+        expect(sourceContext(subagentImported?.payload_json)?.session).toMatchObject({
+          is_subagent: true,
+        });
+      } finally {
+        await store.close();
+      }
+
+      expect(
+        runCli(
+          [
+            "usage",
+            "import-claude-sessions",
+            "--workspace",
+            "claude-test",
+            "--task",
+            "implement-claude-import",
+            "--projects-dir",
+            projectsDir,
+            "--claude-home",
+            tempDir,
+            "--no-subagents",
+            "--dry-run",
+          ],
+          env,
+        ),
+      ).toContain("claude import scanned_files=1 assistant_events=3 imported=0 skipped=3 errors=0");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 20_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {
