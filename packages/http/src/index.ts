@@ -1,5 +1,6 @@
 import { type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { logger } from "hono/logger";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { renderDashboardHtml, renderLoginHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
@@ -17,6 +18,8 @@ export interface CreateHttpAppOptions {
   defaultWorkspaceKey?: string;
   auth?: HttpAuthOptions;
   serverUrl?: string;
+  /** Enable Hono's request logger (METHOD path → status time). Default true. */
+  logRequests?: boolean;
 }
 
 export type HttpAuthOptions =
@@ -310,6 +313,12 @@ const routeListPricingRules = createRoute({
 export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   const app = new OpenAPIHono();
   const defaultWorkspaceKey = options.defaultWorkspaceKey ?? "ttoksem-dev";
+
+  // ── Middleware ─────────────────────────────────────────────────────────────
+
+  if (options.logRequests !== false) {
+    app.use("*", logger());
+  }
 
   // ── System ─────────────────────────────────────────────────────────────────
 
