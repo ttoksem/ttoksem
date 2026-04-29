@@ -1322,18 +1322,22 @@ body {
                         <span className="chip chip--pos" style={{fontSize: 10}}>{Math.round(g.suggested_task.confidence * 100)}% match</span>
                       </div>
                     )}
-                    {g.prompt_samples?.length > 0 && (
-                      <div style={{padding: "8px 12px", background: "var(--surface-lifted)", borderRadius: "var(--r-sm)", borderLeft: "3px solid var(--signal-orange)", marginBottom: 8}}>
-                        <div style={{fontSize: 12, color: "var(--text-slate)", marginBottom: 2}}>Prompt sample</div>
-                        <div style={{fontSize: 13, lineHeight: 1.4}}>{g.prompt_samples[0].slice(0, 160)}{g.prompt_samples[0].length > 160 ? "…" : ""}</div>
-                      </div>
-                    )}
+                    {(() => {
+                      const sample = g.prompt_samples && g.prompt_samples[0];
+                      if (!sample) return null;
+                      return (
+                        <div style={{padding: "8px 12px", background: "var(--surface-lifted)", borderRadius: "var(--r-sm)", borderLeft: "3px solid var(--signal-orange)", marginBottom: 8}}>
+                          <div style={{fontSize: 12, color: "var(--text-slate)", marginBottom: 2}}>Prompt sample</div>
+                          <div style={{fontSize: 13, lineHeight: 1.4}}>{sample.slice(0, 160)}{sample.length > 160 ? "…" : ""}</div>
+                        </div>
+                      );
+                    })()}
                     <div className="flex gap-3 items-center" style={{fontSize: 11, color: "var(--text-slate)"}}>
-                      <span>{g.event_count} events</span>
+                      <span>{g.event_count ?? 0} events</span>
                       <span>·</span>
                       <span className="mono">{g.source_context?.tool || "unknown"}</span>
                       <span>·</span>
-                      <span>{g.first_occurred_at.slice(0, 10)}</span>
+                      <span>{(g.first_occurred_at || "").slice(0, 10) || "—"}</span>
                       {g.source_context?.git_branch && <><span>·</span><span className="mono">{g.source_context.git_branch}</span></>}
                     </div>
                   </div>

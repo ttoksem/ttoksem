@@ -533,7 +533,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const workspaceKey = wk ?? defaultWorkspaceKey;
     const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
     if (authResponse) return authResponse as never;
-    const groups = await options.service.listInbox({
+    const groups = await options.service.listInboxGroups({
       workspace: workspaceResolver(workspaceKey),
       limit: limit ? parseLimit(limit, 50) : 50,
     });
