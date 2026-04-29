@@ -685,38 +685,58 @@ body {
               <span className="mono">{d.workspace}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
             </button>
-            <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Report</div>
-            <nav className="flex-col gap-2">
+            {/* Section nav has two distinct levels:
+                  Pages (top-level routes that navigate to a different view)
+                  On this page (anchor links that scroll within Overview)
+                Indenting the in-page items makes the hierarchy obvious. */}
+            <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Pages</div>
+            <nav className="flex-col gap-1">
               {[
-                // [label, isActive, hrefOrNull, badgeOrNull, navViewOrNull]
-                // navView !== null → button navigates to a detail view via onNav
-                // navView === null → anchor link scrolls to in-page section
-                ["Overview", true, "#", null, null],
-                ["Daily timeline", false, "#timeline", null, null],
-                ["Models & providers", false, "#models", null, null],
-                ["Tasks", false, "#tasks", null, null],
-                ["Runs", false, "#runs", null, null],
-                ["Inbox", false, null, d.inbox.length > 0 ? String(d.inbox.length) : null, "inbox"],
-                ["Pricing snapshots", false, null, null, "pricing"],
-                ["Anomalies", false, "#anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null, null],
-              ].map(([l, active, href, badge, navView]) => {
-                const sharedStyle = {
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "8px 12px", borderRadius: "var(--r-md)",
-                  background: active ? "var(--text-ink)" : "transparent",
-                  color: active ? "var(--text-cream)" : "var(--text-ink)",
-                  textDecoration: "none", fontSize: 14, fontWeight: 500,
-                  border: "none", textAlign: "left", cursor: "pointer", fontFamily: "inherit", width: "100%"
-                };
-                const inner = (<>
-                  <span>{l}</span>
+                ["Overview", true, "pro", null],
+                ["Inbox", false, "inbox", d.inbox.length > 0 ? String(d.inbox.length) : null],
+                ["Pricing snapshots", false, "pricing", null],
+              ].map(([label, active, navView, badge]) => (
+                <button
+                  key={label}
+                  onClick={() => onNav && onNav(navView)}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "8px 12px", borderRadius: "var(--r-md)",
+                    background: active ? "var(--text-ink)" : "transparent",
+                    color: active ? "var(--text-cream)" : "var(--text-ink)",
+                    border: "none", textAlign: "left", cursor: "pointer",
+                    fontSize: 14, fontWeight: 500, fontFamily: "inherit", width: "100%",
+                  }}
+                >
+                  <span>{label}</span>
                   {badge && <span className="chip chip--orange" style={{padding: "1px 8px", fontSize: 11}}>{badge}</span>}
-                </>);
-                if (navView) {
-                  return <button key={l} onClick={() => onNav && onNav(navView)} style={sharedStyle}>{inner}</button>;
-                }
-                return <a key={l} href={href || "#"} style={sharedStyle}>{inner}</a>;
-              })}
+                </button>
+              ))}
+            </nav>
+
+            <div className="eyebrow muted" style={{margin: "20px 0 8px", paddingLeft: 12}}>On this page</div>
+            <nav className="flex-col gap-1" style={{borderLeft: "1px solid color-mix(in oklab, var(--text-ink) 10%, transparent)", marginLeft: 12, paddingLeft: 8}}>
+              {[
+                ["Daily timeline", "#timeline", null],
+                ["Models & providers", "#models", null],
+                ["Tasks", "#tasks", null],
+                ["Runs", "#runs", null],
+                ["Anomalies", "#anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null],
+              ].map(([label, href, badge]) => (
+                <a
+                  key={label}
+                  href={href}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "6px 10px", borderRadius: "var(--r-md)",
+                    color: "var(--text-slate)", textDecoration: "none",
+                    fontSize: 13, fontWeight: 400,
+                  }}
+                >
+                  <span>{label}</span>
+                  {badge && <span className="chip chip--orange" style={{padding: "1px 8px", fontSize: 11}}>{badge}</span>}
+                </a>
+              ))}
             </nav>
 
             <div style={{marginTop: 32}}>
@@ -1095,13 +1115,18 @@ body {
     );
 
     const DetailSidebar = ({ active, onNav, workspace }) => {
-      const nav = [
+      // Only top-level pages here. "Tasks" / "Runs" don't belong as standalone
+      // sidebar items because those views require a taskKey / runId — they're
+      // reached by drilling down from Overview, not by clicking a generic nav.
+      // The breadcrumb chip below ("Currently viewing") shows context instead.
+      const pages = [
         ["Overview", "pro"],
-        ["Tasks", "task"],
-        ["Runs", "run"],
         ["Inbox", "inbox"],
         ["Pricing snapshots", "pricing"],
       ];
+      const breadcrumb = active === "task" ? "Task detail"
+        : active === "run" ? "Run trace"
+        : null;
       return (
         <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto"}}>
           <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 32}}>
@@ -1113,9 +1138,9 @@ body {
             <span className="mono">{workspace || defaultWorkspace}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
           </button>
-          <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Navigation</div>
-          <nav className="flex-col gap-2">
-            {nav.map(([l, key]) => (
+          <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Pages</div>
+          <nav className="flex-col gap-1">
+            {pages.map(([l, key]) => (
               <button key={l} onClick={() => onNav(key)} style={{
                 textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center",
                 padding: "8px 12px", borderRadius: "var(--r-md)",
@@ -1127,6 +1152,17 @@ body {
               </button>
             ))}
           </nav>
+          {breadcrumb && (
+            <>
+              <div className="eyebrow muted" style={{margin: "20px 0 8px", paddingLeft: 12}}>Currently viewing</div>
+              <div style={{marginLeft: 12, paddingLeft: 8, borderLeft: "1px solid color-mix(in oklab, var(--text-ink) 10%, transparent)"}}>
+                <div style={{padding: "6px 10px", borderRadius: "var(--r-md)", background: "var(--text-ink)", color: "var(--text-cream)", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6}}>
+                  <span style={{width: 5, height: 5, borderRadius: "50%", background: "var(--signal-orange)"}}/>
+                  {breadcrumb}
+                </div>
+              </div>
+            </>
+          )}
         </aside>
       );
     };
