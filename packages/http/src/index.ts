@@ -1,4 +1,5 @@
-import { Hono, type Context } from "hono";
+import { type Context } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { renderDashboardHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
 import { AiUsageObservedSchema } from "@ttoksem/schema";
@@ -20,8 +21,86 @@ export type HttpAuthOptions =
       }): Promise<boolean>;
     };
 
-export function createHttpApp(options: CreateHttpAppOptions): Hono {
-  const app = new Hono();
+// ── OpenAPI schemas ──────────────────────────────────────────────────────────
+
+const TaskStatsSchema = z.object({
+  key: z.string(),
+  status: z.string(),
+  run_count: z.number().int(),
+  event_count: z.number().int(),
+  estimated_cost_nanos: z.number().int(),
+  unpriced_count: z.number().int(),
+  first_activity_at: z.string().nullable(),
+  last_activity_at: z.string().nullable(),
+});
+
+const ErrorSchema = z.object({
+  error: z.string(),
+  detail: z.string().optional(),
+});
+
+// ── Route definitions ─────────────────────────────────────────────────────────
+
+const routeTaskActive = createRoute({
+  method: "get",
+  path: "/api/tasks/active",
+  tags: ["Tasks"],
+  summary: "Get the most recently started active task key",
+  request: {
+    query: z.object({ workspace: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ key: z.string().nullable() }) } },
+      description: "Active task key, or null if none",
+    },
+  },
+});
+
+const routeTaskStats = createRoute({
+  method: "get",
+  path: "/api/tasks/{taskKey}/stats",
+  tags: ["Tasks"],
+  summary: "Get run count, event count, and cost stats for a task",
+  request: {
+    params: z.object({ taskKey: z.string() }),
+    query: z.object({ workspace: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: TaskStatsSchema } },
+      description: "Task stats",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Task not found",
+    },
+  },
+});
+
+const routeUsageLastImport = createRoute({
+  method: "get",
+  path: "/api/usage/last-import",
+  tags: ["Usage"],
+  summary: "Get the occurred_at of the last imported event for a given source",
+  request: {
+    query: z.object({
+      workspace: z.string().optional(),
+      source: z.string().default("claude-session"),
+    }),
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ occurred_at: z.string().nullable() }) } },
+      description: "Last import timestamp",
+    },
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
+  const app = new OpenAPIHono();
   const defaultWorkspaceKey = options.defaultWorkspaceKey ?? "ttoksem-dev";
 
   app.get("/health", (context) =>
@@ -183,6 +262,48 @@ export function createHttpApp(options: CreateHttpAppOptions): Hono {
     return context.json({ usage_event: usageEvent });
   });
 
+  // ── OpenAPI routes ──────────────────────────────────────────────────────────
+
+  app.openapi(routeTaskActive, async (c) => {
+    const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const tasks = await options.service.listTasks({ workspace: workspaceResolver(workspaceKey) });
+    const active = tasks
+      .filter((t) => t.status === "active")
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+    return c.json({ key: active?.key ?? null }, 200);
+  });
+
+  app.openapi(routeTaskStats, async (c) => {
+    const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const { taskKey } = c.req.valid("param");
+    try {
+      const stats = await options.service.getTaskStats({ workspace: workspaceResolver(workspaceKey), key: taskKey });
+      return c.json(stats, 200);
+    } catch {
+      return c.json({ error: "Task not found" }, 404);
+    }
+  });
+
+  app.openapi(routeUsageLastImport, async (c) => {
+    const { workspace, source } = c.req.valid("query");
+    const workspaceKey = workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const occurred_at = await options.service.getLastImportedAt({ workspace: workspaceResolver(workspaceKey), source });
+    return c.json({ occurred_at }, 200);
+  });
+
+  app.doc("/openapi.json", {
+    openapi: "3.0.0",
+    info: { title: "ttoksem API", version: "0.0.0" },
+  });
+
+  // ── HTML dashboard ──────────────────────────────────────────────────────────
+
   app.get("/", (context) => context.html(renderDashboardHtml(defaultWorkspaceKey, null)));
   app.get("/tasks/:taskKey", (context) =>
     context.html(renderDashboardHtml(defaultWorkspaceKey, context.req.param("taskKey"))),
@@ -199,6 +320,8 @@ export function createHttpApp(options: CreateHttpAppOptions): Hono {
 
   return app;
 }
+
+export type HttpApp = ReturnType<typeof createHttpApp>;
 
 function workspaceResolver(workspaceKey: string): WorkspaceResolver {
   return {

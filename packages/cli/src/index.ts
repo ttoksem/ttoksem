@@ -168,7 +168,61 @@ task
     await close();
   });
 
+task
+  .command("active")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("Print the key of the most recently started active task, or nothing if none")
+  .action(async (options: { workspace?: string; root?: string }) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const tasks = await service.listTasks({ workspace: workspaceResolver(options) });
+    const active = tasks
+      .filter((t) => t.status === "active")
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+    if (active) console.log(active.key);
+    await close();
+  });
+
+task
+  .command("stats")
+  .option("--key <key>", "task key")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--field <field>", "output a single field value (run_count, event_count, estimated_cost_nanos, unpriced_count, status)")
+  .description("Show stats for a task (run count, event count, cost)")
+  .action(async (options: { key?: string; workspace?: string; root?: string; field?: string }) => {
+    const { service, close } = await makeService();
+    await service.init();
+    if (!options.key) throw new Error("--key is required.");
+    const stats = await service.getTaskStats({ workspace: workspaceResolver(options), key: options.key });
+    if (options.field) {
+      const val = stats[options.field as keyof typeof stats];
+      if (val === undefined) throw new Error(`Unknown field: ${options.field}`);
+      console.log(val ?? "");
+    } else {
+      for (const [k, v] of Object.entries(stats)) {
+        console.log(`${k}=${v ?? ""}`);
+      }
+    }
+    await close();
+  });
+
 const usage = program.command("usage").description("Usage commands");
+
+usage
+  .command("last-import")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .option("--source <source>", "source filter (e.g. claude-session, codex-session)", "claude-session")
+  .description("Print the occurred_at of the last imported event for a given source, or nothing if none")
+  .action(async (options: { workspace?: string; root?: string; source: string }) => {
+    const { service, close } = await makeService();
+    await service.init();
+    const ts = await service.getLastImportedAt({ workspace: workspaceResolver(options), source: options.source });
+    if (ts) console.log(ts);
+    await close();
+  });
 
 usage
   .command("add")

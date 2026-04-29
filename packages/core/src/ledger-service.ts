@@ -407,6 +407,43 @@ export class LedgerService {
     return this.store.listTasks(workspace.id);
   }
 
+  async getTaskStats(input: {
+    workspace: WorkspaceResolver;
+    key: string;
+  }): Promise<{
+    key: string;
+    status: string;
+    run_count: number;
+    event_count: number;
+    estimated_cost_nanos: number;
+    unpriced_count: number;
+    first_activity_at: string | null;
+    last_activity_at: string | null;
+  }> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const task = await this.store.getTaskByKey(workspace.id, input.key);
+    if (!task) throw new Error(`Task not found: ${input.key}`);
+    const row = await this.store.getDashboardTaskInsight(workspace.id, task.id);
+    return {
+      key: task.key,
+      status: task.status,
+      run_count: row?.run_count ?? 0,
+      event_count: row?.event_count ?? 0,
+      estimated_cost_nanos: row?.estimated_cost_nanos ?? 0,
+      unpriced_count: row?.unpriced_count ?? 0,
+      first_activity_at: row?.first_activity_at ?? null,
+      last_activity_at: row?.last_activity_at ?? null,
+    };
+  }
+
+  async getLastImportedAt(input: {
+    workspace: WorkspaceResolver;
+    source: string;
+  }): Promise<string | null> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    return this.store.getLastImportedAt(workspace.id, input.source);
+  }
+
   async updateTask(input: {
     workspace: WorkspaceResolver;
     key: string;

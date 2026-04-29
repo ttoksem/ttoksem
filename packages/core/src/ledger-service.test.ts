@@ -504,6 +504,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     listDashboardDailyCosts: async () => [],
     listDashboardDailyCostsForTask: async () => [],
     listDashboardRunsForTask: async () => [],
+    getLastImportedAt: async () => null,
     ...overrides,
   };
 }

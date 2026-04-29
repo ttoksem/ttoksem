@@ -1159,6 +1159,14 @@ export class D1LedgerStore implements LedgerStore {
     );
   }
 
+  async getLastImportedAt(workspaceId: string, source: string): Promise<string | null> {
+    const row = await this.first<{ last_at: string | null }>(
+      `SELECT MAX(occurred_at) AS last_at FROM usage_events WHERE workspace_id = ? AND source = ?`,
+      [workspaceId, source],
+    );
+    return row?.last_at ?? null;
+  }
+
   private async getPricingRuleById(id: string): Promise<PricingRuleRecord | null> {
     const row = await this.first("SELECT * FROM pricing_rules WHERE id = ?", [id]);
     if (!row) return null;

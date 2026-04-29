@@ -1423,6 +1423,15 @@ export class SqliteLedgerStore implements LedgerStore {
       )
       .all(workspaceId, taskId, limit) as DashboardTaskRunRow[];
   }
+
+  getLastImportedAt(workspaceId: string, source: string): Promise<string | null> {
+    const row = this.db
+      .prepare(
+        `SELECT MAX(occurred_at) AS last_at FROM usage_events WHERE workspace_id = ? AND source = ?`,
+      )
+      .get(workspaceId, source) as { last_at: string | null } | undefined;
+    return Promise.resolve(row?.last_at ?? null);
+  }
 }
 
 type DbRow = Record<string, unknown>;

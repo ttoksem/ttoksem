@@ -356,4 +356,5 @@ export interface LedgerStore {
     taskId: string,
     limit: number,
   ): Promise<DashboardTaskRunRow[]>;
+  getLastImportedAt(workspaceId: string, source: string): Promise<string | null>;
 }

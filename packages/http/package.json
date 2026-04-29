@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@hono/zod-openapi": "^1.3.0",
     "@ttoksem/core": "workspace:*",
     "@ttoksem/schema": "workspace:*",
     "hono": "^4.12.15"
