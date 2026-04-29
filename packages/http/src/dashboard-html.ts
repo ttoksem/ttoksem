@@ -602,14 +602,20 @@ body {
     }
 
     function mapTaskDetail(apiTask, dashData) {
-      const t = apiTask.task;
-      const insight = apiTask.insight;
+      const t = apiTask.task || {};
+      const insight = apiTask.insight || {};
+      // /api/tasks/{taskKey} returns task with key/name/started_at and a separate
+      // insight with task_key/task_name/first_activity_at. Prefer insight (richer
+      // metadata), fallback to task fields, then to the URL key as last resort.
+      const taskKey = insight.task_key || t.key || "";
+      const taskName = insight.task_name || t.name || taskKey;
+      const startedAt = insight.first_activity_at || t.started_at || null;
       return {
-        id: t.task_key,
-        name: t.task_name || t.task_key,
+        id: taskKey,
+        name: taskName,
         workspace: dashData?.workspace || defaultWorkspace,
-        started: t.first_activity_at ? t.first_activity_at.slice(0, 10) : "—",
-        status: t.status || "unknown",
+        started: startedAt ? startedAt.slice(0, 10) : "—",
+        status: insight.status || t.status || "unknown",
         cost: insight?.estimated_total ?? 0,
         events: insight?.event_count ?? 0,
         runs: insight?.run_count ?? 0,
@@ -681,26 +687,35 @@ body {
             <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Report</div>
             <nav className="flex-col gap-2">
               {[
-                ["Overview", true, "#"],
-                ["Daily timeline", false, "#timeline"],
-                ["Models & providers", false, "#models"],
-                ["Tasks", false, "#tasks"],
-                ["Runs", false, "#runs"],
-                ["Inbox", false, "#inbox", d.inbox.length > 0 ? String(d.inbox.length) : null],
-                ["Pricing snapshots", false, "#pricing"],
-                ["Anomalies", false, "#anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null],
-              ].map(([l, active, href, badge]) => (
-                <a key={l} href={href || "#"} style={{
+                // [label, isActive, hrefOrNull, badgeOrNull, navViewOrNull]
+                // navView !== null → button navigates to a detail view via onNav
+                // navView === null → anchor link scrolls to in-page section
+                ["Overview", true, "#", null, null],
+                ["Daily timeline", false, "#timeline", null, null],
+                ["Models & providers", false, "#models", null, null],
+                ["Tasks", false, "#tasks", null, null],
+                ["Runs", false, "#runs", null, null],
+                ["Inbox", false, null, d.inbox.length > 0 ? String(d.inbox.length) : null, "inbox"],
+                ["Pricing snapshots", false, null, null, "pricing"],
+                ["Anomalies", false, "#anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null, null],
+              ].map(([l, active, href, badge, navView]) => {
+                const sharedStyle = {
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   padding: "8px 12px", borderRadius: "var(--r-md)",
                   background: active ? "var(--text-ink)" : "transparent",
                   color: active ? "var(--text-cream)" : "var(--text-ink)",
-                  textDecoration: "none", fontSize: 14, fontWeight: 500
-                }}>
+                  textDecoration: "none", fontSize: 14, fontWeight: 500,
+                  border: "none", textAlign: "left", cursor: "pointer", fontFamily: "inherit", width: "100%"
+                };
+                const inner = (<>
                   <span>{l}</span>
                   {badge && <span className="chip chip--orange" style={{padding: "1px 8px", fontSize: 11}}>{badge}</span>}
-                </a>
-              ))}
+                </>);
+                if (navView) {
+                  return <button key={l} onClick={() => onNav && onNav(navView)} style={sharedStyle}>{inner}</button>;
+                }
+                return <a key={l} href={href || "#"} style={sharedStyle}>{inner}</a>;
+              })}
             </nav>
 
             <div style={{marginTop: 32}}>
@@ -1091,9 +1106,9 @@ body {
     );
 
     const DetailShell = ({ activeNav, children, onNav, workspace }) => (
-      <div style={{background: "var(--surface-canvas)", display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh"}}>
+      <div style={{background: "var(--surface-canvas)", display: "grid", gridTemplateColumns: "260px minmax(0, 1fr)", minHeight: "100vh"}}>
         <DetailSidebar active={activeNav} onNav={onNav} workspace={workspace}/>
-        <main style={{padding: "0 32px 64px"}}>{children}</main>
+        <main style={{padding: "0 32px 64px", minWidth: 0, overflowX: "hidden"}}>{children}</main>
       </div>
     );
 
@@ -1134,12 +1149,18 @@ body {
               <div className="flex justify-between items-end mb-4">
                 <div>
                   <div className="eyebrow" style={{marginBottom: 6}}>Cost trend</div>
-                  <h4 className="t-h4" style={{margin: 0}}>Daily cost</h4>
+                  <h4 className="t-h4" style={{margin: 0}}>Daily cost · {trend.length} day{trend.length !== 1 ? "s" : ""}</h4>
                 </div>
               </div>
-              <div style={{display: "flex", alignItems: "flex-end", gap: 4, height: 140}}>
+              <div style={{display: "flex", alignItems: "flex-end", gap: 4, height: 140, justifyContent: trend.length < 7 ? "flex-start" : "stretch"}}>
                 {trend.map((v, i) => (
-                  <div key={i} style={{flex: 1, height: \`\${(v / maxTrend) * 100}%\`, background: i === trend.length - 1 ? "var(--signal-orange)" : "var(--text-ink)", borderRadius: "var(--r-pill)", minHeight: 4}}/>
+                  <div key={i} style={{
+                    flex: trend.length < 7 ? "0 0 32px" : 1,
+                    height: \`\${(v / maxTrend) * 100}%\`,
+                    background: i === trend.length - 1 ? "var(--signal-orange)" : "var(--text-ink)",
+                    borderRadius: "var(--r-pill)",
+                    minHeight: 4,
+                  }}/>
                 ))}
               </div>
             </section>
@@ -1393,17 +1414,19 @@ body {
             </section>
           )}
           {rules.length > 0 && (
-            <section className="card" style={{padding: 24, marginBottom: 16}}>
-              <div className="flex justify-between items-center mb-4">
-                <div>
+            <section className="card" style={{padding: 24, marginBottom: 16, minWidth: 0, overflow: "hidden"}}>
+              <div className="flex justify-between items-start mb-4" style={{flexWrap: "wrap", gap: 12}}>
+                <div style={{minWidth: 0}}>
                   <div className="eyebrow" style={{marginBottom: 6}}>Rules</div>
                   <h4 className="t-h4" style={{margin: 0}}>Active pricing rules · {rules.length}</h4>
                 </div>
-                <div className="flex gap-2">
-                  {providers.map(p => <span key={p} className="chip" style={{fontSize: 11}}>{p}</span>)}
+                <div style={{display: "flex", flexWrap: "wrap", gap: 6, maxWidth: 720, justifyContent: "flex-end"}}>
+                  {providers.slice(0, 10).map(p => <span key={p} className="chip" style={{fontSize: 11}}>{p}</span>)}
+                  {providers.length > 10 && <span className="chip chip--orange" style={{fontSize: 11}}>+{providers.length - 10} more</span>}
                 </div>
               </div>
-              <table className="t">
+              <div style={{overflowX: "auto"}}>
+              <table className="t" style={{minWidth: 720}}>
                 <thead><tr>
                   <th>provider</th><th>model</th><th>usage_kind</th><th>unit_type</th>
                   <th style={{textAlign:"right"}}>price / unit</th><th>currency</th><th>effective_from</th>
@@ -1422,6 +1445,7 @@ body {
                   ))}
                 </tbody>
               </table>
+              </div>
               {rules.length > 40 && <div style={{marginTop: 12, fontSize: 12, color: "var(--text-slate)", textAlign: "center"}}>Showing 40 of {rules.length} rules</div>}
             </section>
           )}
