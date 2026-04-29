@@ -624,6 +624,7 @@ body {
         models: [],
         daily: (apiTask.daily || []).map(d => d.estimated_total),
         runs_list: (apiTask.runs || []).slice(0, 5).map(r => ({
+          rawId: r.run_id || null,
           id: r.run_id ? r.run_id.slice(0, 18) + "…" : "—",
           source: r.provider_model || "unknown",
           events: r.event_count || 0,
@@ -632,6 +633,8 @@ body {
           duration: r.duration_ms ? Math.round(r.duration_ms / 1000) + "s" : "—",
           status: "ok",
         })),
+        rawRuns: apiTask.runs || [],
+        rawEvents: apiTask.recent || [],
         recent: (apiTask.recent || []).slice(0, 3).map(e => ({
           id: e.id,
           time: e.occurred_at ? e.occurred_at.slice(0, 16).replace("T", " ") : "—",
@@ -1155,7 +1158,7 @@ body {
                 </tr></thead>
                 <tbody>
                   {t.runs_list.map(r => (
-                    <tr key={r.id}>
+                    <tr key={r.id} style={{cursor: r.rawId ? "pointer" : "default"}} onClick={() => r.rawId && onNav("run", null, r.rawId)}>
                       <td className="mono" style={{fontSize: 12}}>{r.id}</td>
                       <td><span className="chip" style={{fontSize: 10}}>{r.source}</span></td>
                       <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.started}</td>
@@ -1196,59 +1199,236 @@ body {
       );
     };
 
-    // Run Detail (static / demo)
-    const RunDetail = ({ onNav, workspace }) => (
-      <DetailShell activeNav="run" onNav={onNav} workspace={workspace}>
-        <DetailHeader
-          ghost="run trace"
-          eyebrow="run"
-          title="run detail"
-          sub="Select a run from the task view to see its trace"
-          onBack={() => onNav("task")}
-          kpis={[]}
-        />
-        <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
-          Run trace view — navigate from a task row to view a specific run.
-        </div>
-        <DetailFooter source="@ttoksem/cli run show"/>
-      </DetailShell>
-    );
+    // Run Detail — real data from taskData.rawRuns + rawEvents filtered by runId
+    const RunDetail = ({ onNav, workspace, runId, taskData }) => {
+      const run = taskData?.rawRuns?.find(r => r.run_id === runId) || null;
+      const events = (taskData?.rawEvents || []).filter(e => e.run_id === runId);
+      let acc = 0;
+      const cumulative = events.map(e => { acc += (e.cost || 0); return acc; });
+      const totalCost = run?.estimated_total || events.reduce((a, e) => a + (e.cost || 0), 0);
+      const totalTokens = run?.token_count || events.reduce((a, e) => a + (e.tokens || 0), 0);
+      const fmt = s => s ? s.slice(0, 16).replace("T", " ") : "—";
+      const dur = run?.span_duration_ms ? \`\${Math.round(run.span_duration_ms / 1000)}s\` : (run?.event_duration_ms ? \`\${Math.round(run.event_duration_ms / 1000)}s\` : "—");
+      return (
+        <DetailShell activeNav="run" onNav={onNav} workspace={workspace}>
+          <DetailHeader
+            ghost="run trace"
+            eyebrow={\`run · \${run?.source || "unknown"}\`}
+            title={runId ? runId.slice(0, 24) + (runId.length > 24 ? "…" : "") : "run trace"}
+            sub={run ? \`\${fmt(run.started_at)} → \${fmt(run.ended_at)} · \${run.event_count} events · \${dur}\` : "Select a run from the task view"}
+            onBack={() => onNav("task")}
+            actions={<>
+              {run?.status && <span className={\`chip \${run.status === "closed" ? "chip--pos" : "chip--orange"}\`}><span className="chip__dot"/>{run.status}</span>}
+            </>}
+            kpis={run ? [
+              { label: "Cost", value: \`$\${totalCost.toFixed(4)}\` },
+              { label: "Events", value: run.event_count },
+              { label: "Tokens", value: totalTokens >= 1000 ? \`\${(totalTokens/1000).toFixed(0)}k\` : totalTokens },
+              { label: "Duration", value: dur },
+            ] : []}
+          />
+          {events.length > 0 && (
+            <>
+              <section className="card" style={{padding: 28, marginBottom: 16}}>
+                <div className="flex justify-between items-end mb-4">
+                  <div>
+                    <div className="eyebrow" style={{marginBottom: 6}}>Cost trace</div>
+                    <h4 className="t-h4" style={{margin: 0}}>Cumulative cost · {events.length} events</h4>
+                  </div>
+                  <span className="chip"><span className="chip__dot" style={{background: "var(--signal-orange)"}}/>cumulative \${totalCost.toFixed(4)}</span>
+                </div>
+                <div style={{position: "relative", height: 160}}>
+                  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{position: "absolute", inset: 0}}>
+                    <path d={\`M 0 100 \${cumulative.map((c, i) => \`L \${(i / Math.max(cumulative.length - 1, 1)) * 100} \${100 - (totalCost > 0 ? (c / totalCost) * 95 : 0)}\`).join(" ")} L 100 100 Z\`} fill="color-mix(in oklab, var(--signal-orange) 12%, transparent)"/>
+                    <path d={\`M 0 100 \${cumulative.map((c, i) => \`L \${(i / Math.max(cumulative.length - 1, 1)) * 100} \${100 - (totalCost > 0 ? (c / totalCost) * 95 : 0)}\`).join(" ")}\`} stroke="var(--signal-orange)" strokeWidth="0.6" fill="none" vectorEffect="non-scaling-stroke"/>
+                  </svg>
+                </div>
+              </section>
+              <section className="card" style={{padding: 24, marginBottom: 16}}>
+                <div className="eyebrow" style={{marginBottom: 6}}>Events</div>
+                <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Timeline · {events.length} events</h4>
+                <table className="t">
+                  <thead><tr>
+                    <th>occurred_at</th><th>provider/model</th><th>kind</th><th>mode</th><th style={{textAlign:"right"}}>tokens</th><th style={{textAlign:"right"}}>cost</th><th style={{textAlign:"right"}}>cumulative</th>
+                  </tr></thead>
+                  <tbody>
+                    {events.map((e, i) => (
+                      <tr key={e.id}>
+                        <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{e.occurred_at.slice(11, 19)}</td>
+                        <td className="mono" style={{fontSize: 11}}>{e.provider_model}</td>
+                        <td><span className="chip" style={{fontSize: 10}}>{e.usage_kind}</span></td>
+                        <td className="mono" style={{fontSize: 10, color: "var(--text-slate)"}}>{e.confidence}</td>
+                        <td className="tnum" style={{textAlign:"right", fontSize:12}}>{e.tokens ? e.tokens.toLocaleString() : "—"}</td>
+                        <td className="tnum" style={{textAlign:"right", fontSize:12, fontWeight:500}}>{e.cost ? \`$\${e.cost.toFixed(4)}\` : "—"}</td>
+                        <td className="tnum" style={{textAlign:"right", fontSize:12, color:"var(--text-slate)"}}>\${cumulative[i].toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </>
+          )}
+          {events.length === 0 && (
+            <div style={{padding: "48px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+              {runId ? "No events found for this run." : "Navigate to a task and click a run row to view its trace."}
+            </div>
+          )}
+          <DetailFooter source={\`@ttoksem/cli usage events --run \${runId || ""}\`}/>
+        </DetailShell>
+      );
+    };
 
-    // Inbox Detail (static / demo)
-    const InboxDetail = ({ onNav, workspace }) => (
-      <DetailShell activeNav="inbox" onNav={onNav} workspace={workspace}>
-        <DetailHeader
-          ghost="inbox"
-          eyebrow="inbox"
-          title="inbox groups"
-          sub="Unassigned events waiting for task classification"
-          onBack={() => onNav("pro")}
-          kpis={[]}
-        />
-        <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
-          Inbox detail — use the CLI to assign events: <code style={{fontFamily: "var(--font-mono)", fontSize: 12}}>pnpm cli inbox list</code>
-        </div>
-        <DetailFooter source="@ttoksem/cli inbox list"/>
-      </DetailShell>
-    );
+    // Inbox Detail — real data from GET /api/inbox/groups
+    const InboxDetail = ({ onNav, workspace, inboxData }) => {
+      const groups = inboxData || [];
+      const totalEvents = groups.reduce((a, g) => a + g.event_count, 0);
+      const totalCost = groups.reduce((a, g) => a + (g.estimated_total || 0), 0);
+      return (
+        <DetailShell activeNav="inbox" onNav={onNav} workspace={workspace}>
+          <DetailHeader
+            ghost="inbox"
+            eyebrow={\`inbox · \${workspace}\`}
+            title="unassigned groups"
+            sub={\`\${groups.length} group\${groups.length !== 1 ? "s" : ""} · \${totalEvents} events waiting for task classification\`}
+            onBack={() => onNav("pro")}
+            kpis={groups.length > 0 ? [
+              { label: "Groups", value: groups.length },
+              { label: "Events", value: totalEvents },
+              { label: "Est. cost", value: \`$\${totalCost.toFixed(4)}\` },
+            ] : []}
+          />
+          {groups.length === 0 ? (
+            <div style={{padding: "48px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+              Inbox is empty — all events are assigned to tasks.
+            </div>
+          ) : (
+            <section className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="eyebrow" style={{marginBottom: 6}}>Groups</div>
+              <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Unassigned inbox groups</h4>
+              <div className="flex-col gap-3">
+                {groups.map(g => (
+                  <div key={g.group_id} style={{padding: 16, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)"}}>
+                    <div className="flex justify-between items-center mb-3">
+                      <div className="flex gap-2 items-center">
+                        <span className="chip chip--orange" style={{fontSize: 10}}><span className="chip__dot"/>{g.assignment_status}</span>
+                        <span className="mono" style={{fontSize: 12, fontWeight: 500}}>{g.group_id}</span>
+                      </div>
+                      <span className="tnum" style={{fontWeight: 500, fontSize: 14}}>\${(g.estimated_total || 0).toFixed(4)}</span>
+                    </div>
+                    {g.suggested_task && (
+                      <div style={{marginBottom: 10, padding: "8px 12px", background: "color-mix(in oklab, var(--pos) 8%, transparent)", borderRadius: "var(--r-sm)", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                        <span style={{fontSize: 12}}>Suggested: <span className="mono" style={{fontWeight: 500}}>{g.suggested_task.task_key}</span></span>
+                        <span className="chip chip--pos" style={{fontSize: 10}}>{Math.round(g.suggested_task.confidence * 100)}% match</span>
+                      </div>
+                    )}
+                    {g.prompt_samples?.length > 0 && (
+                      <div style={{padding: "8px 12px", background: "var(--surface-lifted)", borderRadius: "var(--r-sm)", borderLeft: "3px solid var(--signal-orange)", marginBottom: 8}}>
+                        <div style={{fontSize: 12, color: "var(--text-slate)", marginBottom: 2}}>Prompt sample</div>
+                        <div style={{fontSize: 13, lineHeight: 1.4}}>{g.prompt_samples[0].slice(0, 160)}{g.prompt_samples[0].length > 160 ? "…" : ""}</div>
+                      </div>
+                    )}
+                    <div className="flex gap-3 items-center" style={{fontSize: 11, color: "var(--text-slate)"}}>
+                      <span>{g.event_count} events</span>
+                      <span>·</span>
+                      <span className="mono">{g.source_context?.tool || "unknown"}</span>
+                      <span>·</span>
+                      <span>{g.first_occurred_at.slice(0, 10)}</span>
+                      {g.source_context?.git_branch && <><span>·</span><span className="mono">{g.source_context.git_branch}</span></>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          <DetailFooter source="@ttoksem/cli inbox list"/>
+        </DetailShell>
+      );
+    };
 
-    // Pricing Detail (static / demo)
-    const PricingDetail = ({ onNav, workspace }) => (
-      <DetailShell activeNav="pricing" onNav={onNav} workspace={workspace}>
-        <DetailHeader
-          ghost="pricing"
-          eyebrow="pricing snapshots"
-          title="pricing catalog"
-          sub="Active pricing snapshots powering this report"
-          onBack={() => onNav("pro")}
-          kpis={[]}
-        />
-        <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
-          Pricing snapshot detail — use the CLI: <code style={{fontFamily: "var(--font-mono)", fontSize: 12}}>pnpm cli pricing snapshot list</code>
-        </div>
-        <DetailFooter source="@ttoksem/cli pricing snapshot list"/>
-      </DetailShell>
-    );
+    // Pricing Detail — real data from GET /api/pricing/snapshots + /api/pricing/rules
+    const PricingDetail = ({ onNav, workspace, pricingData }) => {
+      const snapshots = pricingData?.snapshots || [];
+      const rules = pricingData?.rules || [];
+      const activeSnaps = snapshots.filter(s => !s.valid_from || s.valid_from <= new Date().toISOString());
+      const providers = [...new Set(rules.map(r => r.provider))];
+      return (
+        <DetailShell activeNav="pricing" onNav={onNav} workspace={workspace}>
+          <DetailHeader
+            ghost="pricing"
+            eyebrow={\`pricing · \${workspace}\`}
+            title="pricing catalog"
+            sub={\`\${snapshots.length} snapshot\${snapshots.length !== 1 ? "s" : ""} · \${rules.length} rules · \${providers.length} providers\`}
+            onBack={() => onNav("pro")}
+            kpis={[
+              { label: "Snapshots", value: snapshots.length },
+              { label: "Rules", value: rules.length },
+              { label: "Providers", value: providers.length },
+            ]}
+          />
+          {snapshots.length > 0 && (
+            <section className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="eyebrow" style={{marginBottom: 6}}>Snapshots</div>
+              <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Pricing source catalogs</h4>
+              <div className="flex-col gap-2">
+                {snapshots.map(s => (
+                  <div key={s.id} style={{display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 16, alignItems: "center", padding: "12px 16px", borderRadius: "var(--r-lg)", border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-canvas)"}}>
+                    <span className="chip chip--pos" style={{fontSize: 10}}><span className="chip__dot"/>active</span>
+                    <div>
+                      <div className="mono" style={{fontSize: 12, fontWeight: 500}}>{s.id}</div>
+                      <div style={{fontSize: 11, color: "var(--text-slate)", marginTop: 2}}>
+                        source: {s.source_name}
+                        {s.source_version ? \` · v\${s.source_version}\` : ""}
+                        {s.valid_from ? \` · valid from \${s.valid_from.slice(0, 10)}\` : ""}
+                      </div>
+                    </div>
+                    <span className="mono" style={{fontSize: 10, color: "var(--text-slate)"}}>{s.raw_sha256.slice(0, 12)}…</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          {rules.length > 0 && (
+            <section className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <div className="eyebrow" style={{marginBottom: 6}}>Rules</div>
+                  <h4 className="t-h4" style={{margin: 0}}>Active pricing rules · {rules.length}</h4>
+                </div>
+                <div className="flex gap-2">
+                  {providers.map(p => <span key={p} className="chip" style={{fontSize: 11}}>{p}</span>)}
+                </div>
+              </div>
+              <table className="t">
+                <thead><tr>
+                  <th>provider</th><th>model</th><th>usage_kind</th><th>unit_type</th>
+                  <th style={{textAlign:"right"}}>price / unit</th><th>currency</th><th>effective_from</th>
+                </tr></thead>
+                <tbody>
+                  {rules.slice(0, 40).map(r => (
+                    <tr key={r.id}>
+                      <td className="mono" style={{fontSize: 11}}>{r.provider}</td>
+                      <td className="mono" style={{fontSize: 11}}>{r.model}</td>
+                      <td><span className="chip" style={{fontSize: 10}}>{r.usage_kind}</span></td>
+                      <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.unit_type}</td>
+                      <td className="tnum" style={{textAlign:"right", fontSize:12, fontWeight:500}}>{(r.price_nanos_per_unit / 1e9).toFixed(9)}</td>
+                      <td style={{fontSize: 11}}>{r.currency}</td>
+                      <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.effective_from.slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {rules.length > 40 && <div style={{marginTop: 12, fontSize: 12, color: "var(--text-slate)", textAlign: "center"}}>Showing 40 of {rules.length} rules</div>}
+            </section>
+          )}
+          {snapshots.length === 0 && rules.length === 0 && (
+            <div style={{padding: "48px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+              No pricing snapshots yet. Import one with <code style={{fontFamily: "var(--font-mono)", fontSize: 12}}>pnpm cli pricing import-litellm</code>
+            </div>
+          )}
+          <DetailFooter source="@ttoksem/cli pricing snapshot list"/>
+        </DetailShell>
+      );
+    };
 
     // ═══════════════════════════════════════════════
     // APP ROOT
@@ -1258,12 +1438,15 @@ body {
       const [theme, setTheme] = React.useState("light");
       const [view, setView] = React.useState(initialTaskKey ? "task" : "pro");
       const [activeTaskKey, setActiveTaskKey] = React.useState(initialTaskKey);
+      const [activeRunId, setActiveRunId] = React.useState(null);
 
       const [loading, setLoading] = React.useState(true);
       const [error, setError] = React.useState(null);
       const [dashData, setDashData] = React.useState(null);
       const [taskData, setTaskData] = React.useState(null);
       const [taskLoading, setTaskLoading] = React.useState(false);
+      const [inboxData, setInboxData] = React.useState(null);
+      const [pricingData, setPricingData] = React.useState(null);
 
       React.useEffect(() => {
         document.documentElement.setAttribute("data-theme", theme);
@@ -1302,6 +1485,34 @@ body {
         }
       }
 
+      async function fetchInbox(workspaceKey) {
+        try {
+          const res = await fetch(\`/api/inbox/groups?workspace=\${encodeURIComponent(workspaceKey)}\`, {
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+          const json = await res.json();
+          setInboxData(json.groups || []);
+        } catch (e) {
+          console.error("Inbox load error:", e);
+          setInboxData([]);
+        }
+      }
+
+      async function fetchPricing(workspaceKey) {
+        try {
+          const [snapRes, rulesRes] = await Promise.all([
+            fetch(\`/api/pricing/snapshots?workspace=\${encodeURIComponent(workspaceKey)}\`, { headers: authHeaders() }),
+            fetch(\`/api/pricing/rules?workspace=\${encodeURIComponent(workspaceKey)}\`, { headers: authHeaders() }),
+          ]);
+          const [snapJson, rulesJson] = await Promise.all([snapRes.json(), rulesRes.json()]);
+          setPricingData({ snapshots: snapJson.snapshots || [], rules: rulesJson.rules || [] });
+        } catch (e) {
+          console.error("Pricing load error:", e);
+          setPricingData({ snapshots: [], rules: [] });
+        }
+      }
+
       React.useEffect(() => {
         fetchDashboard(defaultWorkspace);
       }, []);
@@ -1312,11 +1523,20 @@ body {
         }
       }, []);
 
-      function handleNav(newView, taskKey) {
+      function handleNav(newView, taskKey, runIdParam) {
         if (newView === "task" && taskKey) {
           setActiveTaskKey(taskKey);
           setTaskData(null);
           fetchTask(defaultWorkspace, taskKey);
+        }
+        if (newView === "run" && runIdParam) {
+          setActiveRunId(runIdParam);
+        }
+        if (newView === "inbox" && !inboxData) {
+          fetchInbox(defaultWorkspace);
+        }
+        if (newView === "pricing" && !pricingData) {
+          fetchPricing(defaultWorkspace);
         }
         setView(newView);
       }
@@ -1361,19 +1581,19 @@ body {
       if (view === "run") {
         return <>
           {themeBtn}
-          <RunDetail onNav={handleNav} workspace={defaultWorkspace}/>
+          <RunDetail onNav={handleNav} workspace={defaultWorkspace} runId={activeRunId} taskData={taskData}/>
         </>;
       }
       if (view === "inbox") {
         return <>
           {themeBtn}
-          <InboxDetail onNav={handleNav} workspace={defaultWorkspace}/>
+          <InboxDetail onNav={handleNav} workspace={defaultWorkspace} inboxData={inboxData}/>
         </>;
       }
       if (view === "pricing") {
         return <>
           {themeBtn}
-          <PricingDetail onNav={handleNav} workspace={defaultWorkspace}/>
+          <PricingDetail onNav={handleNav} workspace={defaultWorkspace} pricingData={pricingData}/>
         </>;
       }
 

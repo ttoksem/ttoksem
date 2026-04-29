@@ -7,6 +7,8 @@ import {
   WorkspaceRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
+  PricingSourceSnapshotRecordSchema,
+  PricingRuleRecordSchema,
 } from "@ttoksem/schema";
 
 export interface CreateHttpAppOptions {
@@ -243,6 +245,64 @@ const routeAssignInboxEvent = createRoute({
   },
 });
 
+const InboxGroupSchema = z.object({
+  group_id: z.string(),
+  assignment_status: z.enum(["unassigned", "suggested"]),
+  event_count: z.number().int(),
+  run_count: z.number().int(),
+  token_count: z.number().int(),
+  estimated_total: z.number(),
+  currency: z.string().nullable(),
+  first_occurred_at: z.string(),
+  last_occurred_at: z.string(),
+  source_context: z.object({
+    date_bucket: z.string(),
+    tool: z.string().nullable(),
+    cwd: z.string().nullable(),
+    git_branch: z.string().nullable(),
+    command: z.string().nullable(),
+    conversation_id: z.string().nullable(),
+    request_id: z.string().nullable(),
+    external_ref: z.string().nullable(),
+  }),
+  reason_codes: z.array(z.string()),
+  sample_event_ids: z.array(z.string()),
+  prompt_samples: z.array(z.string()),
+  suggested_task: z.object({
+    task_key: z.string(),
+    task_name: z.string(),
+    confidence: z.number(),
+    level: z.enum(["high", "medium", "low"]),
+    reason: z.string(),
+  }).nullable(),
+});
+
+const routeListInboxGroups = createRoute({
+  method: "get", path: "/api/inbox/groups", tags: ["Inbox"],
+  summary: "List unassigned inbox groups", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery.extend({ limit: z.string().optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ groups: z.array(z.unknown()) }) } }, description: "Inbox groups" },
+  },
+});
+
+const routeListPricingSnapshots = createRoute({
+  method: "get", path: "/api/pricing/snapshots", tags: ["Pricing"],
+  summary: "List pricing source snapshots", security: BEARER_AUTH,
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ snapshots: z.array(PricingSourceSnapshotRecordSchema) }) } }, description: "Pricing snapshots" },
+  },
+});
+
+const routeListPricingRules = createRoute({
+  method: "get", path: "/api/pricing/rules", tags: ["Pricing"],
+  summary: "List pricing rules for a workspace", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ rules: z.array(PricingRuleRecordSchema) }) } }, description: "Pricing rules" },
+  },
+});
+
 // ── App factory ───────────────────────────────────────────────────────────────
 
 export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
@@ -453,6 +513,40 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       taskKey: body.task_key,
     });
     return c.json({ usage_event: usageEvent }, 200);
+  });
+
+  // ── Inbox groups ──────────────────────────────────────────────────────────
+
+  app.openapi(routeListInboxGroups, async (c) => {
+    const { workspace: wk, limit } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const groups = await options.service.listInbox({
+      workspace: workspaceResolver(workspaceKey),
+      limit: limit ? parseLimit(limit, 50) : 50,
+    });
+    return c.json({ groups }, 200);
+  });
+
+  // ── Pricing ────────────────────────────────────────────────────────────────
+
+  app.openapi(routeListPricingSnapshots, async (c) => {
+    const authResponse = await authorizeRequest(c, options.auth, defaultWorkspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const snapshots = await options.service.listPricingSourceSnapshots();
+    return c.json({ snapshots }, 200);
+  });
+
+  app.openapi(routeListPricingRules, async (c) => {
+    const { workspace: wk } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const rules = await options.service.listPricingRules({
+      workspace: workspaceResolver(workspaceKey),
+    });
+    return c.json({ rules }, 200);
   });
 
   // ── OpenAPI spec ───────────────────────────────────────────────────────────
