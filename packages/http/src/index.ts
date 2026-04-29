@@ -600,12 +600,22 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 
   app.get("/", async (context) => {
     if (!(await requireSession(context))) return context.redirect("/login");
-    return context.html(renderDashboardHtml(defaultWorkspaceKey, null));
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "pro" }));
+  });
+
+  app.get("/inbox", async (context) => {
+    if (!(await requireSession(context))) return context.redirect("/login");
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "inbox" }));
+  });
+
+  app.get("/pricing", async (context) => {
+    if (!(await requireSession(context))) return context.redirect("/login");
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "pricing" }));
   });
 
   app.get("/tasks/:taskKey", async (context) => {
     if (!(await requireSession(context))) return context.redirect("/login");
-    return context.html(renderDashboardHtml(defaultWorkspaceKey, context.req.param("taskKey")));
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "task", taskKey: context.req.param("taskKey") }));
   });
 
   app.onError((error, context) => {

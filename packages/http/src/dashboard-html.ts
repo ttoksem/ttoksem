@@ -1,8 +1,23 @@
 import type { DashboardData } from "@ttoksem/core";
 
-export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string | null): string {
+export interface DashboardInitialState {
+  view: "pro" | "inbox" | "pricing" | "task";
+  taskKey?: string | null;
+}
+
+export function renderDashboardHtml(
+  defaultWorkspaceKey: string,
+  initial: DashboardInitialState | string | null = null,
+): string {
+  // Backwards compatibility: callers may still pass `taskKey: string | null`.
+  const state: DashboardInitialState = typeof initial === "string"
+    ? { view: "task", taskKey: initial }
+    : initial && typeof initial === "object"
+    ? initial
+    : { view: "pro" };
   const workspaceJson = JSON.stringify(defaultWorkspaceKey);
-  const taskKeyJson = JSON.stringify(taskKey);
+  const taskKeyJson = JSON.stringify(state.taskKey ?? null);
+  const initialViewJson = JSON.stringify(state.view);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -281,6 +296,7 @@ body {
   <script>
     const defaultWorkspace = ${workspaceJson};
     const initialTaskKey = ${taskKeyJson};
+    const initialView = ${initialViewJson};
 
     // Auth: the dashboard authenticates via the httpOnly ttoksem_session
     // cookie set by POST /login. The browser sends it automatically with
@@ -289,6 +305,23 @@ body {
     // If the user lands here without a valid cookie, the server redirects
     // them to /login before this page is served.
     function authHeaders() { return {}; }
+
+    // URL <-> view-state mapping (kept simple; mirrors the server routes).
+    function viewToPath(view, taskKey) {
+      if (view === "task" && taskKey) return "/tasks/" + encodeURIComponent(taskKey);
+      if (view === "inbox") return "/inbox";
+      if (view === "pricing") return "/pricing";
+      // "run" has no canonical URL yet (needs taskKey context); fall through.
+      return "/";
+    }
+    function parseLocationToView() {
+      const path = window.location.pathname;
+      const m = path.match(/^\\/tasks\\/([^/]+)/);
+      if (m) return { view: "task", taskKey: decodeURIComponent(m[1]) };
+      if (path === "/inbox") return { view: "inbox" };
+      if (path === "/pricing") return { view: "pricing" };
+      return { view: "pro" };
+    }
   </script>
 
   <script type="text/babel">
@@ -717,15 +750,22 @@ body {
             <div className="eyebrow muted" style={{margin: "20px 0 8px", paddingLeft: 12}}>On this page</div>
             <nav className="flex-col gap-1" style={{borderLeft: "1px solid color-mix(in oklab, var(--text-ink) 10%, transparent)", marginLeft: 12, paddingLeft: 8}}>
               {[
-                ["Daily timeline", "#timeline", null],
-                ["Models & providers", "#models", null],
-                ["Tasks", "#tasks", null],
-                ["Runs", "#runs", null],
-                ["Anomalies", "#anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null],
-              ].map(([label, href, badge]) => (
+                ["Daily timeline", "timeline", null],
+                ["Models & providers", "models", null],
+                ["Tasks", "tasks", null],
+                ["Anomalies", "anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null],
+              ].map(([label, sectionId, badge]) => (
                 <a
                   key={label}
-                  href={href}
+                  href={"#" + sectionId}
+                  onClick={(e) => {
+                    // Smooth-scroll to the section without polluting browser
+                    // history with hash entries — otherwise the back button
+                    // walks through every #anchor before leaving the page.
+                    e.preventDefault();
+                    const el = document.getElementById(sectionId);
+                    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                     padding: "6px 10px", borderRadius: "var(--r-md)",
@@ -1581,7 +1621,7 @@ body {
 
     function App() {
       const [theme, setTheme] = React.useState("light");
-      const [view, setView] = React.useState(initialTaskKey ? "task" : "pro");
+      const [view, setView] = React.useState(initialView || (initialTaskKey ? "task" : "pro"));
       const [activeTaskKey, setActiveTaskKey] = React.useState(initialTaskKey);
       const [activeRunId, setActiveRunId] = React.useState(null);
 
@@ -1673,7 +1713,28 @@ body {
         if (initialTaskKey) {
           fetchTask(defaultWorkspace, initialTaskKey);
         }
+        if (initialView === "inbox") fetchInbox(defaultWorkspace);
+        if (initialView === "pricing") fetchPricing(defaultWorkspace);
       }, []);
+
+      // Sync URL with view state so the browser back/forward buttons work.
+      // popstate fires when the user navigates the browser history; we read
+      // the URL and rebuild view state without pushing a new entry.
+      React.useEffect(() => {
+        function onPopState() {
+          const next = parseLocationToView();
+          if (next.view === "task" && next.taskKey) {
+            setActiveTaskKey(next.taskKey);
+            setTaskData(null);
+            fetchTask(defaultWorkspace, next.taskKey);
+          }
+          if (next.view === "inbox" && !inboxData) fetchInbox(defaultWorkspace);
+          if (next.view === "pricing" && !pricingData) fetchPricing(defaultWorkspace);
+          setView(next.view);
+        }
+        window.addEventListener("popstate", onPopState);
+        return () => window.removeEventListener("popstate", onPopState);
+      }, [inboxData, pricingData]);
 
       function handleNav(newView, taskKey, runIdParam) {
         if (newView === "task" && taskKey) {
@@ -1691,6 +1752,12 @@ body {
           fetchPricing(defaultWorkspace);
         }
         setView(newView);
+        // Push a real history entry so browser back/forward navigates between
+        // views, not only between hash anchors.
+        const path = viewToPath(newView, newView === "task" ? taskKey : null);
+        if (path !== window.location.pathname) {
+          window.history.pushState({ view: newView, taskKey: taskKey || null }, "", path);
+        }
       }
 
       if (loading) {
