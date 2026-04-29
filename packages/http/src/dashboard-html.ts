@@ -282,31 +282,13 @@ body {
     const defaultWorkspace = ${workspaceJson};
     const initialTaskKey = ${taskKeyJson};
 
-    function initAuthToken() {
-      try {
-        const stored = localStorage.getItem("ttoksemToken");
-        if (stored) return stored;
-      } catch (_) {}
-      const urlToken = new URLSearchParams(location.search).get("token");
-      if (urlToken) {
-        try { localStorage.setItem("ttoksemToken", urlToken); } catch (_) {}
-        // Strip token from URL so it isn't bookmarked or leaked in referrers
-        try {
-          const clean = new URL(location.href);
-          clean.searchParams.delete("token");
-          history.replaceState(null, "", clean.toString());
-        } catch (_) {}
-        return urlToken;
-      }
-      return null;
-    }
-
-    window.__authToken = initAuthToken();
-
-    function authHeaders() {
-      const token = window.__authToken;
-      return token ? { Authorization: "Bearer " + token } : {};
-    }
+    // Auth: the dashboard authenticates via the httpOnly ttoksem_session
+    // cookie set by POST /login. The browser sends it automatically with
+    // same-origin fetches, so no JS-side token handling is needed — this
+    // avoids exposing tokens to XSS (which localStorage/sessionStorage do).
+    // If the user lands here without a valid cookie, the server redirects
+    // them to /login before this page is served.
+    function authHeaders() { return {}; }
   </script>
 
   <script type="text/babel">
