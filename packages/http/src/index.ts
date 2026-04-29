@@ -13,6 +13,7 @@ export interface CreateHttpAppOptions {
   service: LedgerService;
   defaultWorkspaceKey?: string;
   auth?: HttpAuthOptions;
+  serverUrl?: string;
 }
 
 export type HttpAuthOptions =
@@ -59,6 +60,10 @@ const InboxAssignResultSchema = z.object({
   skipped_event_ids: z.array(z.string()),
 });
 
+// ── Shared security ───────────────────────────────────────────────────────────
+
+const BEARER_AUTH = [{ bearerAuth: [] as string[] }];
+
 // ── Route definitions ─────────────────────────────────────────────────────────
 
 const routeHealth = createRoute({
@@ -71,7 +76,7 @@ const routeHealth = createRoute({
 
 const routeCreateWorkspace = createRoute({
   method: "post", path: "/api/workspaces", tags: ["Workspaces"],
-  summary: "Create or activate a workspace",
+  summary: "Create or activate a workspace", security: BEARER_AUTH,
   request: { body: { content: { "application/json": { schema: z.object({ key: z.string(), name: z.string().optional(), root_path: z.string().nullable().optional() }) } } } },
   responses: {
     201: { content: { "application/json": { schema: WorkspaceResponseSchema } }, description: "Workspace created" },
@@ -81,7 +86,7 @@ const routeCreateWorkspace = createRoute({
 
 const routeStartTask = createRoute({
   method: "post", path: "/api/tasks", tags: ["Tasks"],
-  summary: "Create or activate a task",
+  summary: "Create or activate a task", security: BEARER_AUTH,
   request: {
     query: WorkspaceQuery,
     body: { content: { "application/json": { schema: z.object({ key: z.string(), name: z.string().optional(), description: z.string().nullable().optional(), workspace: z.string().optional() }) } } },
@@ -94,7 +99,7 @@ const routeStartTask = createRoute({
 
 const routeUpdateTask = createRoute({
   method: "patch", path: "/api/tasks/{taskKey}", tags: ["Tasks"],
-  summary: "Update task name or description",
+  summary: "Update task name or description", security: BEARER_AUTH,
   request: {
     params: TaskKeyParam,
     query: WorkspaceQuery,
@@ -108,7 +113,7 @@ const routeUpdateTask = createRoute({
 
 const routeCloseTask = createRoute({
   method: "post", path: "/api/tasks/{taskKey}/close", tags: ["Tasks"],
-  summary: "Close a task",
+  summary: "Close a task", security: BEARER_AUTH,
   request: { params: TaskKeyParam, query: WorkspaceQuery },
   responses: {
     200: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task closed" },
@@ -117,7 +122,7 @@ const routeCloseTask = createRoute({
 
 const routeTaskActive = createRoute({
   method: "get", path: "/api/tasks/active", tags: ["Tasks"],
-  summary: "Get the most recently started active task key",
+  summary: "Get the most recently started active task key", security: BEARER_AUTH,
   request: { query: WorkspaceQuery },
   responses: {
     200: { content: { "application/json": { schema: z.object({ key: z.string().nullable() }) } }, description: "Active task key or null" },
@@ -126,7 +131,7 @@ const routeTaskActive = createRoute({
 
 const routeTaskStats = createRoute({
   method: "get", path: "/api/tasks/{taskKey}/stats", tags: ["Tasks"],
-  summary: "Get run count, event count, and cost for a task",
+  summary: "Get run count, event count, and cost for a task", security: BEARER_AUTH,
   request: { params: TaskKeyParam, query: WorkspaceQuery },
   responses: {
     200: { content: { "application/json": { schema: TaskStatsSchema } }, description: "Task stats" },
@@ -136,7 +141,7 @@ const routeTaskStats = createRoute({
 
 const routeDashboard = createRoute({
   method: "get", path: "/api/dashboard", tags: ["Dashboard"],
-  summary: "Get workspace dashboard data",
+  summary: "Get workspace dashboard data", security: BEARER_AUTH,
   request: {
     query: WorkspaceQuery.extend({
       taskLimit: z.string().optional(),
@@ -152,7 +157,7 @@ const routeDashboard = createRoute({
 
 const routeDashboardTask = createRoute({
   method: "get", path: "/api/tasks/{taskKey}", tags: ["Dashboard"],
-  summary: "Get task detail dashboard data",
+  summary: "Get task detail dashboard data", security: BEARER_AUTH,
   request: {
     params: TaskKeyParam,
     query: WorkspaceQuery.extend({
@@ -169,7 +174,7 @@ const routeDashboardTask = createRoute({
 
 const routeRecordUsage = createRoute({
   method: "post", path: "/api/usage/events", tags: ["Usage"],
-  summary: "Record a usage event",
+  summary: "Record a usage event", security: BEARER_AUTH,
   request: { body: { content: { "application/json": { schema: AiUsageObservedSchema } } } },
   responses: {
     201: { content: { "application/json": { schema: UsageEventResponseSchema } }, description: "Usage event recorded" },
@@ -179,7 +184,7 @@ const routeRecordUsage = createRoute({
 
 const routeMoveUsage = createRoute({
   method: "post", path: "/api/usage/events/{usageId}/move", tags: ["Usage"],
-  summary: "Move a usage event to a different task",
+  summary: "Move a usage event to a different task", security: BEARER_AUTH,
   request: {
     params: z.object({ usageId: z.string() }),
     query: WorkspaceQuery,
@@ -192,7 +197,7 @@ const routeMoveUsage = createRoute({
 
 const routeUsageLastImport = createRoute({
   method: "get", path: "/api/usage/last-import", tags: ["Usage"],
-  summary: "Get the occurred_at of the last imported event for a source",
+  summary: "Get the occurred_at of the last imported event for a source", security: BEARER_AUTH,
   request: { query: WorkspaceQuery.extend({ source: z.string().default("claude-session") }) },
   responses: {
     200: { content: { "application/json": { schema: z.object({ occurred_at: z.string().nullable() }) } }, description: "Last import timestamp" },
@@ -201,7 +206,7 @@ const routeUsageLastImport = createRoute({
 
 const routeAssignInboxGroup = createRoute({
   method: "post", path: "/api/inbox/{groupId}/assign", tags: ["Inbox"],
-  summary: "Assign an inbox group to a task",
+  summary: "Assign an inbox group to a task", security: BEARER_AUTH,
   request: {
     params: z.object({ groupId: z.string() }),
     query: WorkspaceQuery,
@@ -214,7 +219,7 @@ const routeAssignInboxGroup = createRoute({
 
 const routeAcceptInboxGroup = createRoute({
   method: "post", path: "/api/inbox/{groupId}/accept", tags: ["Inbox"],
-  summary: "Accept an inbox group using its suggested task",
+  summary: "Accept an inbox group using its suggested task", security: BEARER_AUTH,
   request: {
     params: z.object({ groupId: z.string() }),
     query: WorkspaceQuery,
@@ -227,7 +232,7 @@ const routeAcceptInboxGroup = createRoute({
 
 const routeAssignInboxEvent = createRoute({
   method: "post", path: "/api/inbox/events/{usageId}/assign", tags: ["Inbox"],
-  summary: "Assign a single inbox event to a task",
+  summary: "Assign a single inbox event to a task", security: BEARER_AUTH,
   request: {
     params: z.object({ usageId: z.string() }),
     query: WorkspaceQuery,
@@ -452,9 +457,15 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 
   // ── OpenAPI spec ───────────────────────────────────────────────────────────
 
+  app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+    type: "http",
+    scheme: "bearer",
+  });
+
   app.doc("/openapi.json", {
     openapi: "3.0.0",
     info: { title: "ttoksem API", version: "0.0.0" },
+    ...(options.serverUrl ? { servers: [{ url: options.serverUrl }] } : {}),
   });
 
   // ── HTML dashboard ─────────────────────────────────────────────────────────
