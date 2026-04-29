@@ -579,7 +579,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     if (!options.auth || options.auth.mode === "none") return true;
     const token = bearerToken(context) ?? getCookie(context, SESSION_COOKIE);
     if (!token) return false;
-    return options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token, requiredScopes: ["read"] });
+    return options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token, requiredScopes: ["dashboard:read"] });
   }
 
   app.get("/login", async (context) => {
@@ -592,7 +592,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const body = await context.req.parseBody();
     const key = (body["key"] as string | undefined)?.trim() ?? "";
     if (!key) return context.html(renderLoginHtml(defaultWorkspaceKey, "Access key is required."), 400);
-    const valid = await options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token: key, requiredScopes: ["read"] });
+    const valid = await options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token: key, requiredScopes: ["dashboard:read"] });
     if (!valid) return context.html(renderLoginHtml(defaultWorkspaceKey, "Invalid access key. Please try again."), 401);
     setCookie(context, SESSION_COOKIE, key, { httpOnly: true, path: "/", sameSite: "Strict", maxAge: 60 * 60 * 24 * 30 });
     return context.redirect("/");
