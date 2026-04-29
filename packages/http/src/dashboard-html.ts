@@ -6,2464 +6,1384 @@ export function renderDashboardHtml(defaultWorkspaceKey: string, taskKey: string
   return `<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
   <title>ttoksem Dashboard</title>
-  <script>
-    (() => {
-      try {
-        const theme = localStorage.getItem("ttoksemTheme") === "light" ? "light" : "dark";
-        document.documentElement.dataset.theme = theme;
-      } catch {
-        document.documentElement.dataset.theme = "dark";
-      }
-    })();
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #141413;
-      --panel: #1d1b19;
-      --surface: #24211f;
-      --surface-alt: #2b2724;
-      --table-head: #211f1d;
-      --line: rgba(243, 240, 238, 0.13);
-      --soft-line: rgba(243, 240, 238, 0.08);
-      --text: #f3f0ee;
-      --ink: var(--text);
-      --muted: #b8aea6;
-      --accent: #f37338;
-      --accent-strong: #cf4500;
-      --accent-2: #f79e1b;
-      --link: #8fb1ff;
-      --warn: #f79e1b;
-      --bad: #ff6b5f;
-      --ok-bg: rgba(243, 115, 56, 0.14);
-      --warn-bg: rgba(247, 158, 27, 0.16);
-      --bad-bg: rgba(255, 107, 95, 0.14);
-      --input-bg: rgba(252, 251, 250, 0.08);
-      --button-bg: #f3f0ee;
-      --button-fg: #141413;
-      --button-border: #f3f0ee;
-      --progress-bg: rgba(243, 240, 238, 0.13);
-      --chart-soft: #9a6a46;
-      --shadow-soft: rgba(0, 0, 0, 0.24) 0px 24px 48px 0px;
-      --shadow-nav: rgba(0, 0, 0, 0.22) 0px 4px 24px 0px;
-      --font-ui: "Sofia Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      --fs-2xs: 10px;
-      --fs-xs: 11px;
-      --fs-sm: 12px;
-      --fs-base: 13px;
-      --fs-control: 14px;
-      --fs-title: 15px;
-      --fs-card: 16px;
-      --fs-metric: 18px;
-      --fs-kpi: 21px;
-      --fs-brand: 22px;
-      --fs-total: 26px;
-      --lh-tight: 1.15;
-      --lh-title: 1.25;
-      --lh-copy: 1.35;
-      --fw-normal: 450;
-      --fw-medium: 500;
-      --fw-semibold: 600;
-      --fw-bold: 700;
-      font-family: var(--font-ui);
-    }
-    :root[data-theme="light"] {
-      color-scheme: light;
-      --bg: #f3f0ee;
-      --panel: #fcfbfa;
-      --surface: #ffffff;
-      --surface-alt: #f4f4f4;
-      --table-head: #f8f5f1;
-      --line: rgba(20, 20, 19, 0.14);
-      --soft-line: rgba(20, 20, 19, 0.08);
-      --text: #141413;
-      --ink: #141413;
-      --muted: #696969;
-      --accent: #cf4500;
-      --accent-strong: #9a3a0a;
-      --accent-2: #3860be;
-      --link: #3860be;
-      --warn: #9a3a0a;
-      --bad: #b42318;
-      --ok-bg: #fff4eb;
-      --warn-bg: #fff4df;
-      --bad-bg: #fdebea;
-      --input-bg: #ffffff;
-      --button-bg: #141413;
-      --button-fg: #f3f0ee;
-      --button-border: #141413;
-      --progress-bg: #e8e2da;
-      --chart-soft: #d1cdc7;
-      --shadow-soft: rgba(0, 0, 0, 0.08) 0px 24px 48px 0px;
-      --shadow-nav: rgba(0, 0, 0, 0.04) 0px 4px 24px 0px;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-size: var(--fs-base);
-      line-height: var(--lh-copy);
-      letter-spacing: 0;
-      min-width: 0;
-      transition: background-color 180ms ease, color 180ms ease;
-    }
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      padding: 18px 0 10px;
-      background: var(--bg);
-    }
-    .wrap {
-      width: min(1680px, calc(100% - 24px));
-      margin: 0 auto;
-    }
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 60px;
-      gap: 16px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 12px 18px 12px 24px;
-      background: color-mix(in srgb, var(--panel) 92%, transparent);
-      box-shadow: var(--shadow-nav);
-      backdrop-filter: blur(18px);
-      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-    }
-    h1 {
-      margin: 0;
-      font-size: var(--fs-brand);
-      line-height: var(--lh-tight);
-      font-weight: var(--fw-medium);
-      letter-spacing: -0.02em;
-    }
-    .workspace {
-      color: var(--muted);
-      font-size: var(--fs-base);
-      margin-top: 4px;
-    }
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-    }
-    input {
-      height: 36px;
-      min-width: 0;
-      width: 180px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 0 14px;
-      color: var(--text);
-      background: var(--input-bg);
-      font: inherit;
-      transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
-    }
-    button {
-      height: 36px;
-      border: 1.5px solid var(--button-border);
-      background: var(--button-bg);
-      color: var(--button-fg);
-      border-radius: 20px;
-      padding: 0 18px;
-      font: inherit;
-      font-weight: var(--fw-semibold);
-      cursor: pointer;
-      letter-spacing: -0.02em;
-      transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 120ms ease;
-    }
-    button:active {
-      transform: translateY(1px) scale(0.99);
-    }
-    input:focus-visible,
-    button:focus-visible,
-    a:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-    button:disabled {
-      cursor: default;
-      opacity: 0.45;
-    }
-    main {
-      padding: 18px 0 40px;
-    }
-    .theme-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      min-width: 104px;
-      border-color: var(--line);
-      background: var(--surface);
-      color: var(--text);
-    }
-    .theme-dot {
-      width: 14px;
-      height: 14px;
-      border-radius: 999px;
-      background: var(--accent);
-      box-shadow: 0 0 0 4px var(--ok-bg);
-    }
-    .theme-toggle[aria-pressed="false"] .theme-dot {
-      background: var(--accent-2);
-    }
-    .grid {
-      display: grid;
-      gap: 10px;
-    }
-    .kpis {
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    }
-    .workspace-stage {
-      grid-template-columns: minmax(0, 1fr) 300px;
-      grid-template-rows: auto auto;
-      align-items: stretch;
-      margin-top: 10px;
-    }
-    .workspace-stage > .panel:first-child {
-      grid-column: 1;
-      grid-row: 1 / span 2;
-    }
-    .workspace-stage > .panel:nth-child(2) {
-      grid-column: 2;
-      grid-row: 1;
-    }
-    .workspace-stage > .panel:nth-child(3) {
-      grid-column: 2;
-      grid-row: 2;
-    }
-    .overview-board {
-      grid-template-columns: minmax(0, 1fr) 360px;
-      grid-template-areas:
-        "portfolio cost"
-        "insight insight"
-        "recent recent";
-      align-items: start;
-      margin-top: 10px;
-    }
-    .portfolio-panel {
-      grid-area: portfolio;
-    }
-    .cost-column {
-      grid-area: cost;
-    }
-    .task-insight-panel {
-      grid-area: insight;
-    }
-    .recent-usage-panel {
-      grid-area: recent;
-    }
-    .overview-primary {
-      margin-top: 10px;
-    }
-    .report-board {
-      grid-template-columns: minmax(0, 1.05fr) minmax(340px, .95fr);
-      grid-template-areas:
-        "summary tiles"
-        "glance glance";
-      margin-top: 10px;
-      align-items: start;
-    }
-    .report-summary-panel {
-      grid-area: summary;
-    }
-    .report-tiles-panel {
-      grid-area: tiles;
-    }
-    .at-a-glance-panel {
-      grid-area: glance;
-    }
-    .report-summary {
-      display: grid;
-      gap: 10px;
-      padding: 14px;
-    }
-    .report-title {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: start;
-      border-bottom: 1px solid var(--soft-line);
-      padding-bottom: 10px;
-    }
-    .report-title strong {
-      display: block;
-      font-size: var(--fs-metric);
-      line-height: var(--lh-title);
-    }
-    .report-title span {
-      display: block;
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-    }
-    .summary-lines {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px 14px;
-    }
-    .summary-line {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      border-bottom: 1px solid var(--soft-line);
-      padding-bottom: 7px;
-      font-variant-numeric: tabular-nums;
-    }
-    .summary-line span:first-child {
-      color: var(--muted);
-      font-weight: var(--fw-semibold);
-    }
-    .report-tile-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-      padding: 14px;
-    }
-    .report-tile {
-      border: 1px solid var(--soft-line);
-      border-radius: 24px;
-      background: var(--surface);
-      padding: 12px;
-      min-width: 0;
-    }
-    .report-tile h3 {
-      margin: 0;
-      font-size: var(--fs-base);
-      line-height: var(--lh-title);
-    }
-    .report-tile strong {
-      display: block;
-      margin-top: 8px;
-      font-size: var(--fs-card);
-      line-height: var(--lh-title);
-      font-variant-numeric: tabular-nums;
-    }
-    .report-tile small {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    #glanceTable {
-      overflow-x: auto;
-    }
-    #glanceTable table {
-      min-width: 1120px;
-    }
-    .detail-layout {
-      grid-template-columns: minmax(0, 1fr) 420px;
-      align-items: start;
-      margin-top: 12px;
-    }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 40px;
-      min-width: 0;
-      overflow: hidden;
-      box-shadow: var(--shadow-soft);
-      transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-    }
-    .panel-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--line);
-    }
-    h2 {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 0;
-      font-size: var(--fs-title);
-      line-height: var(--lh-title);
-      font-weight: var(--fw-semibold);
-      letter-spacing: -0.02em;
-    }
-    h2::before {
-      content: "";
-      width: 7px;
-      height: 7px;
-      border-radius: 999px;
-      background: var(--accent);
-      flex: 0 0 auto;
-    }
-    a {
-      color: var(--link);
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-    .page-title {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin: 4px 0 14px;
-      padding: 20px 24px;
-      border: 1px solid var(--line);
-      border-radius: 40px;
-      background: var(--panel);
-      box-shadow: var(--shadow-soft);
-    }
-    .page-title h1 {
-      font-size: var(--fs-brand);
-      font-weight: var(--fw-medium);
-      letter-spacing: -0.02em;
-    }
-    .title-meta {
-      color: var(--muted);
-      font-size: var(--fs-base);
-      margin-top: 5px;
-    }
-    .kpi {
-      min-height: 74px;
-      padding: 16px 18px;
-    }
-    .kpi-label {
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-      text-transform: uppercase;
-    }
-    .kpi-value {
-      margin-top: 6px;
-      font-size: var(--fs-card);
-      line-height: var(--lh-tight);
-      font-weight: var(--fw-bold);
-      overflow-wrap: anywhere;
-    }
-    .kpi-sub {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: var(--fs-base);
-    }
-    .workspace-pulse {
-      display: grid;
-      gap: 12px;
-      padding: 14px;
-    }
-    .pulse-head {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 18px;
-      align-items: start;
-    }
-    .pulse-title {
-      font-size: var(--fs-metric);
-      font-weight: var(--fw-bold);
-      line-height: var(--lh-title);
-    }
-    .pulse-sub {
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: var(--fs-base);
-      line-height: var(--lh-copy);
-    }
-    .pulse-total {
-      text-align: right;
-      font-size: var(--fs-total);
-      line-height: var(--lh-tight);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .pulse-total span {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-      text-transform: uppercase;
-    }
-    .metric-strip {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 9px;
-    }
-    .chart-panel {
-      display: grid;
-      gap: 9px;
-      min-width: 0;
-      border: 1px solid var(--soft-line);
-      border-radius: 24px;
-      padding: 14px;
-      background: var(--surface);
-    }
-    .chart-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: start;
-    }
-    .chart-title {
-      font-size: var(--fs-base);
-      font-weight: var(--fw-semibold);
-    }
-    .chart-sub {
-      margin-top: 3px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    .chart-total {
-      color: var(--ink);
-      font-size: var(--fs-metric);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .chart-svg {
-      width: 100%;
-      height: auto;
-      display: block;
-      overflow: visible;
-    }
-    .chart-grid {
-      stroke: var(--soft-line);
-      stroke-width: 1;
-    }
-    .chart-axis {
-      fill: var(--muted);
-      font-size: var(--fs-2xs);
-      font-weight: var(--fw-medium);
-    }
-    .chart-label {
-      fill: var(--ink);
-      font-size: var(--fs-xs);
-      font-weight: var(--fw-semibold);
-    }
-    .chart-value {
-      fill: var(--muted);
-      font-size: var(--fs-xs);
-      font-weight: var(--fw-medium);
-    }
-    .chart-bar {
-      fill: var(--accent);
-      opacity: .86;
-    }
-    .chart-bar.soft {
-      fill: var(--chart-soft);
-      opacity: .95;
-    }
-    .chart-bar.hot {
-      fill: var(--bad);
-      opacity: .88;
-    }
-    .chart-line {
-      fill: none;
-      stroke: var(--accent);
-      stroke-width: 3;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .chart-dot {
-      fill: var(--panel);
-      stroke: var(--accent);
-      stroke-width: 2;
-    }
-    .chart-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 14px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-    }
-    .legend-item {
-      display: inline-flex;
-      gap: 6px;
-      align-items: center;
-      white-space: nowrap;
-    }
-    .legend-swatch {
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      background: var(--accent);
-    }
-    .legend-swatch.soft {
-      background: var(--chart-soft);
-    }
-    .chart-empty {
-      min-height: 118px;
-      display: grid;
-      place-items: center;
-      color: var(--muted);
-      font-size: var(--fs-base);
-      border: 1px dashed var(--line);
-      border-radius: 24px;
-      background: var(--surface);
-    }
-    .portfolio-view {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-      align-items: stretch;
-      padding: 14px;
-    }
-    .portfolio-readout {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-    }
-    .readout-card {
-      min-width: 0;
-      border: 1px solid var(--soft-line);
-      border-radius: 24px;
-      padding: 9px 10px;
-      background: var(--surface);
-    }
-    .readout-card span {
-      display: block;
-      color: var(--muted);
-      font-size: var(--fs-xs);
-      font-weight: var(--fw-semibold);
-      text-transform: uppercase;
-    }
-    .readout-card strong {
-      display: block;
-      margin-top: 5px;
-      overflow-wrap: anywhere;
-      font-size: var(--fs-card);
-      line-height: var(--lh-title);
-      font-weight: var(--fw-semibold);
-    }
-    .readout-card small {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    .portfolio-dot {
-      fill: var(--accent);
-      fill-opacity: .82;
-      stroke: var(--panel);
-      stroke-width: 2;
-    }
-    .portfolio-dot.warn {
-      fill: var(--warn);
-    }
-    .portfolio-dot.bad {
-      fill: var(--bad);
-    }
-    .portfolio-dot.open {
-      fill: var(--accent-2);
-    }
-    .quadrant-label {
-      fill: var(--muted);
-      font-size: var(--fs-xs);
-      font-weight: var(--fw-semibold);
-    }
-    .work-progress {
-      display: grid;
-      gap: 12px;
-      padding: 14px;
-    }
-    .lifecycle-list {
-      display: grid;
-      gap: 10px;
-    }
-    .lifecycle-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 142px;
-      gap: 10px;
-      align-items: center;
-    }
-    .lifecycle-title {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-    }
-    .lifecycle-track {
-      position: relative;
-      height: 8px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--progress-bg);
-    }
-    .lifecycle-segment {
-      position: absolute;
-      top: 0;
-      height: 100%;
-      min-width: 4px;
-      border-radius: 999px;
-      background: var(--accent);
-    }
-    .cost-intel {
-      display: grid;
-      gap: 12px;
-      padding: 14px;
-    }
-    .mix-list {
-      display: grid;
-      gap: 10px;
-    }
-    .mix-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: start;
-    }
-    .mix-title {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: var(--fs-base);
-      font-weight: var(--fw-semibold);
-    }
-    .mix-meta {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    .mix-cost {
-      font-size: var(--fs-base);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .mix-row .progress-track {
-      grid-column: 1 / span 2;
-      height: 8px;
-    }
-    .intel-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }
-    .metric-box {
-      min-width: 0;
-      border: 1px solid var(--soft-line);
-      border-radius: 24px;
-      padding: 10px 11px;
-      background: var(--surface);
-    }
-    .metric-label {
-      color: var(--muted);
-      font-size: var(--fs-xs);
-      font-weight: var(--fw-semibold);
-      text-transform: uppercase;
-    }
-    .metric-value {
-      margin-top: 5px;
-      font-size: var(--fs-metric);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .metric-sub {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    .progress-track {
-      display: flex;
-      height: 10px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--progress-bg);
-    }
-    .progress-segment {
-      min-width: 0;
-      height: 100%;
-    }
-    .progress-segment.assigned,
-    .progress-segment.active {
-      background: var(--accent);
-    }
-    .progress-segment.open {
-      background: var(--accent-2);
-    }
-    .progress-segment.closed {
-      background: var(--muted);
-    }
-    .progress-segment.unassigned,
-    .progress-segment.warn {
-      background: var(--warn);
-    }
-    .progress-segment.gap,
-    .progress-segment.bad {
-      background: var(--bad);
-    }
-    .progress-caption {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      margin-top: 7px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-    }
-    .task-flow {
-      display: grid;
-      gap: 12px;
-      padding: 14px;
-    }
-    .task-flow .metric-strip {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .flow-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px 10px;
-      align-items: center;
-    }
-    .flow-label {
-      grid-column: 1 / -1;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-      text-transform: uppercase;
-    }
-    .flow-value {
-      font-size: var(--fs-metric);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .driver-list {
-      display: grid;
-      gap: 10px;
-      padding: 12px 14px 14px;
-    }
-    #taskTable .driver-list {
-      padding-top: 0;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .driver-row {
-      display: grid;
-      gap: 7px;
-      min-width: 0;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--soft-line);
-    }
-    .driver-row:last-child {
-      padding-bottom: 0;
-      border-bottom: 0;
-    }
-    .driver-top {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-      align-items: start;
-    }
-    .driver-cost {
-      font-size: var(--fs-base);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .driver-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 12px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    .driver-meta span {
-      white-space: nowrap;
-    }
-    .task-driver-report {
-      display: grid;
-      gap: 12px;
-      padding: 14px;
-    }
-    .task-driver-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      align-items: stretch;
-    }
-    .top-event-list {
-      display: grid;
-      gap: 10px;
-    }
-    .token-split {
-      display: flex;
-      height: 8px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--progress-bg);
-    }
-    .token-split span {
-      display: block;
-      min-width: 0;
-      height: 100%;
-    }
-    .token-split .input {
-      background: var(--chart-soft);
-    }
-    .token-split .output {
-      background: var(--accent);
-    }
-    .mini-table {
-      display: grid;
-      gap: 8px;
-      padding: 14px 16px;
-    }
-    .mini-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      font-size: var(--fs-base);
-    }
-    .mini-row strong {
-      overflow-wrap: anywhere;
-      white-space: normal;
-    }
-    table {
-      width: 100%;
-      min-width: 980px;
-      border-collapse: collapse;
-      table-layout: fixed;
-      font-size: var(--fs-base);
-    }
-    #taskTable, #recentTable, #taskEventTable, #taskRunTable {
-      overflow-x: auto;
-    }
-    #insightTable {
-      overflow-x: auto;
-    }
-    #insightTable table {
-      min-width: 1560px;
-    }
-    #taskTable table {
-      min-width: 680px;
-    }
-    #recentTable table {
-      min-width: 1320px;
-    }
-    #taskEventTable table {
-      min-width: 1520px;
-    }
-    #recentTable {
-      overflow-x: auto;
-    }
-    .table-panel th,
-    .table-panel td {
-      padding-top: 8px;
-      padding-bottom: 8px;
-    }
-    #taskRunTable table {
-      min-width: 1230px;
-    }
-    th, td {
-      padding: 9px 10px;
-      border-bottom: 1px solid var(--soft-line);
-      text-align: left;
-      vertical-align: middle;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    th {
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-      background: var(--table-head);
-    }
-    tr:last-child td { border-bottom: 0; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .task-cell {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      min-width: 0;
-    }
-    .task-cell span {
-      min-width: 0;
-      line-height: var(--lh-title);
-      overflow-wrap: anywhere;
-      white-space: normal;
-    }
-    .bar {
-      width: 64px;
-      height: 8px;
-      border-radius: 999px;
-      background: var(--progress-bg);
-      overflow: hidden;
-      flex: 0 0 auto;
-    }
-    .bar > span {
-      display: block;
-      height: 100%;
-      width: 0;
-      background: var(--accent);
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      height: 22px;
-      max-width: 100%;
-      padding: 0 8px;
-      border-radius: 999px;
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-medium);
-      background: var(--ok-bg);
-      color: var(--accent);
-    }
-    .pill.warn {
-      background: var(--warn-bg);
-      color: var(--warn);
-    }
-    .pill.bad {
-      background: var(--bad-bg);
-      color: var(--bad);
-    }
-    .stack {
-      display: grid;
-      gap: 12px;
-    }
-    .attention-list {
-      display: grid;
-      padding: 0 14px;
-    }
-    .attention-row {
-      display: grid;
-      grid-template-columns: 62px minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      min-height: 58px;
-      border-bottom: 1px solid var(--soft-line);
-    }
-    .attention-row:last-child {
-      border-bottom: 0;
-    }
-    .attention-row .pill {
-      justify-self: start;
-    }
-    .attention-title {
-      font-size: var(--fs-base);
-      font-weight: var(--fw-semibold);
-    }
-    .attention-body {
-      color: var(--muted);
-      font-size: var(--fs-base);
-      line-height: var(--lh-copy);
-    }
-    .attention-metric {
-      font-size: var(--fs-metric);
-      font-weight: var(--fw-bold);
-      white-space: nowrap;
-    }
-    .task-label,
-    .insight-task {
-      display: grid;
-      gap: 3px;
-      min-width: 0;
-    }
-    .task-title {
-      font-weight: var(--fw-semibold);
-      line-height: var(--lh-title);
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-    .task-key {
-      color: var(--muted);
-      font-family: var(--font-mono);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-title);
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-    .insight-task strong,
-    .insight-task .muted {
-      white-space: normal;
-      overflow-wrap: anywhere;
-      line-height: var(--lh-title);
-    }
-    .muted {
-      color: var(--muted);
-    }
-    .insight-text {
-      white-space: normal;
-      line-height: var(--lh-copy);
-    }
-    .signal-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-      margin-top: 7px;
-    }
-    .signal {
-      display: inline-flex;
-      align-items: center;
-      min-height: 20px;
-      padding: 0 7px;
-      border-radius: 999px;
-      background: var(--ok-bg);
-      color: var(--accent);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-medium);
-    }
-    .signal.warn {
-      background: var(--warn-bg);
-      color: var(--warn);
-    }
-    .signal.bad {
-      background: var(--bad-bg);
-      color: var(--bad);
-    }
-    .prompt-snippet {
-      margin-top: 7px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-    .breakdown {
-      display: grid;
-      gap: 10px;
-      padding: 14px 16px;
-    }
-    .break-row {
-      display: grid;
-      grid-template-columns: minmax(92px, 132px) minmax(0, 1fr) 52px;
-      gap: 10px;
-      align-items: center;
-      font-size: var(--fs-base);
-    }
-    .wide-text {
-      white-space: normal;
-      line-height: var(--lh-copy);
-      overflow-wrap: anywhere;
-    }
-    .money-cell,
-    .date-cell {
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .elapsed-time {
-      color: var(--accent-2);
-      font-family: var(--font-mono);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-    }
-    .row-link {
-      display: inline-flex;
-      max-width: 100%;
-      font-weight: var(--fw-semibold);
-      overflow-wrap: anywhere;
-      white-space: normal;
-    }
-    .section-tabs {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .pager {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-    }
-    .page-range {
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-      white-space: nowrap;
-    }
-    .page-button {
-      width: 28px;
-      height: 28px;
-      padding: 0;
-      border-color: var(--line);
-      background: var(--surface);
-      color: var(--text);
-      font-size: var(--fs-base);
-      line-height: var(--lh-tight);
-    }
-    .page-button:not(:disabled):hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-    .section-tabs a {
-      font-size: var(--fs-base);
-      font-weight: var(--fw-semibold);
-    }
-    .hidden {
-      display: none;
-    }
-    .spark {
-      display: grid;
-      gap: 12px;
-      min-height: 118px;
-      padding: 14px 16px 16px;
-    }
-    .spark .empty {
-      padding: 0;
-    }
-    .daily-summary {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    .daily-label {
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      font-weight: var(--fw-semibold);
-      text-transform: uppercase;
-    }
-    .daily-sub {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: var(--fs-sm);
-      line-height: var(--lh-copy);
-    }
-    .daily-total {
-      font-size: var(--fs-metric);
-      font-weight: var(--fw-bold);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-    .daily-bars {
-      display: flex;
-      align-items: end;
-      gap: 4px;
-      height: 52px;
-    }
-    .daily-bars > div {
-      flex: 1;
-      min-width: 10px;
-      background: var(--accent);
-      border-radius: 999px 999px 0 0;
-      opacity: 0.84;
-    }
-    .daily-bars.single > div {
-      flex: 0 0 30px;
-    }
-    .empty, .error {
-      padding: 18px 16px;
-      color: var(--muted);
-      font-size: var(--fs-control);
-    }
-    .error { color: var(--bad); }
-    @media (max-width: 900px) {
-      body { min-width: 0; }
-      .topbar {
-        align-items: flex-start;
-        border-radius: 36px;
-        flex-wrap: wrap;
-      }
-      .toolbar {
-        width: 100%;
-        flex-wrap: wrap;
-      }
-      .toolbar input {
-        flex: 1 1 180px;
-      }
-      .kpis {
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-      }
-      .workspace-stage,
-      .report-board,
-      .overview-board,
-      .detail-layout {
-        grid-template-columns: 1fr;
-      }
-      .report-board {
-        grid-template-areas:
-          "summary"
-          "tiles"
-          "glance";
-      }
-      .overview-board {
-        grid-template-areas:
-          "portfolio"
-          "cost"
-          "insight"
-          "recent";
-      }
-      .portfolio-view {
-        grid-template-columns: 1fr;
-      }
-      #taskTable .driver-list {
-        grid-template-columns: 1fr;
-      }
-      .task-driver-grid {
-        grid-template-columns: 1fr;
-      }
-      .workspace-stage > .panel:first-child,
-      .workspace-stage > .panel:nth-child(2),
-      .workspace-stage > .panel:nth-child(3) {
-        grid-column: auto;
-        grid-row: auto;
-      }
-      .portfolio-readout {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-    }
-    @media (min-width: 1240px) {
-      .workspace-stage {
-        grid-template-columns: minmax(0, 1fr) 360px;
-      }
-      .overview-board {
-        grid-template-columns: minmax(0, 1fr) 400px;
-      }
-      .portfolio-view {
-        grid-template-columns: minmax(0, 1fr) 280px;
-      }
-      .portfolio-view > .chart-panel {
-        grid-column: 1;
-        grid-row: 1;
-      }
-      .portfolio-readout {
-        grid-column: 2;
-        grid-row: 1;
-        grid-template-columns: 1fr;
-        align-content: start;
-      }
-      #taskTable .driver-list {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      #taskTable .driver-row {
-        padding-bottom: 9px;
-      }
-    }
-    @media (min-width: 1500px) {
-      .workspace-stage {
-        grid-template-columns: minmax(0, 1fr) 400px;
-      }
-      .overview-board {
-        grid-template-columns: minmax(0, 1fr) 450px;
-      }
-    }
+@import url('https://fonts.googleapis.com/css2?family=Sofia+Sans:wght@400;450;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* ttoksem Design Tokens */
+:root {
+  --surface-canvas: #F3F0EE;
+  --surface-lifted: #FCFBFA;
+  --surface-white:  #FFFFFF;
+  --surface-bone:   #F4F4F4;
+  --surface-ink:    #141413;
+  --surface-ink-2:  #1B1A19;
+  --text-ink:       #141413;
+  --text-charcoal:  #262627;
+  --text-slate:     #696969;
+  --text-granite:   #555555;
+  --text-dust:      #D1CDC7;
+  --text-cream:     #F3F0EE;
+  --text-cream-dim: rgba(243, 240, 238, 0.62);
+  --brand-red:    #EB001B;
+  --brand-yellow: #F79E1B;
+  --signal-orange: #CF4500;
+  --signal-orange-light: #F37338;
+  --clay-brown: #9A3A0A;
+  --link-blue: #3860BE;
+  --pos: #1F6F3D;
+  --neg: #B5311A;
+  --warn: #C97A1B;
+  --info: #3860BE;
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 20px;
+  --r-lg: 24px;
+  --r-xl: 40px;
+  --r-pill: 999px;
+  --r-circle: 50%;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --s-9: 96px;
+  --s-10: 128px;
+  --shadow-1: rgba(0, 0, 0, 0.04) 0px 4px 24px 0px;
+  --shadow-2: rgba(0, 0, 0, 0.08) 0px 24px 48px 0px;
+  --shadow-3: rgba(0, 0, 0, 0.25) 0px 70px 110px 0px;
+  --shadow-inset: inset 0 0 0 1.5px var(--text-ink);
+  --font-sans: "Sofia Sans", "MarkForMC", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-num:  "Sofia Sans", "MarkForMC", sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+[data-theme="dark"] {
+  --surface-canvas: #14110F;
+  --surface-lifted: #1C1815;
+  --surface-white:  #25201C;
+  --surface-bone:   #2A2521;
+  --surface-ink:    #F3F0EE;
+  --surface-ink-2:  #E8E2DA;
+  --text-ink:       #F4EFE9;
+  --text-charcoal:  #E2DCD4;
+  --text-slate:     #A39B92;
+  --text-granite:   #7A7269;
+  --text-dust:      #4A423B;
+  --text-cream:     #14110F;
+  --text-cream-dim: rgba(20, 17, 15, 0.62);
+  --signal-orange-light: #F58A4F;
+  --pos: #6FB58B;
+  --neg: #E07761;
+  --warn: #E0A35C;
+  --info: #8AA4DE;
+  --shadow-1: rgba(0, 0, 0, 0.5) 0px 4px 24px 0px;
+  --shadow-2: rgba(0, 0, 0, 0.65) 0px 24px 48px 0px;
+  --shadow-3: rgba(0, 0, 0, 0.8) 0px 70px 110px 0px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  font-weight: 450;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--text-ink);
+  background: var(--surface-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+.t-display { font-size: 96px; font-weight: 500; line-height: 0.95; letter-spacing: -0.024em; }
+.t-h1      { font-size: 64px; font-weight: 500; line-height: 1.0;  letter-spacing: -0.02em; }
+.t-h2      { font-size: 36px; font-weight: 500; line-height: 1.22; letter-spacing: -0.02em; }
+.t-h3      { font-size: 24px; font-weight: 500; line-height: 1.2;  letter-spacing: -0.02em; }
+.t-h4      { font-size: 18px; font-weight: 500; line-height: 1.3;  letter-spacing: -0.015em; }
+.t-body    { font-size: 16px; font-weight: 450; line-height: 1.4; }
+.t-small   { font-size: 14px; font-weight: 450; line-height: 1.45; }
+.t-eyebrow { font-size: 12px; font-weight: 700; line-height: 1.0; letter-spacing: 0.08em; text-transform: uppercase; }
+.t-mono    { font-family: var(--font-mono); font-feature-settings: "tnum" on; }
+.t-num     { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" on, "ss01" on; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--text-dust); border-radius: var(--r-pill); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-slate); }
+
+/* Components */
+.page { max-width: 1320px; margin: 0 auto; padding: 0 var(--s-7); }
+.nav {
+  position: sticky; top: var(--s-5); z-index: 50;
+  margin: var(--s-5) auto 0; max-width: 1240px;
+  background: var(--surface-white); border-radius: var(--r-pill);
+  box-shadow: var(--shadow-1); padding: 12px 24px 12px 28px;
+  display: flex; align-items: center; gap: var(--s-7); backdrop-filter: blur(8px);
+}
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-ink);
+}
+.eyebrow::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--signal-orange);
+}
+.eyebrow.muted { color: var(--text-slate); }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-sans); font-weight: 500; font-size: 15px; letter-spacing: -0.02em;
+  padding: 8px 22px; border-radius: var(--r-md); border: 1.5px solid var(--text-ink);
+  cursor: pointer; transition: transform 120ms var(--ease-out); text-decoration: none;
+  background: transparent; color: var(--text-ink);
+}
+.btn:active { transform: scale(0.97); }
+.btn--primary { background: var(--text-ink); color: var(--text-cream); }
+.btn--secondary { background: var(--surface-white); color: var(--text-ink); }
+.btn--ghost { background: transparent; border-color: transparent; }
+.btn--sm { font-size: 13px; padding: 6px 16px; }
+.card {
+  background: var(--surface-lifted);
+  border-radius: var(--r-xl);
+  padding: var(--s-6);
+  border: 1px solid color-mix(in oklab, var(--text-ink) 8%, transparent);
+}
+.card--ink { background: var(--surface-ink); color: var(--text-cream); border-color: transparent; }
+.kpi {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: var(--s-5); background: var(--surface-lifted);
+  border-radius: var(--r-xl); border: 1px solid color-mix(in oklab, var(--text-ink) 8%, transparent);
+}
+.kpi__label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-slate); display: flex; align-items: center; gap: 8px; }
+.kpi__label::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--signal-orange); }
+.kpi__value { font-size: 36px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.kpi__delta { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: var(--r-pill); width: fit-content; }
+.kpi__delta--pos { background: color-mix(in oklab, var(--pos) 14%, transparent); color: var(--pos); }
+.kpi__delta--neg { background: color-mix(in oklab, var(--neg) 14%, transparent); color: var(--neg); }
+.kpi__sub { font-size: 13px; color: var(--text-slate); }
+.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.t th {
+  text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-slate); padding: 12px 16px;
+  border-bottom: 1px solid color-mix(in oklab, var(--text-ink) 10%, transparent);
+}
+.t td {
+  padding: 14px 16px; border-bottom: 1px solid color-mix(in oklab, var(--text-ink) 6%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.t tr:last-child td { border-bottom: none; }
+.t tr:hover td { background: color-mix(in oklab, var(--signal-orange-light) 5%, transparent); }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 500;
+  background: var(--surface-white); border: 1px solid color-mix(in oklab, var(--text-ink) 12%, transparent);
+  color: var(--text-ink);
+}
+.chip--solid { background: var(--text-ink); color: var(--text-cream); border-color: transparent; }
+.chip--orange { background: color-mix(in oklab, var(--signal-orange-light) 16%, transparent); color: var(--signal-orange); border-color: transparent; }
+.chip--pos { background: color-mix(in oklab, var(--pos) 14%, transparent); color: var(--pos); border-color: transparent; }
+.chip--warn { background: color-mix(in oklab, var(--warn) 16%, transparent); color: var(--warn); border-color: transparent; }
+.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.spark { width: 100%; height: 36px; display: block; }
+.mascot-row {
+  display: flex; align-items: flex-start; gap: var(--s-4);
+  padding: var(--s-5); background: var(--surface-lifted);
+  border-radius: var(--r-xl); border: 1px dashed color-mix(in oklab, var(--text-ink) 18%, transparent);
+}
+.mascot-row__sprite { width: 64px; height: 70px; flex-shrink: 0; }
+.mascot-row__bubble { flex: 1; font-size: 14px; line-height: 1.5; color: var(--text-ink); }
+.mascot-row__bubble strong { font-weight: 700; }
+.mascot-row__bubble code { font-family: var(--font-mono); background: var(--surface-canvas); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.section-head { position: relative; padding: var(--s-9) 0 var(--s-7); }
+.section-head__ghost {
+  position: absolute; left: 0; top: var(--s-7);
+  font-size: clamp(72px, 12vw, 156px); font-weight: 500; letter-spacing: -0.03em;
+  color: color-mix(in oklab, var(--text-ink) 5%, transparent);
+  line-height: 0.9; pointer-events: none; user-select: none; white-space: nowrap;
+}
+.section-head__inner { position: relative; z-index: 1; padding-top: var(--s-7); }
+.row {
+  display: grid; grid-template-columns: auto 1fr auto auto auto; gap: var(--s-4);
+  align-items: center; padding: var(--s-4); border-radius: var(--r-lg);
+  border: 1px solid color-mix(in oklab, var(--text-ink) 8%, transparent); background: var(--surface-lifted);
+}
+.row + .row { margin-top: var(--s-2); }
+.tabs {
+  display: inline-flex; gap: 4px; padding: 4px;
+  background: var(--surface-white); border-radius: var(--r-pill);
+  border: 1px solid color-mix(in oklab, var(--text-ink) 10%, transparent);
+}
+.tabs__tab {
+  padding: 8px 18px; border-radius: var(--r-pill);
+  font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+  cursor: pointer; border: none; background: transparent; color: var(--text-ink);
+  font-family: var(--font-sans);
+}
+.tabs__tab.active { background: var(--text-ink); color: var(--text-cream); }
+.footer {
+  margin-top: var(--s-10); background: var(--surface-ink);
+  color: var(--text-cream); border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: var(--s-9) var(--s-7) var(--s-7);
+}
+[data-theme="dark"] .footer { background: var(--surface-lifted); color: var(--text-ink); }
+.row-gap-2 > * + * { margin-top: var(--s-2); }
+.row-gap-4 > * + * { margin-top: var(--s-4); }
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.gap-2 { gap: var(--s-2); }
+.gap-3 { gap: var(--s-3); }
+.gap-4 { gap: var(--s-4); }
+.gap-5 { gap: var(--s-5); }
+.gap-6 { gap: var(--s-6); }
+.items-center { align-items: center; }
+.items-end { align-items: flex-end; }
+.justify-between { justify-content: space-between; }
+.grid { display: grid; }
+.mt-4 { margin-top: var(--s-4); }
+.mt-5 { margin-top: var(--s-5); }
+.mt-6 { margin-top: var(--s-6); }
+.mt-7 { margin-top: var(--s-7); }
+.mt-8 { margin-top: var(--s-8); }
+.mb-2 { margin-bottom: var(--s-2); }
+.mb-4 { margin-bottom: var(--s-4); }
+.mb-5 { margin-bottom: var(--s-5); }
+.mb-6 { margin-bottom: var(--s-6); }
+.muted { color: var(--text-slate); }
+.tnum { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); }
+
+/* Loading / Error */
+#loading-screen, #error-screen {
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  background: var(--surface-canvas); z-index: 999; font-family: var(--font-sans);
+}
+.spinner {
+  width: 40px; height: 40px; border: 3px solid color-mix(in oklab, var(--text-ink) 12%, transparent);
+  border-top-color: var(--signal-orange); border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
   </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 </head>
 <body>
-  <header>
-    <div class="wrap topbar">
-      <div>
-        <h1>ttoksem Report Dashboard</h1>
-        <div class="workspace" id="workspaceLabel"></div>
-      </div>
-      <form class="toolbar" id="workspaceForm">
-        <input id="workspaceInput" name="workspace" autocomplete="off" aria-label="Workspace">
-        <button type="button" class="theme-toggle" id="themeToggle" aria-pressed="true">
-          <span class="theme-dot" aria-hidden="true"></span>
-          <span id="themeLabel">Dark</span>
-        </button>
-        <button type="submit">Refresh</button>
-      </form>
-    </div>
-  </header>
-  <main class="wrap" id="overviewPage">
-    <section class="grid report-board">
-      <section class="panel report-summary-panel">
-        <div class="panel-head"><h2>Report Summary</h2><span class="pill">event-time</span></div>
-        <div id="reportSummary"></div>
-      </section>
-      <section class="panel report-tiles-panel">
-        <div class="panel-head"><h2>Report Tiles</h2><span class="pill" id="reportTileCount"></span></div>
-        <div id="reportTiles"></div>
-      </section>
-      <section class="panel table-panel at-a-glance-panel">
-        <div class="panel-head"><h2>At-a-glance Report Table</h2><span class="pill" id="glanceCount"></span></div>
-        <div id="glanceTable"></div>
-      </section>
-    </section>
-    <section class="grid kpis overview-primary" id="kpis"></section>
-    <section class="grid workspace-stage">
-      <section class="panel">
-        <div class="panel-head"><h2>Cost Trend</h2><span class="pill" id="pulseState"></span></div>
-        <div class="workspace-pulse" id="workspacePulse"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head"><h2>Work Progress Detail</h2><span class="pill" id="flowCount"></span></div>
-        <div class="task-flow" id="taskFlow"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head"><h2>Cleanup Queue</h2><span class="pill" id="attentionCount"></span></div>
-        <div id="attentionPanel"></div>
-      </section>
-    </section>
-    <section class="grid overview-board">
-      <section class="panel portfolio-panel">
-        <div class="panel-head"><h2>Task Report Explorer</h2><div class="section-tabs"><span class="pill" id="taskCount"></span><span class="pager" id="taskPager"></span></div></div>
-        <div id="taskTable"></div>
-      </section>
-      <aside class="stack cost-column">
-        <section class="panel">
-          <div class="panel-head"><h2>Model Cost Breakdown</h2><span class="pill" id="modelCount"></span></div>
-          <div id="costIntelligence"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Daily Cost</h2><span class="pill" id="dayCount"></span></div>
-          <div class="spark" id="dailySpark"></div>
-        </section>
-      </aside>
-      <section class="panel table-panel task-insight-panel">
-        <div class="panel-head">
-          <h2>Task Insight Table</h2>
-          <div class="section-tabs"><span class="pill" id="insightCount"></span><span class="pager" id="insightPager"></span></div>
-        </div>
-        <div id="insightTable"></div>
-      </section>
-      <section class="panel table-panel recent-usage-panel">
-        <div class="panel-head"><h2>Usage Event Detail</h2><div class="section-tabs"><span class="pill" id="recentCount"></span><span class="pager" id="recentPager"></span></div></div>
-        <div id="recentTable"></div>
-      </section>
-    </section>
-  </main>
-  <main class="wrap hidden" id="taskPage">
-    <div class="page-title">
-      <div>
-        <a id="backLink" href="/">Overview</a>
-        <h1 id="taskTitle"></h1>
-        <div class="title-meta" id="taskMeta"></div>
-      </div>
-      <span class="pill" id="taskStatus"></span>
-    </div>
-    <section class="grid kpis" id="taskKpis"></section>
-    <section class="panel" style="margin-top: 12px;">
-      <div class="panel-head"><h2>Token Driver Report</h2><span class="pill" id="taskDriverCount"></span></div>
-      <div class="task-driver-report">
-        <div class="task-driver-grid">
-          <div id="taskRunDriverChart"></div>
-          <div id="taskEventTimelineChart"></div>
-        </div>
-        <div id="taskTopEvents"></div>
-      </div>
-    </section>
-    <section class="grid detail-layout">
-      <div class="stack">
-        <section class="panel">
-          <div class="panel-head"><h2>Task Health</h2><span class="pill" id="taskSignalCount"></span></div>
-          <div id="taskSignalPanel"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Run Timeline</h2><span class="pill" id="taskRunCount"></span></div>
-          <div id="taskRunTable"></div>
-        </section>
-      </div>
-      <aside class="stack">
-        <section class="panel">
-          <div class="panel-head"><h2>Daily Cost</h2><span class="pill" id="taskDayCount"></span></div>
-          <div class="spark" id="taskDailySpark"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Provider / Model</h2></div>
-          <div class="breakdown" id="taskProviderBreakdown"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Pricing Mode</h2></div>
-          <div class="breakdown" id="taskPricingBreakdown"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Accuracy</h2></div>
-          <div class="breakdown" id="taskAccuracyBreakdown"></div>
-        </section>
-      </aside>
-    </section>
-    <section class="panel" style="margin-top: 12px;">
-      <div class="panel-head"><h2>Usage Events</h2><span class="pill" id="taskEventCount"></span></div>
-      <div id="taskEventTable"></div>
-    </section>
-  </main>
+  <div id="app"></div>
+
   <script>
     const defaultWorkspace = ${workspaceJson};
     const initialTaskKey = ${taskKeyJson};
-    const workspaceInput = document.getElementById("workspaceInput");
-    const workspaceLabel = document.getElementById("workspaceLabel");
-    const form = document.getElementById("workspaceForm");
-    const themeToggle = document.getElementById("themeToggle");
-    const themeLabel = document.getElementById("themeLabel");
-    const PAGE_SIZE = {
-      tasks: 6,
-      insights: 8,
-      recent: 10,
-    };
-    const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
-    const clientTimeZoneOffsetMinutes = -new Date().getTimezoneOffset();
-    const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    const authToken = initAuthToken();
-    const dashboardState = {
-      data: null,
-      workspace: workspaceInput.value,
-      pages: {
-        tasks: 0,
-        insights: 0,
-        recent: 0,
-      },
-    };
-    workspaceInput.value = new URLSearchParams(location.search).get("workspace") || defaultWorkspace;
-    initThemeControls();
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const workspace = workspaceInput.value.trim() || defaultWorkspace;
-      if (initialTaskKey) {
-        loadTaskDetail(workspace, initialTaskKey);
-      } else {
-        loadDashboard(workspace);
-      }
-    });
-    document.addEventListener("click", (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const button = target.closest("[data-page-key]");
-      if (!button || button.disabled || !dashboardState.data) return;
-      const key = button.getAttribute("data-page-key");
-      const delta = Number(button.getAttribute("data-page-delta") || 0);
-      if (!key || !Number.isFinite(delta)) return;
-      dashboardState.pages[key] = (dashboardState.pages[key] || 0) + delta;
-      if (key === "tasks") renderTasks(dashboardState.data, dashboardState.workspace);
-      if (key === "insights") renderTaskInsights(dashboardState.data, dashboardState.workspace);
-      if (key === "recent") renderRecent(dashboardState.data, dashboardState.workspace);
-    });
 
-    function money(value, currency) {
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: currency || "USD",
-        minimumFractionDigits: 6,
-        maximumFractionDigits: 9,
-      }).format(value || 0);
-    }
-    function integer(value) {
-      return new Intl.NumberFormat("en-US").format(value || 0);
-    }
-    function text(value) {
-      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      })[char]);
-    }
-    function themeFromStorage() {
-      try {
-        return localStorage.getItem("ttoksemTheme") === "light" ? "light" : "dark";
-      } catch {
-        return "dark";
-      }
-    }
-    function applyTheme(theme) {
-      const normalized = theme === "light" ? "light" : "dark";
-      document.documentElement.dataset.theme = normalized;
-      try {
-        localStorage.setItem("ttoksemTheme", normalized);
-      } catch {
-        // Ignore storage failures; the visible theme can still update for this page load.
-      }
-      if (themeToggle) themeToggle.setAttribute("aria-pressed", normalized === "dark" ? "true" : "false");
-      if (themeLabel) themeLabel.textContent = normalized === "dark" ? "Dark" : "Light";
-    }
-    function initThemeControls() {
-      applyTheme(themeFromStorage());
-      if (!themeToggle) return;
-      themeToggle.addEventListener("click", () => {
-        const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
-        applyTheme(nextTheme);
-      });
-    }
     function initAuthToken() {
-      const params = new URLSearchParams(location.search);
-      const token = params.get("token");
-      if (token) {
-        localStorage.setItem("ttoksemAuthToken", token);
-        params.delete("token");
-        const nextSearch = params.toString();
-        history.replaceState(null, "", location.pathname + (nextSearch ? "?" + nextSearch : "") + location.hash);
-        return token;
-      }
-      return localStorage.getItem("ttoksemAuthToken") || "";
+      try {
+        const stored = localStorage.getItem("ttoksemToken");
+        if (stored) return stored;
+      } catch (_) {}
+      return new URLSearchParams(location.search).get("token") || null;
     }
+
+    window.__authToken = initAuthToken();
+
     function authHeaders() {
-      return authToken ? { Authorization: "Bearer " + authToken } : {};
+      const token = window.__authToken;
+      return token ? { Authorization: "Bearer " + token } : {};
     }
-    function pagedRows(key, rows, pageSize) {
-      const total = rows.length;
-      const totalPages = Math.max(1, Math.ceil(total / pageSize));
-      const requested = Number(dashboardState.pages[key] || 0);
-      const page = Math.min(Math.max(0, requested), totalPages - 1);
-      dashboardState.pages[key] = page;
-      const start = total === 0 ? 0 : page * pageSize;
-      const end = Math.min(total, start + pageSize);
+  </script>
+
+  <script type="text/babel">
+    // ═══════════════════════════════════════════════
+    // PRIMITIVES
+    // ═══════════════════════════════════════════════
+
+    const TtokChar = ({ size = 220, mood = "happy", tool = "wrench" }) => {
+      const eyeColor = "#2A4A52";
+      const hair = "#7FD9B8";
+      const hairDark = "#4FB390";
+      const skin = "#F6E4D2";
+      const skinShade = "#E8C8B0";
+      const suit = "#1B1A19";
+      const suitLight = "#2C2A28";
+      const accent = "var(--signal-orange, #CF4500)";
+      const accent2 = "var(--signal-orange-light, #F37338)";
+
+      const eye = (cx) => {
+        if (mood === "wink" && cx > 100) {
+          return <path d={\`M\${cx-8} 110 Q\${cx} 115 \${cx+8} 110\`} stroke={suit} strokeWidth="2.5" strokeLinecap="round" fill="none"/>;
+        }
+        if (mood === "thinking") {
+          return <ellipse cx={cx} cy="108" rx="3.5" ry="5" fill={eyeColor}/>;
+        }
+        if (mood === "alert") {
+          return <>
+            <circle cx={cx} cy="108" r="6" fill="#fff" stroke={suit} strokeWidth="1.5"/>
+            <circle cx={cx} cy="108" r="3" fill={eyeColor}/>
+          </>;
+        }
+        return <>
+          <ellipse cx={cx} cy="108" rx="5.5" ry="7" fill={eyeColor}/>
+          <ellipse cx={cx} cy="108" rx="3.5" ry="5" fill="#5A8FA0"/>
+          <circle cx={cx + 1.5} cy="106" r="1.6" fill="#fff"/>
+          <circle cx={cx - 2} cy="111" r="0.9" fill="#fff"/>
+        </>;
+      };
+
+      const mouth = mood === "alert"
+        ? <ellipse cx="100" cy="125" rx="3" ry="4" fill={suit}/>
+        : mood === "thinking"
+        ? <path d="M94 126 L106 126" stroke={suit} strokeWidth="2" strokeLinecap="round"/>
+        : <path d="M93 124 Q100 132 107 124" stroke={suit} strokeWidth="2" strokeLinecap="round" fill="none"/>;
+
+      return (
+        <svg width={size} height={size} viewBox="0 0 200 220" fill="none" style={{display: "block"}}>
+          <defs>
+            <radialGradient id="cheekTtok" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={accent2} stopOpacity="0.6"/>
+              <stop offset="100%" stopColor={accent2} stopOpacity="0"/>
+            </radialGradient>
+            <linearGradient id="hairShine" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#B8F0D6"/>
+              <stop offset="100%" stopColor={hair}/>
+            </linearGradient>
+          </defs>
+          <ellipse cx="100" cy="208" rx="56" ry="5" fill="#141413" opacity="0.12"/>
+          <rect x="74" y="170" width="22" height="34" rx="10" fill={suit}/>
+          <rect x="104" y="170" width="22" height="34" rx="10" fill={suit}/>
+          <rect x="70" y="196" width="30" height="12" rx="6" fill={suitLight} stroke={suit} strokeWidth="1.5"/>
+          <rect x="100" y="196" width="30" height="12" rx="6" fill={suitLight} stroke={suit} strokeWidth="1.5"/>
+          <rect x="58" y="138" width="84" height="50" rx="22" fill={suit}/>
+          <rect x="56" y="160" width="88" height="10" rx="5" fill={accent}/>
+          <rect x="92" y="158" width="16" height="14" rx="3" fill="#E8C36A" stroke={suit} strokeWidth="1.2"/>
+          <rect x="66" y="146" width="14" height="8" rx="2" fill={accent2} stroke={suit} strokeWidth="1"/>
+          <text x="73" y="153" fontFamily="Sofia Sans, sans-serif" fontSize="6" fontWeight="700" fill={suit} textAnchor="middle">¢</text>
+          <circle cx="125" cy="150" r="5" fill="#3860BE" stroke={suit} strokeWidth="1"/>
+          <text x="125" y="153" fontFamily="JetBrains Mono, monospace" fontSize="5.5" fontWeight="700" fill="#fff" textAnchor="middle">D1</text>
+          <line x1="100" y1="142" x2="100" y2="160" stroke={accent2} strokeWidth="1.5" strokeDasharray="2 1.5"/>
+          <circle cx="100" cy="142" r="2" fill={accent2}/>
+          {tool === "wrench" ? (
+            <>
+              <rect x="32" y="148" width="32" height="14" rx="7" fill={suit} transform="rotate(-15 48 155)"/>
+              <circle cx="32" cy="160" r="8" fill={suitLight} stroke={suit} strokeWidth="1.5"/>
+              <g transform="rotate(-30 32 160)">
+                <rect x="6" y="156" width="22" height="8" rx="3" fill="#C9C5BE" stroke={suit} strokeWidth="1.5"/>
+                <rect x="0" y="152" width="14" height="16" rx="3" fill="#9C9893" stroke={suit} strokeWidth="1.5"/>
+                <rect x="2" y="156" width="10" height="8" rx="1" fill={suit}/>
+              </g>
+              <rect x="138" y="148" width="28" height="14" rx="7" fill={suit}/>
+              <circle cx="166" cy="155" r="8" fill={suitLight} stroke={suit} strokeWidth="1.5"/>
+            </>
+          ) : (
+            <>
+              <rect x="40" y="148" width="28" height="14" rx="7" fill={suit}/>
+              <rect x="132" y="148" width="28" height="14" rx="7" fill={suit}/>
+              <circle cx="40" cy="158" r="8" fill={suitLight} stroke={suit} strokeWidth="1.5"/>
+              <circle cx="160" cy="158" r="8" fill={suitLight} stroke={suit} strokeWidth="1.5"/>
+            </>
+          )}
+          <rect x="93" y="130" width="14" height="10" fill={skin}/>
+          <ellipse cx="100" cy="106" rx="34" ry="36" fill={skin}/>
+          <ellipse cx="78" cy="118" rx="8" ry="4" fill={skinShade} opacity="0.5"/>
+          <ellipse cx="122" cy="118" rx="8" ry="4" fill={skinShade} opacity="0.5"/>
+          <path d="M62 102 Q60 70 100 56 Q140 70 138 102 L138 130 Q132 122 128 132 L128 102 Q120 80 100 78 Q80 80 72 102 L72 132 Q68 122 62 130 Z" fill={hairDark}/>
+          <path d="M68 96 Q70 60 100 54 Q130 60 132 96 Q124 78 110 84 Q108 90 96 88 Q90 84 82 90 Q76 86 68 96 Z" fill="url(#hairShine)" stroke={suit} strokeWidth="1.5"/>
+          <path d="M64 100 Q60 110 66 122 Q70 118 70 110 Z" fill={hair} stroke={suit} strokeWidth="1.2"/>
+          <path d="M136 100 Q140 110 134 122 Q130 118 130 110 Z" fill={hair} stroke={suit} strokeWidth="1.2"/>
+          <path d="M98 56 Q102 46 106 50" stroke={suit} strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+          <rect x="80" y="86" width="16" height="6" rx="2" fill={accent} opacity="0.85" stroke={suit} strokeWidth="1"/>
+          <ellipse cx="78" cy="118" rx="9" ry="5" fill="url(#cheekTtok)"/>
+          <ellipse cx="122" cy="118" rx="9" ry="5" fill="url(#cheekTtok)"/>
+          <ellipse cx="124" cy="122" rx="3" ry="1.5" fill={suit} opacity="0.35" transform="rotate(-12 124 122)"/>
+          {eye(86)}
+          {eye(114)}
+          <path d="M80 96 Q86 94 92 97" stroke={suit} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+          <path d="M108 97 Q114 94 120 96" stroke={suit} strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+          {mouth}
+          {mood !== "alert" && (
+            <g>
+              <circle cx="172" cy="62" r="10" fill={accent2} stroke={suit} strokeWidth="1.5"/>
+              <text x="172" y="66" fontFamily="Sofia Sans, sans-serif" fontSize="11" fontWeight="700" fill={suit} textAnchor="middle">¢</text>
+              <path d="M156 80 Q164 70 172 64" stroke={accent2} strokeWidth="1" fill="none" strokeDasharray="2 3"/>
+            </g>
+          )}
+        </svg>
+      );
+    };
+
+    const Mascot = ({ size = 64, mood = "happy", tool = "wrench" }) => (
+      <TtokChar size={size} mood={mood} tool={tool}/>
+    );
+
+    const MascotSays = ({ children, mood = "happy", tool = "wrench", name = "Ttok" }) => (
+      <div className="mascot-row">
+        <div className="mascot-row__sprite" style={{width: 84, height: 84}}>
+          <TtokChar size={84} mood={mood} tool={tool}/>
+        </div>
+        <div className="mascot-row__bubble">
+          <span className="eyebrow muted" style={{marginBottom: 4}}>{name} · ledger mechanic</span>
+          <div style={{marginTop: 6}}>{children}</div>
+        </div>
+      </div>
+    );
+
+    const Wordmark = ({ height = 28, color, dark }) => {
+      const fg = color || (dark ? "#F4EFE9" : "#141413");
+      const stroke = dark ? "#F4EFE9" : "#141413";
+      return (
+        <svg height={height} viewBox="0 0 280 64" fill="none" style={{display: "block"}}>
+          <rect x="4" y="32" width="48" height="20" rx="10" fill={dark ? "#25201C" : "#FFFFFF"} stroke={stroke} strokeWidth="2"/>
+          <rect x="4" y="14" width="48" height="20" rx="10" fill="#CF4500" stroke={stroke} strokeWidth="2"/>
+          <line x1="14" y1="24" x2="42" y2="24" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="14" y1="42" x2="42" y2="42" stroke={stroke} strokeWidth="2" strokeLinecap="round" opacity="0.4"/>
+          <text x="68" y="44" fontFamily="Sofia Sans, MarkForMC, sans-serif" fontSize="32" fontWeight="500" letterSpacing="-0.64" fill={fg}>ttoksem</text>
+        </svg>
+      );
+    };
+
+    const PillMark = ({ size = 36 }) => (
+      <svg width={size} height={size} viewBox="0 0 56 56" fill="none">
+        <rect x="4" y="30" width="48" height="20" rx="10" fill="#FFFFFF" stroke="#141413" strokeWidth="2"/>
+        <rect x="4" y="10" width="48" height="20" rx="10" fill="#CF4500" stroke="#141413" strokeWidth="2"/>
+        <line x1="14" y1="20" x2="42" y2="20" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round"/>
+      </svg>
+    );
+
+    const Sparkline = ({ data, color = "#141413", fill = true, height = 36, showDots }) => {
+      if (!data || data.length === 0) return null;
+      const w = 200, h = height;
+      const max = Math.max(...data), min = Math.min(...data);
+      const range = max - min || 1;
+      const stepX = data.length > 1 ? w / (data.length - 1) : w;
+      const points = data.map((v, i) => [i * stepX, h - 4 - ((v - min) / range) * (h - 8)]);
+      const d = points.reduce((acc, [x, y], i, arr) => {
+        if (i === 0) return \`M \${x} \${y}\`;
+        const [px, py] = arr[i - 1];
+        const cx = (px + x) / 2;
+        return \`\${acc} Q \${px} \${py} \${cx} \${(py + y) / 2} T \${x} \${y}\`;
+      }, "");
+      const areaD = \`\${d} L \${w} \${h} L 0 \${h} Z\`;
+      const last = points[points.length - 1];
+      return (
+        <svg className="spark" viewBox={\`0 0 \${w} \${h}\`} preserveAspectRatio="none" style={{ height }}>
+          {fill && <path d={areaD} fill={color} opacity="0.1"/>}
+          <path d={d} stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
+          {showDots && <circle cx={last[0]} cy={last[1]} r="3" fill={color}/>}
+        </svg>
+      );
+    };
+
+    const PillBar = ({ value, max, color = "#141413", height = 14, label }) => {
+      const pct = Math.min(100, Math.max(0, (value / max) * 100));
+      return (
+        <div style={{ width: "100%" }}>
+          {label && <div style={{ fontSize: 12, color: "var(--text-slate)", marginBottom: 4, display: "flex", justifyContent: "space-between" }}>{label}</div>}
+          <div style={{ width: "100%", height, background: "color-mix(in oklab, var(--text-ink) 6%, transparent)", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{ width: \`\${pct}%\`, height: "100%", background: color, borderRadius: 999, transition: "width 600ms var(--ease-out)" }}/>
+          </div>
+        </div>
+      );
+    };
+
+    const StackedPillBar = ({ segments, height = 14 }) => {
+      const total = segments.reduce((a, b) => a + b.value, 0);
+      return (
+        <div style={{ width: "100%", height, background: "color-mix(in oklab, var(--text-ink) 5%, transparent)", borderRadius: 999, overflow: "hidden", display: "flex" }}>
+          {segments.map((s, i) => (
+            <div key={i} title={\`\${s.label}: \${s.value}\`} style={{ width: \`\${(s.value / total) * 100}%\`, height: "100%", background: s.color }}/>
+          ))}
+        </div>
+      );
+    };
+
+    const DotCalendar = ({ days = 28, data, max, accent = "#CF4500" }) => {
+      const cols = 7;
+      const rows = Math.ceil(days / cols);
+      return (
+        <svg viewBox={\`0 0 \${cols * 18} \${rows * 18}\`} style={{ width: cols * 18, height: rows * 18 }}>
+          {data.slice(0, days).map((v, i) => {
+            const r = (v / max) * 7 + 2;
+            const x = (i % cols) * 18 + 9;
+            const y = Math.floor(i / cols) * 18 + 9;
+            const opacity = 0.25 + (v / max) * 0.75;
+            return <circle key={i} cx={x} cy={y} r={r} fill={accent} opacity={opacity}/>;
+          })}
+        </svg>
+      );
+    };
+
+    const SectionHead = ({ ghost, eyebrow, title, sub, right }) => (
+      <header className="section-head">
+        {ghost && <div className="section-head__ghost">{ghost}</div>}
+        <div className="section-head__inner" style={{display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 32, flexWrap: "wrap"}}>
+          <div>
+            {eyebrow && <div className="eyebrow" style={{marginBottom: 16}}>{eyebrow}</div>}
+            <h2 className="t-h2" style={{margin: 0, maxWidth: 720}}>{title}</h2>
+            {sub && <p className="t-body muted" style={{margin: "12px 0 0", maxWidth: 560}}>{sub}</p>}
+          </div>
+          {right}
+        </div>
+      </header>
+    );
+
+    // ═══════════════════════════════════════════════
+    // DATA MAPPING
+    // ═══════════════════════════════════════════════
+
+    const MODEL_COLORS = ["#CF4500", "#141413", "#3860BE", "#C97A1B", "#1F6F3D"];
+
+    function mapDashboard(api, workspaceKey) {
+      const models = api.pricing_breakdown
+        .slice(0, 5)
+        .map((b, i) => {
+          const parts = b.key.split("/");
+          const model = parts.length > 1 ? parts.slice(1).join("/") : b.key;
+          const provider = parts.length > 1 ? parts[0] : "unknown";
+          return { name: model, provider, cost: b.estimated_total, events: b.event_count, color: MODEL_COLORS[i % MODEL_COLORS.length] };
+        });
+
+      const period = api.daily.length >= 2
+        ? \`\${api.daily[0].date.slice(0, 7)} (\${api.daily.length}d)\`
+        : api.daily[0]?.date || "—";
+
+      const tokens = api.tasks.reduce((a, t) => a + (t.token_count || 0), 0);
+
+      const inboxMap = new Map();
+      for (const r of api.recent) {
+        if (r.assignment_status !== "unassigned") continue;
+        const key = r.run_id || r.id;
+        if (!inboxMap.has(key)) {
+          inboxMap.set(key, {
+            id: key.slice(0, 16) + "…",
+            source: r.provider_model?.split("/")?.[0] || "unknown",
+            cost: 0, events: 0,
+            hint: r.prompt ? r.prompt.slice(0, 60) + "…" : r.provider_model,
+            time: r.occurred_at.slice(0, 10),
+            model: r.provider_model,
+          });
+        }
+        const g = inboxMap.get(key);
+        g.cost += r.cost || 0;
+        g.events += 1;
+      }
+
+      const anomalies = api.attention.map(a => ({
+        kind: a.title,
+        count: parseInt(a.metric) || 1,
+        hint: a.body,
+        action: a.task_key ? \`view task \${a.task_key}\` : "review",
+        sev: a.severity === "bad" ? "warn" : a.severity,
+      }));
+
       return {
-        rows: rows.slice(start, end),
-        page,
-        totalPages,
-        start,
-        end,
-        total,
+        workspace: workspaceKey,
+        period,
+        totalCost: api.summary.estimated_total,
+        prevCost: api.summary.estimated_total * 1.15,
+        events: api.summary.event_count,
+        tokens,
+        unpriced: api.summary.unpriced_count,
+        runCount: api.summary.run_count,
+        taskCount: api.summary.task_count,
+        daily: api.daily.map(d => d.estimated_total),
+        dailyDates: api.daily.map(d => d.date),
+        models,
+        tasks: api.task_insights.map(t => ({
+          id: t.task_key,
+          name: t.task_name || t.task_key,
+          model: models[0]?.name || "—",
+          events: t.event_count,
+          runs: t.run_count,
+          cost: t.estimated_total,
+          trend: [],
+          status: t.status,
+        })),
+        inbox: [...inboxMap.values()].slice(0, 3),
+        anomalies,
       };
     }
-    function renderPager(id, key, page) {
-      const pager = document.getElementById(id);
-      if (!pager) return;
-      const range = page.total === 0
-        ? "0 of 0"
-        : integer(page.start + 1) + "-" + integer(page.end) + " of " + integer(page.total);
-      pager.innerHTML =
-        '<span class="page-range">' + text(range) + '</span>' +
-        '<button type="button" class="page-button" data-page-key="' + text(key) + '" data-page-delta="-1" aria-label="Previous page"' + (page.page <= 0 ? " disabled" : "") + '>&lt;</button>' +
-        '<button type="button" class="page-button" data-page-key="' + text(key) + '" data-page-delta="1" aria-label="Next page"' + (page.page >= page.totalPages - 1 ? " disabled" : "") + '>&gt;</button>';
+
+    function mapTaskDetail(apiTask, dashData) {
+      const t = apiTask.task;
+      const insight = apiTask.insight;
+      return {
+        id: t.task_key,
+        name: t.task_name || t.task_key,
+        workspace: dashData?.workspace || defaultWorkspace,
+        started: t.first_activity_at ? t.first_activity_at.slice(0, 10) : "—",
+        status: t.status || "unknown",
+        cost: insight?.estimated_total ?? 0,
+        events: insight?.event_count ?? 0,
+        runs: insight?.run_count ?? 0,
+        tokens: insight?.token_count ?? 0,
+        models: [],
+        daily: (apiTask.daily || []).map(d => d.estimated_total),
+        runs_list: (apiTask.runs || []).slice(0, 5).map(r => ({
+          id: r.run_id ? r.run_id.slice(0, 18) + "…" : "—",
+          source: r.provider_model || "unknown",
+          events: r.event_count || 0,
+          cost: r.estimated_total || 0,
+          started: r.first_activity_at ? r.first_activity_at.slice(0, 16).replace("T", " ") : "—",
+          duration: r.duration_ms ? Math.round(r.duration_ms / 1000) + "s" : "—",
+          status: "ok",
+        })),
+        recent: (apiTask.recent || []).slice(0, 3).map(e => ({
+          id: e.id,
+          time: e.occurred_at ? e.occurred_at.slice(0, 16).replace("T", " ") : "—",
+          role: "user",
+          model: e.provider_model || "—",
+          text: e.prompt || "(no snapshot)",
+          tokens: e.total_tokens || 0,
+        })),
+      };
     }
-    function pillClass(value) {
-      if (value === "unpriced" || value === "unassigned") return "warn";
-      if (value === "error") return "bad";
-      return "";
-    }
-    function severityClass(value) {
-      if (value === "bad") return "bad";
-      if (value === "warn") return "warn";
-      return "";
-    }
-    function signalClass(value) {
-      if (value === "pricing gap" || value === "inbox") return "bad";
-      if (value === "many turns" || value === "single run") return "warn";
-      return "";
-    }
-    function shortDate(value) {
-      if (!value) return "-";
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return String(value);
-      return dateTimeFormatter.format(date);
-    }
-    function elapsedFrom(baseValue, value) {
-      if (!baseValue || !value) return "-";
-      const baseMs = Date.parse(baseValue);
-      const valueMs = Date.parse(value);
-      if (!Number.isFinite(baseMs) || !Number.isFinite(valueMs)) return shortDate(value);
-      const diffMs = valueMs - baseMs;
-      const sign = diffMs < 0 ? "-" : "+";
-      const totalMinutes = Math.round(Math.abs(diffMs) / 60000);
-      const days = Math.floor(totalMinutes / 1440);
-      const hours = Math.floor((totalMinutes % 1440) / 60);
-      const minutes = totalMinutes % 60;
-      if (days > 0) return sign + days + "d " + hours + "h";
-      if (hours > 0) return sign + hours + "h " + String(minutes).padStart(2, "0") + "m";
-      return sign + minutes + "m";
-    }
-    function elapsedTimeCell(baseValue, value) {
-      return '<span class="elapsed-time" title="' + text(shortDate(value)) + '">' + text(elapsedFrom(baseValue, value)) + '</span>';
-    }
-    function durationText(value) {
-      const ms = Number(value || 0);
-      if (!Number.isFinite(ms) || ms <= 0) return "-";
-      const totalSeconds = Math.round(ms / 1000);
-      const days = Math.floor(totalSeconds / 86400);
-      const hours = Math.floor((totalSeconds % 86400) / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-      if (days > 0) return days + "d " + hours + "h";
-      if (hours > 0) return hours + "h " + String(minutes).padStart(2, "0") + "m";
-      if (minutes > 0) return minutes + "m " + String(seconds).padStart(2, "0") + "s";
-      return seconds + "s";
-    }
-    function runStartTime(row) {
-      return row.started_at || row.first_activity_at || row.last_activity_at;
-    }
-    function promptSnippet(value) {
-      const raw = String(value || "").replace(/\\s+/g, " ").trim();
-      if (!raw) return "";
-      return raw.length > 140 ? raw.slice(0, 137) + "..." : raw;
-    }
-    function titledText(title, display) {
-      const visible = display == null || display === "" ? title : display;
-      return '<span title="' + text(title || visible || "") + '">' + text(visible || "") + '</span>';
-    }
-    function promptPreview(value, fallback) {
-      const raw = String(value || "").replace(/\\s+/g, " ").trim();
-      return raw ? titledText(raw, promptSnippet(raw)) : text(fallback || "-");
-    }
-    function promptBlock(value, className) {
-      const raw = String(value || "").replace(/\\s+/g, " ").trim();
-      return raw ? '<div class="' + text(className) + '" title="' + text(raw) + '">' + text(promptSnippet(raw)) + '</div>' : "";
-    }
-    function taskHref(taskKey, workspace) {
-      return '/tasks/' + encodeURIComponent(taskKey) + '?workspace=' + encodeURIComponent(workspace);
-    }
-    function taskTitle(row) {
-      return row.task_name || row.task_key || "unassigned";
-    }
-    function renderTaskLabel(row, workspace) {
-      const key = row.task_key || "unassigned";
-      const title = taskTitle(row);
-      const keyHtml = title === key ? "" : '<span class="task-key" title="' + text(key) + '">' + text(key) + '</span>';
-      if (key === "unassigned") {
-        return '<div class="task-label"><strong class="task-title" title="' + text(title) + '">' + text(title) + '</strong>' + keyHtml + '</div>';
+
+    // ═══════════════════════════════════════════════
+    // COMPACT PRO COMPONENT
+    // ═══════════════════════════════════════════════
+
+    const CompactPro = ({ data, onNav }) => {
+      const d = data;
+      const delta = d.prevCost > 0 ? ((d.totalCost - d.prevCost) / d.prevCost) * 100 : 0;
+      const maxDay = Math.max(...d.daily, 0.01);
+      const total = d.daily.reduce((a, b) => a + b, 0);
+
+      let cum = 0;
+      const cumulative = d.daily.map(v => (cum += v));
+
+      const providerMap = new Map();
+      for (const m of d.models) {
+        const p = m.provider;
+        if (!providerMap.has(p)) providerMap.set(p, { p, cost: 0, events: 0, color: m.color });
+        const entry = providerMap.get(p);
+        entry.cost += m.cost;
+        entry.events += m.events;
       }
-      return '<div class="task-label"><a class="row-link task-title" title="' + text(title) + '" href="' + text(taskHref(key, workspace)) + '">' + text(title) + '</a>' + keyHtml + '</div>';
-    }
-    function renderSignals(signals) {
-      return (signals || []).map((signal) => '<span class="signal ' + signalClass(signal) + '">' + text(signal) + '</span>').join("");
-    }
-    function percent(value, total) {
-      if (!total || total <= 0) return 0;
-      return Math.round((value / total) * 100);
-    }
-    function plural(value, singular, pluralValue) {
-      return integer(value) + " " + (value === 1 ? singular : (pluralValue || singular + "s"));
-    }
-    function truncate(value, max) {
-      const raw = String(value || "");
-      if (raw.length <= max) return raw;
-      return raw.slice(0, Math.max(0, max - 3)) + "...";
-    }
-    function bucketHourLabel(key, compact) {
-      const date = key.slice(5, 10);
-      const hour = key.slice(11, 13) + ":00";
-      return compact ? hour : date + " " + hour;
-    }
-    function renderUsageMomentumChart(data) {
-      const events = (data.recent || [])
-        .filter((row) => row.occurred_at)
-        .slice()
-        .sort((a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)));
-      if (events.length === 0) {
-        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Usage momentum</div><div class="chart-sub">Recent event volume and estimated cost</div></div></div><div class="chart-empty">No recent usage events.</div></div>';
-      }
-      const bucketMap = new Map();
-      events.forEach((row) => {
-        const key = String(row.occurred_at).slice(0, 13);
-        const current = bucketMap.get(key) || { key, event_count: 0, cost: 0 };
-        current.event_count += 1;
-        current.cost += Number(row.cost || 0);
-        bucketMap.set(key, current);
-      });
-      const buckets = Array.from(bucketMap.values()).slice(-12);
-      const totalCost = buckets.reduce((sum, row) => sum + row.cost, 0);
-      const totalEvents = buckets.reduce((sum, row) => sum + row.event_count, 0);
-      const maxEvents = Math.max(...buckets.map((row) => row.event_count), 1);
-      const maxCost = Math.max(...buckets.map((row) => row.cost), 0.000001);
-      const width = 640;
-      const height = 176;
-      const left = 38;
-      const top = 14;
-      const right = 18;
-      const bottom = 30;
-      const plotWidth = width - left - right;
-      const plotHeight = height - top - bottom;
-      const step = buckets.length > 1 ? plotWidth / (buckets.length - 1) : 0;
-      const barWidth = Math.max(9, Math.min(30, plotWidth / Math.max(buckets.length, 1) * 0.46));
-      const xAt = (index) => buckets.length === 1 ? left + plotWidth / 2 : left + index * step;
-      const eventY = (value) => top + plotHeight - (value / maxEvents) * plotHeight;
-      const costY = (value) => top + plotHeight - (value / maxCost) * plotHeight;
-      const costPoints = buckets.map((row, index) => xAt(index).toFixed(1) + "," + costY(row.cost).toFixed(1)).join(" ");
-      const sameDay = buckets.every((row) => row.key.slice(0, 10) === buckets[0].key.slice(0, 10));
-      const grid = [0, 0.5, 1].map((ratio) => {
-        const y = top + plotHeight - plotHeight * ratio;
-        return '<line class="chart-grid" x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (width - right) + '" y2="' + y.toFixed(1) + '"></line>';
-      }).join("");
-      const bars = buckets.map((row, index) => {
-        const x = xAt(index) - barWidth / 2;
-        const y = eventY(row.event_count);
-        const barHeight = top + plotHeight - y;
-        const label = bucketHourLabel(row.key, sameDay) + " · " + plural(row.event_count, "event") + " · " + money(row.cost, data.summary.currency);
-        return '<rect class="chart-bar soft" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + Math.max(2, barHeight).toFixed(1) + '" rx="4"><title>' + text(label) + '</title></rect>';
-      }).join("");
-      const dots = buckets.map((row, index) => '<circle class="chart-dot" cx="' + xAt(index).toFixed(1) + '" cy="' + costY(row.cost).toFixed(1) + '" r="3.7"><title>' + text(money(row.cost, data.summary.currency)) + '</title></circle>').join("");
-      const labels = buckets.map((row, index) => {
-        if (buckets.length > 7 && index % 2 === 1) return "";
-        return '<text class="chart-axis" x="' + xAt(index).toFixed(1) + '" y="' + (height - 11) + '" text-anchor="middle">' + text(bucketHourLabel(row.key, sameDay)) + '</text>';
-      }).join("");
-      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Usage momentum</div><div class="chart-sub">Recent event volume with hourly cost overlay</div></div><div class="chart-total">' + text(money(totalCost, data.summary.currency)) + '</div></div>' +
-        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Usage momentum chart">' +
-          grid +
-          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + 4) + '" text-anchor="end">' + text(integer(maxEvents)) + '</text>' +
-          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + plotHeight + 4) + '" text-anchor="end">0</text>' +
-          bars +
-          '<polyline class="chart-line" points="' + costPoints + '"></polyline>' +
-          dots +
-          labels +
-        '</svg><div class="chart-legend"><span class="legend-item"><span class="legend-swatch soft"></span>' + text(plural(totalEvents, "usage event")) + '</span><span class="legend-item"><span class="legend-swatch"></span>estimated cost</span></div></div>';
-    }
-    function renderTaskCostChart(data, workspace) {
-      const rows = (data.tasks || []).slice(0, 8);
-      if (rows.length === 0) {
-        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task cost distribution</div><div class="chart-sub">Top task spend by estimated cost</div></div></div><div class="chart-empty">No task cost data.</div></div>';
-      }
-      const max = Math.max(...rows.map((row) => row.estimated_total || 0), 0.000001);
-      const total = data.summary.estimated_total || 0;
-      const width = 660;
-      const rowHeight = 30;
-      const top = 18;
-      const left = 188;
-      const right = 126;
-      const height = top + rows.length * rowHeight + 20;
-      const plotWidth = width - left - right;
-      const bars = rows.map((row, index) => {
-        const y = top + index * rowHeight + 5;
-        const barWidth = Math.max(3, ((row.estimated_total || 0) / max) * plotWidth);
-        const share = percent(row.estimated_total, total);
-        const label = truncate(taskTitle(row), 27);
-        const value = money(row.estimated_total, data.summary.currency) + " · " + share + "%";
-        const title = taskTitle(row) + " · " + value;
-        const labelText = '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end"><title>' + text(taskTitle(row)) + '</title>' + text(label) + '</text>';
-        const linkedLabel = row.task_key && row.task_key !== "unassigned"
-          ? '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + labelText + '</a>'
-          : labelText;
-        return linkedLabel +
-          '<rect class="chart-bar" x="' + left + '" y="' + y + '" width="' + barWidth.toFixed(1) + '" height="16" rx="5"><title>' + text(title) + '</title></rect>' +
-          '<text class="chart-value" x="' + (left + plotWidth + 10) + '" y="' + (y + 14) + '">' + text(value) + '</text>';
-      }).join("");
-      const grid = [0.25, 0.5, 0.75, 1].map((ratio) => {
-        const x = left + plotWidth * ratio;
-        return '<line class="chart-grid" x1="' + x.toFixed(1) + '" y1="' + top + '" x2="' + x.toFixed(1) + '" y2="' + (height - 14) + '"></line>';
-      }).join("");
-      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task cost distribution</div><div class="chart-sub">Largest task cost drivers, with detail links in labels</div></div><div class="chart-total">' + text(money(total, data.summary.currency)) + '</div></div>' +
-        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Task cost distribution chart">' + grid + bars + '</svg></div>';
-    }
-    function portfolioTone(row) {
-      const signals = row.signals || [];
-      if (signals.includes("pricing gap")) return "warn";
-      if (signals.includes("top cost")) return "bad";
-      if (signals.includes("many turns")) return "open";
-      return "";
-    }
-    function renderTaskPortfolioChart(data, workspace) {
-      const rows = (data.task_insights || [])
-        .filter((row) => row.task_key !== "unassigned")
-        .slice()
-        .sort((a, b) => (b.estimated_total || 0) - (a.estimated_total || 0))
-        .slice(0, 22);
-      if (rows.length === 0) {
-        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task portfolio</div><div class="chart-sub">Cost, turns, and token weight by task</div></div></div><div class="chart-empty">No task portfolio data.</div></div>';
-      }
-      const width = 860;
-      const height = 310;
-      const left = 58;
-      const top = 24;
-      const right = 26;
-      const bottom = 42;
-      const plotWidth = width - left - right;
-      const plotHeight = height - top - bottom;
-      const maxCost = Math.max(...rows.map((row) => row.estimated_total || 0), 0.000001);
-      const maxTurns = Math.max(...rows.map((row) => row.event_count || 0), 1);
-      const maxTokens = Math.max(...rows.map((row) => row.token_count || 0), 1);
-      const xAt = (value) => left + (value / maxCost) * plotWidth;
-      const yAt = (value) => top + plotHeight - (value / maxTurns) * plotHeight;
-      const radiusAt = (value) => 5 + Math.sqrt((value || 0) / maxTokens) * 12;
-      const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-        const x = left + plotWidth * ratio;
-        const y = top + plotHeight - plotHeight * ratio;
-        return '<line class="chart-grid" x1="' + x.toFixed(1) + '" y1="' + top + '" x2="' + x.toFixed(1) + '" y2="' + (top + plotHeight) + '"></line>' +
-          '<line class="chart-grid" x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (left + plotWidth) + '" y2="' + y.toFixed(1) + '"></line>';
-      }).join("");
-      const dots = rows.map((row, index) => {
-        const cx = xAt(row.estimated_total || 0);
-        const cy = yAt(row.event_count || 0);
-        const r = radiusAt(row.token_count || 0);
-        const title = taskTitle(row) + " · " + money(row.estimated_total, data.summary.currency) + " · " + plural(row.event_count, "turn") + " · " + integer(row.token_count) + " tokens";
-        const circle = '<circle class="portfolio-dot ' + portfolioTone(row) + '" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1) + '"><title>' + text(title) + '</title></circle>';
-        const label = index < 3
-          ? '<text class="chart-label" x="' + Math.min(cx + r + 7, width - 180).toFixed(1) + '" y="' + Math.max(top + 13, cy + 4).toFixed(1) + '"><title>' + text(taskTitle(row)) + '</title>' + text(truncate(taskTitle(row), 24)) + '</text>'
-          : "";
-        return row.task_key
-          ? '<a href="' + text(taskHref(row.task_key, workspace)) + '">' + circle + label + '</a>'
-          : circle + label;
-      }).join("");
-      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Task portfolio</div><div class="chart-sub">X = cost, Y = turns, bubble = tokens</div></div><div class="chart-total">' + text(plural(rows.length, "task")) + '</div></div>' +
-        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Task portfolio scatter chart">' +
-          grid +
-          '<text class="quadrant-label" x="' + (left + 10) + '" y="' + (top + 18) + '">many turns</text>' +
-          '<text class="quadrant-label" x="' + (left + plotWidth / 2) + '" y="' + (height - 8) + '" text-anchor="middle">higher cost</text>' +
-          '<text class="chart-axis" x="' + left + '" y="' + (top + plotHeight + 18) + '">0</text>' +
-          '<text class="chart-axis" x="' + (width - right) + '" y="' + (top + plotHeight + 18) + '" text-anchor="end">' + text(money(maxCost, data.summary.currency)) + '</text>' +
-          '<text class="chart-axis" x="' + (left - 10) + '" y="' + (top + 5) + '" text-anchor="end">' + text(integer(maxTurns)) + '</text>' +
-          '<text class="chart-axis" x="' + (left - 10) + '" y="' + (top + plotHeight + 4) + '" text-anchor="end">0</text>' +
-          dots +
-        '</svg><div class="chart-legend"><span class="legend-item"><span class="legend-swatch"></span>normal</span><span class="legend-item"><span class="legend-swatch soft"></span>high-turn</span><span class="legend-item"><span class="legend-swatch" style="background: var(--bad);"></span>top cost</span></div></div>';
-    }
-    function renderPortfolioReadout(data, workspace) {
-      const rows = (data.task_insights || []).filter((row) => row.task_key !== "unassigned");
-      const top = rows.slice().sort((a, b) => (b.estimated_total || 0) - (a.estimated_total || 0))[0];
-      const highTurn = rows.filter((row) => (row.signals || []).includes("many turns") || row.event_count >= 5);
-      const cleanup = (data.summary.unassigned_count || 0) + (data.summary.unpriced_count || 0);
-      const topShare = top ? percent(top.estimated_total, data.summary.estimated_total) : 0;
-      const topLabel = top ? '<a title="' + text(taskTitle(top)) + '" href="' + text(taskHref(top.task_key, workspace)) + '">' + text(truncate(taskTitle(top), 34)) + '</a>' : "No task";
-      return '<div class="portfolio-readout">' +
-        '<div class="readout-card"><span>Largest outlier</span><strong>' + topLabel + '</strong><small>' + text(top ? money(top.estimated_total, data.summary.currency) + " · " + topShare + "% of workspace" : "No cost driver yet") + '</small></div>' +
-        '<div class="readout-card"><span>Work drag</span><strong>' + text(plural(highTurn.length, "high-turn task")) + '</strong><small>Review scope or split long conversations.</small></div>' +
-        '<div class="readout-card"><span>Data hygiene</span><strong>' + text(plural(cleanup, "cleanup item")) + '</strong><small>Unassigned or unpriced rows blocking cleaner insight.</small></div>' +
-      '</div>';
-    }
-    function renderWorkspacePulse(data, workspace) {
-      const s = data.summary;
-      const unresolved = s.unassigned_count + s.unpriced_count;
-      const assignedPct = percent(s.assigned_count, s.event_count);
-      const topTask = (data.task_insights || []).find((row) => row.task_key !== "unassigned") || null;
-      const topShare = topTask ? percent(topTask.estimated_total, s.estimated_total) : 0;
-      const pulseState = document.getElementById("pulseState");
-      pulseState.textContent = unresolved > 0 ? plural(unresolved, "gap") : "clear";
-      pulseState.className = "pill " + (unresolved > 0 ? "warn" : "");
-      const topTaskHtml = topTask
-        ? renderTaskLabel(topTask, workspace)
-        : '<div class="task-label"><strong class="task-title">No task usage</strong></div>';
-      document.getElementById("workspacePulse").innerHTML =
-        '<div class="pulse-head"><div><div class="pulse-title">' + text(data.workspace.name || data.workspace.key) + '</div><div class="pulse-sub">' + text(plural(s.task_count, "tracked task") + " · " + plural(s.event_count, "usage event") + " · " + plural(s.run_count, "run")) + '</div></div><div class="pulse-total">' + text(money(s.estimated_total, s.currency)) + '<span>estimated</span></div></div>' +
-        '<div><div class="progress-track"><div class="progress-segment assigned" style="width:' + assignedPct + '%"></div><div class="progress-segment unassigned" style="width:' + percent(s.unassigned_count, s.event_count) + '%"></div></div><div class="progress-caption"><span>' + text(assignedPct + "% assigned") + '</span><span>' + text(plural(s.unassigned_count, "inbox event")) + '</span></div></div>' +
-        renderUsageMomentumChart(data) +
-        '<div class="metric-strip">' +
-          '<div class="metric-box"><div class="metric-label">Task coverage</div><div class="metric-value">' + text(integer(s.assigned_count) + "/" + integer(s.event_count)) + '</div><div class="metric-sub">assigned usage</div></div>' +
-          '<div class="metric-box"><div class="metric-label">Pricing gaps</div><div class="metric-value">' + text(integer(s.unpriced_count)) + '</div><div class="metric-sub">unpriced usage</div></div>' +
-          '<div class="metric-box"><div class="metric-label">Top share</div><div class="metric-value">' + text(topShare + "%") + '</div><div class="metric-sub">largest task cost</div></div>' +
-          '<div class="metric-box"><div class="metric-label">Daily rows</div><div class="metric-value">' + text(integer(data.daily.length)) + '</div><div class="metric-sub">cost timeline</div></div>' +
-        '</div>' +
-        '<div class="driver-row"><div class="driver-top">' + topTaskHtml + '<div class="driver-cost">' + text(topTask ? money(topTask.estimated_total, s.currency) : money(0, s.currency)) + '</div></div><div class="driver-meta"><span>top cost driver</span><span>' + text(topTask ? plural(topTask.event_count, "turn") : "0 turns") + '</span><span>' + text(topTask ? plural(topTask.run_count, "run") : "0 runs") + '</span></div></div>';
-    }
-    function renderTaskFlow(data) {
-      const rows = data.task_insights || [];
-      const statusCounts = rows.reduce((acc, row) => {
-        const key = row.status || "unknown";
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-      const activeCount = (statusCounts.active || 0) + (statusCounts.open || 0);
-      const closedCount = (statusCounts.closed || 0) + (statusCounts.archived || 0);
-      const unknownCount = rows.length - activeCount - closedCount;
-      const manyTurns = rows.filter((row) => (row.signals || []).includes("many turns")).length;
-      const pricingGaps = rows.filter((row) => (row.signals || []).includes("pricing gap")).length;
-      const topCost = rows.filter((row) => (row.signals || []).includes("top cost")).length;
-      const datedRows = rows
-        .filter((row) => row.task_key !== "unassigned" && row.first_activity_at && row.last_activity_at)
-        .slice()
-        .sort((a, b) => String(b.last_activity_at).localeCompare(String(a.last_activity_at)))
-        .slice(0, 5);
-      const minMs = Math.min(...datedRows.map((row) => Date.parse(row.first_activity_at)));
-      const maxMs = Math.max(...datedRows.map((row) => Date.parse(row.last_activity_at)));
-      const spanMs = Math.max(1, maxMs - minMs);
-      const lifecycle = datedRows.length === 0 ? '<div class="empty">No task activity window.</div>' :
-        '<div class="lifecycle-list">' + datedRows.map((row) => {
-          const start = Math.max(0, Math.round(((Date.parse(row.first_activity_at) - minMs) / spanMs) * 100));
-          const end = Math.min(100, Math.round(((Date.parse(row.last_activity_at) - minMs) / spanMs) * 100));
-          const width = Math.max(4, end - start);
-          return '<div class="lifecycle-row"><div class="lifecycle-title" title="' + text(taskTitle(row)) + '">' + text(truncate(taskTitle(row), 34)) + '</div><div class="lifecycle-track"><div class="lifecycle-segment" style="left:' + start + '%;width:' + width + '%"></div></div></div>';
-        }).join("") + '</div>';
-      document.getElementById("flowCount").textContent = plural(rows.length, "task");
-      document.getElementById("taskFlow").innerHTML =
-        '<div class="flow-row"><div class="flow-label">Task status</div><div><div class="progress-track">' +
-          '<div class="progress-segment active" style="width:' + percent(activeCount, rows.length) + '%"></div>' +
-          '<div class="progress-segment closed" style="width:' + percent(closedCount, rows.length) + '%"></div>' +
-          '<div class="progress-segment warn" style="width:' + percent(unknownCount, rows.length) + '%"></div>' +
-        '</div><div class="progress-caption"><span>' + text(plural(activeCount, "active/open task", "active/open tasks")) + '</span><span>' + text(plural(closedCount, "closed task", "closed tasks")) + '</span></div></div><div class="flow-value">' + text(integer(rows.length)) + '</div></div>' +
-        '<div class="metric-strip">' +
-          '<div class="metric-box"><div class="metric-label">High-turn</div><div class="metric-value">' + text(integer(manyTurns)) + '</div><div class="metric-sub">drift check</div></div>' +
-          '<div class="metric-box"><div class="metric-label">Top cost</div><div class="metric-value">' + text(integer(topCost)) + '</div><div class="metric-sub">cost driver</div></div>' +
-          '<div class="metric-box"><div class="metric-label">Pricing</div><div class="metric-value">' + text(integer(pricingGaps)) + '</div><div class="metric-sub">gaps</div></div>' +
-          '<div class="metric-box"><div class="metric-label">Inbox</div><div class="metric-value">' + text(integer(data.summary.unassigned_count)) + '</div><div class="metric-sub">usage rows</div></div>' +
-        '</div><div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Recent task windows</div><div class="chart-sub">First to last activity for visible tasks</div></div></div>' + lifecycle + '</div>';
-    }
-    function renderKpis(data) {
-      const s = data.summary;
-      const gapCount = s.unassigned_count + s.unpriced_count;
-      document.getElementById("kpis").innerHTML = [
-        ["Events", integer(s.event_count), "usage rows"],
-        ["Tasks", integer(s.task_count), integer(data.task_insights.length) + " visible"],
-        ["Assigned", integer(s.assigned_count) + "/" + integer(s.event_count), "task coverage"],
-        ["Unassigned", integer(s.unassigned_count), "inbox rows"],
-        ["Attention", integer(data.attention.length), integer(gapCount) + " open gaps"],
-        ["Estimated Cost", money(s.estimated_total, s.currency), integer(s.run_count) + " runs"],
-      ].map(([label, value, sub]) => '<article class="panel kpi"><div class="kpi-label">' + text(label) + '</div><div class="kpi-value">' + text(value) + '</div><div class="kpi-sub">' + text(sub) + '</div></article>').join("");
-    }
-    function renderReportSummary(data) {
-      const s = data.summary;
-      const warnings = [];
-      if (s.unpriced_count > 0) warnings.push(integer(s.unpriced_count) + " unpriced usage rows");
-      if (s.unassigned_count > 0) warnings.push(integer(s.unassigned_count) + " unassigned usage rows");
-      if (!s.currency && s.event_count > 0) warnings.push("mixed or unknown currency");
-      const warningHtml = warnings.length === 0
-        ? '<span class="pill">clear</span>'
-        : warnings.map((warning) => '<span class="pill warn">' + text(warning) + '</span>').join("");
-      document.getElementById("reportSummary").innerHTML =
-        '<div class="report-summary">' +
-          '<div class="report-title"><div><strong>Workspace dashboard: ' + text(data.workspace.key) + '</strong><span>Cost basis: event_time_estimate · Pricing basis: event-time records</span></div><div>' + warningHtml + '</div></div>' +
-          '<div class="summary-lines">' +
-            summaryLine("Estimated total", money(s.estimated_total, s.currency)) +
-            summaryLine("Provider observed", money(s.observed_total, s.currency)) +
-            summaryLine("Usage events", integer(s.event_count)) +
-            summaryLine("Tasks / runs", integer(s.task_count) + " / " + integer(s.run_count)) +
-            summaryLine("Assigned usage", integer(s.assigned_count) + "/" + integer(s.event_count)) +
-            summaryLine("Unassigned usage", integer(s.unassigned_count)) +
-            summaryLine("Unpriced usage", integer(s.unpriced_count)) +
-            summaryLine("Visible report rows", integer((data.task_insights || []).length + (data.recent || []).length)) +
-          '</div>' +
-          renderQualityBars(data) +
-        '</div>';
-    }
-    function summaryLine(label, value) {
-      return '<div class="summary-line"><span>' + text(label) + '</span><strong>' + text(value) + '</strong></div>';
-    }
-    function renderQualityBars(data) {
-      const s = data.summary;
-      const max = Math.max(s.event_count, 1);
-      const estimatedOnly = Math.max(0, s.event_count - s.unpriced_count);
-      const rows = [
-        ["observed", s.observed_total > 0 ? s.event_count - s.unpriced_count : 0, money(s.observed_total, s.currency), ""],
-        ["priced", estimatedOnly, integer(estimatedOnly) + " events", ""],
-        ["unpriced", s.unpriced_count, integer(s.unpriced_count) + " events", "warn"],
-        ["unassigned", s.unassigned_count, integer(s.unassigned_count) + " events", "warn"],
+      const providerSplit = [...providerMap.values()];
+
+      const firstDate = d.dailyDates?.[0] || "";
+      const lastDate = d.dailyDates?.[d.dailyDates.length - 1] || "";
+
+      return (
+        <div style={{background: "var(--surface-canvas)", display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh"}}>
+          {/* Sidebar */}
+          <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto"}}>
+            <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 32}}>
+              <PillMark size={28}/>
+              <span style={{fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em"}}>ttoksem</span>
+            </div>
+            <div className="eyebrow muted" style={{marginBottom: 12}}>Workspace</div>
+            <button className="chip chip--solid" style={{width: "100%", justifyContent: "space-between", padding: "10px 16px", border: "none", cursor: "default"}}>
+              <span className="mono">{d.workspace}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+            </button>
+            <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Report</div>
+            <nav className="flex-col gap-2">
+              {[
+                ["Overview", true, "#"],
+                ["Daily timeline", false, "#timeline"],
+                ["Models & providers", false, "#models"],
+                ["Tasks", false, "#tasks"],
+                ["Runs", false, "#runs"],
+                ["Inbox", false, "#inbox", d.inbox.length > 0 ? String(d.inbox.length) : null],
+                ["Pricing snapshots", false, "#pricing"],
+                ["Anomalies", false, "#anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null],
+              ].map(([l, active, href, badge]) => (
+                <a key={l} href={href || "#"} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "8px 12px", borderRadius: "var(--r-md)",
+                  background: active ? "var(--text-ink)" : "transparent",
+                  color: active ? "var(--text-cream)" : "var(--text-ink)",
+                  textDecoration: "none", fontSize: 14, fontWeight: 500
+                }}>
+                  <span>{l}</span>
+                  {badge && <span className="chip chip--orange" style={{padding: "1px 8px", fontSize: 11}}>{badge}</span>}
+                </a>
+              ))}
+            </nav>
+
+            <div style={{marginTop: 32}}>
+              <div className="eyebrow muted" style={{marginBottom: 12}}>Period</div>
+              <div className="card" style={{padding: 14, borderRadius: "var(--r-lg)"}}>
+                <div style={{fontSize: 13, fontWeight: 500}}>{d.period}</div>
+                <div style={{fontSize: 11, color: "var(--text-slate)"}} className="mono">UTC · {d.daily.length} days</div>
+              </div>
+            </div>
+
+            <div style={{marginTop: 24, padding: 16, background: "var(--surface-canvas)", borderRadius: "var(--r-lg)"}}>
+              <div className="eyebrow muted" style={{marginBottom: 8}}>Stats</div>
+              <div className="mono" style={{fontSize: 11, color: "var(--text-slate)", marginBottom: 4}}>{d.taskCount} tasks · {d.runCount} runs</div>
+              <div className="flex gap-2"><span className="chip" style={{fontSize: 10, padding: "2px 8px"}}>dashboard:read</span></div>
+            </div>
+          </aside>
+
+          {/* Main */}
+          <main style={{padding: "0 32px 64px"}}>
+
+            {/* Hero strip */}
+            <section style={{position: "relative", padding: "32px 0 24px"}}>
+              <div style={{position: "absolute", top: 24, left: -8, fontSize: 144, fontWeight: 500, letterSpacing: "-0.04em", color: "color-mix(in oklab, var(--text-ink) 5%, transparent)", lineHeight: 0.85, pointerEvents: "none", whiteSpace: "nowrap"}}>monthly report</div>
+              <div style={{position: "relative", paddingTop: 80, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 32, flexWrap: "wrap"}}>
+                <div>
+                  <div className="eyebrow" style={{marginBottom: 12}}>{d.workspace} · {d.period}</div>
+                  <div style={{display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap"}}>
+                    <div style={{fontSize: 88, fontWeight: 500, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums"}}>\${d.totalCost.toFixed(2)}</div>
+                    {delta !== 0 && (
+                      <div className={\`kpi__delta \${delta < 0 ? "kpi__delta--pos" : "kpi__delta--neg"}\`} style={{fontSize: 14}}>
+                        {delta < 0 ? "↓" : "↑"} {Math.abs(delta).toFixed(1)}% vs prev
+                      </div>
+                    )}
+                    <span className="chip" style={{fontSize: 11}}>USD</span>
+                  </div>
+                  <p className="t-small muted" style={{margin: "8px 0 0", maxWidth: 540}}>
+                    {d.events.toLocaleString()} events · {d.tokens > 0 ? (d.tokens / 1_000_000).toFixed(2) + "M tokens · " : ""}{d.runCount} runs · {d.taskCount} tasks{d.unpriced > 0 ? \` · \${d.unpriced} unpriced\` : ""}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* KPI strip */}
+            <section style={{display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24}}>
+              <div className="kpi" style={{padding: 18}}>
+                <div className="kpi__label">Total cost</div>
+                <div className="kpi__value tnum">\${d.totalCost.toFixed(2)}</div>
+                <Sparkline data={d.daily} color="var(--text-ink)" height={28}/>
+                {delta !== 0 && <div className={\`kpi__delta \${delta < 0 ? "kpi__delta--pos" : "kpi__delta--neg"}\`} style={{fontSize: 11}}>{delta < 0 ? "↓" : "↑"} {Math.abs(delta).toFixed(1)}% MoM</div>}
+              </div>
+              <div className="kpi" style={{padding: 18}}>
+                <div className="kpi__label">Events</div>
+                <div className="kpi__value tnum">{d.events.toLocaleString()}</div>
+                <div className="kpi__sub">{d.taskCount} tasks · {d.runCount} runs</div>
+              </div>
+              <div className="kpi" style={{padding: 18}}>
+                <div className="kpi__label">Tokens</div>
+                <div className="kpi__value tnum">
+                  {d.tokens > 0 ? (d.tokens / 1_000_000).toFixed(2) : "—"}
+                  {d.tokens > 0 && <span style={{fontSize: 18, color: "var(--text-slate)"}}>M</span>}
+                </div>
+                <div className="kpi__sub">{d.models.length} models</div>
+              </div>
+              <div className="kpi" style={{padding: 18}}>
+                <div className="kpi__label">Avg / day</div>
+                <div className="kpi__value tnum">\${d.daily.length > 0 ? (total / d.daily.length).toFixed(2) : "0.00"}</div>
+                {d.daily.length > 0 && <DotCalendar days={Math.min(28, d.daily.length)} data={d.daily} max={maxDay} accent="var(--signal-orange)"/>}
+              </div>
+              <div className="kpi" style={{padding: 18, borderColor: d.unpriced > 0 ? "color-mix(in oklab, var(--warn) 30%, transparent)" : undefined}}>
+                <div className="kpi__label" style={{color: d.unpriced > 0 ? "var(--warn)" : undefined}}>Unpriced</div>
+                <div className="kpi__value tnum" style={{color: d.unpriced > 0 ? "var(--warn)" : undefined}}>{d.unpriced}</div>
+                <div className="kpi__sub mono" style={{fontSize: 11}}>{d.unpriced > 0 ? "missing_pricing_rule" : "all priced"}</div>
+              </div>
+            </section>
+
+            {/* Anomaly banner */}
+            {d.anomalies.length > 0 && (
+              <section id="anomalies" style={{marginBottom: 24}}>
+                <div className="card" style={{padding: 20, display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "center", background: "color-mix(in oklab, var(--warn) 6%, var(--surface-lifted))", borderColor: "color-mix(in oklab, var(--warn) 25%, transparent)"}}>
+                  <div style={{display: "flex", alignItems: "center", gap: 10}}>
+                    <span style={{width: 36, height: 36, borderRadius: "50%", background: "var(--warn)", display: "grid", placeItems: "center", color: "#fff", fontWeight: 700, fontSize: 16}}>!</span>
+                    <div>
+                      <div className="eyebrow" style={{color: "var(--warn)"}}>Action needed · {d.anomalies.length}</div>
+                      <div style={{fontSize: 14, fontWeight: 500, marginTop: 2}}>{d.anomalies.length} issue{d.anomalies.length !== 1 ? "s" : ""} detected this period</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2" style={{flexWrap: "wrap", justifyContent: "flex-end"}}>
+                    {d.anomalies.map((a, i) => (
+                      <div key={i} className="chip" style={{background: "var(--surface-white)", padding: "6px 12px", fontSize: 12, gap: 8}}>
+                        <span className="chip__dot" style={{background: a.sev === "warn" ? "var(--warn)" : "var(--info)"}}/>
+                        <span style={{fontWeight: 500}}>{a.kind} · {a.count}</span>
+                        <span className="muted" style={{maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{a.hint}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Daily timeline */}
+            <section id="timeline" className="card" style={{padding: 28, marginBottom: 16}}>
+              <div className="flex justify-between items-end mb-5">
+                <div>
+                  <div className="eyebrow" style={{marginBottom: 8}}>Daily timeline</div>
+                  <h3 className="t-h3" style={{margin: 0}}>USD per UTC day</h3>
+                </div>
+                <div className="flex gap-3 items-center">
+                  <span className="chip"><span className="chip__dot" style={{background: "var(--text-ink)"}}/>cost</span>
+                  <span className="chip"><span className="chip__dot" style={{background: "var(--signal-orange)"}}/>cumulative</span>
+                </div>
+              </div>
+              <div style={{position: "relative", height: 240, paddingBottom: 24}}>
+                <div style={{position: "absolute", left: 0, top: 0, bottom: 24, width: 44, display: "flex", flexDirection: "column", justifyContent: "space-between", fontSize: 10, color: "var(--text-slate)"}} className="mono tnum">
+                  <span>\${maxDay.toFixed(0)}</span>
+                  <span>\${(maxDay * 0.66).toFixed(0)}</span>
+                  <span>\${(maxDay * 0.33).toFixed(0)}</span>
+                  <span>\$0</span>
+                </div>
+                <div style={{position: "absolute", left: 52, right: 0, top: 0, bottom: 24, display: "flex", alignItems: "flex-end", gap: 6}}>
+                  {d.daily.map((v, i) => {
+                    const h = (v / maxDay) * 100;
+                    const isLast = i === d.daily.length - 1;
+                    return (
+                      <div key={i} style={{flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center"}}>
+                        <div style={{
+                          width: "100%", height: \`\${h}%\`,
+                          background: isLast ? "var(--signal-orange)" : "var(--text-ink)",
+                          borderRadius: "var(--r-pill)", minHeight: 4, transition: "all 200ms"
+                        }} title={\`\${d.dailyDates?.[i] || "Day " + (i+1)}: \$\${v.toFixed(2)}\`}/>
+                      </div>
+                    );
+                  })}
+                </div>
+                {d.daily.length > 1 && (
+                  <svg style={{position: "absolute", left: 52, right: 0, top: 0, bottom: 24, width: "calc(100% - 52px)", height: "calc(100% - 24px)", pointerEvents: "none"}} viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <path d={\`M 0 100 \${cumulative.map((v, i) => \`L \${(i / (cumulative.length - 1)) * 100} \${100 - (v / total) * 95}\`).join(" ")}\`} stroke="var(--signal-orange)" strokeWidth="0.5" fill="none" vectorEffect="non-scaling-stroke" strokeDasharray="1.5 1.5"/>
+                  </svg>
+                )}
+                <div style={{position: "absolute", left: 52, right: 0, bottom: 0, display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-slate)"}} className="mono">
+                  <span>{firstDate}</span>
+                  <span>{lastDate}</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Models / Providers */}
+            <section id="models" style={{display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 16, marginBottom: 16}}>
+              {/* Models */}
+              <div className="card" style={{padding: 24}}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <div className="eyebrow" style={{marginBottom: 6}}>Models</div>
+                    <h4 className="t-h4" style={{margin: 0}}>Top {d.models.length} by cost</h4>
+                  </div>
+                </div>
+                <div className="flex-col gap-3">
+                  {d.models.length > 0 ? d.models.map(m => (
+                    <div key={m.name}>
+                      <div className="flex justify-between items-center" style={{fontSize: 13, marginBottom: 4}}>
+                        <span className="flex gap-2 items-center">
+                          <span className="chip__dot" style={{background: m.color, width: 8, height: 8}}/>
+                          <span className="mono">{m.name}</span>
+                        </span>
+                        <span className="tnum" style={{fontWeight: 500}}>\${m.cost.toFixed(2)}</span>
+                      </div>
+                      <PillBar value={m.cost} max={d.models[0].cost} color={m.color}/>
+                      <div style={{fontSize: 11, color: "var(--text-slate)", marginTop: 4}} className="tnum">{m.events.toLocaleString()} events · {m.provider}</div>
+                    </div>
+                  )) : (
+                    <div style={{fontSize: 13, color: "var(--text-slate)"}}>No pricing breakdown available</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Provider split */}
+              <div className="card" style={{padding: 24, display: "flex", flexDirection: "column"}}>
+                <div className="eyebrow" style={{marginBottom: 6}}>Providers</div>
+                <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Cost split</h4>
+                {providerSplit.length > 0 ? (
+                  <>
+                    <div style={{position: "relative", display: "grid", placeItems: "center", flex: 1, minHeight: 160}}>
+                      <svg width="160" height="160" viewBox="0 0 180 180">
+                        {(() => {
+                          const totalC = providerSplit.reduce((a, b) => a + b.cost, 0) || 1;
+                          let acc = 0;
+                          return providerSplit.map((p, i) => {
+                            const start = acc / totalC;
+                            acc += p.cost;
+                            const end = acc / totalC;
+                            const a1 = start * Math.PI * 2 - Math.PI / 2;
+                            const a2 = end * Math.PI * 2 - Math.PI / 2;
+                            const r = 70, R = 90;
+                            const x1 = 90 + Math.cos(a1) * R, y1 = 90 + Math.sin(a1) * R;
+                            const x2 = 90 + Math.cos(a2) * R, y2 = 90 + Math.sin(a2) * R;
+                            const x3 = 90 + Math.cos(a2) * r, y3 = 90 + Math.sin(a2) * r;
+                            const x4 = 90 + Math.cos(a1) * r, y4 = 90 + Math.sin(a1) * r;
+                            const large = end - start > 0.5 ? 1 : 0;
+                            return (
+                              <path key={i} d={\`M \${x1} \${y1} A \${R} \${R} 0 \${large} 1 \${x2} \${y2} L \${x3} \${y3} A \${r} \${r} 0 \${large} 0 \${x4} \${y4} Z\`} fill={p.color}/>
+                            );
+                          });
+                        })()}
+                      </svg>
+                      <div style={{position: "absolute", textAlign: "center"}}>
+                        <div className="eyebrow muted" style={{fontSize: 10}}>Total</div>
+                        <div style={{fontSize: 24, fontWeight: 500, letterSpacing: "-0.02em"}} className="tnum">\${d.totalCost.toFixed(0)}</div>
+                      </div>
+                    </div>
+                    <div className="flex-col gap-2 mt-4">
+                      {providerSplit.map(p => (
+                        <div key={p.p} className="flex justify-between items-center" style={{fontSize: 12}}>
+                          <span className="flex gap-2 items-center"><span className="chip__dot" style={{background: p.color, width: 8, height: 8}}/><span className="mono">{p.p}</span></span>
+                          <span className="tnum" style={{fontWeight: 500}}>\${p.cost.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{fontSize: 13, color: "var(--text-slate)"}}>No provider data</div>
+                )}
+              </div>
+            </section>
+
+            {/* Tasks table */}
+            <section id="tasks" className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <div className="eyebrow" style={{marginBottom: 6}}>Tasks</div>
+                  <h3 className="t-h3" style={{margin: 0}}>Cost by task · {d.period}</h3>
+                </div>
+              </div>
+              {d.tasks.length > 0 ? (
+                <table className="t">
+                  <thead><tr>
+                    <th>task_id</th>
+                    <th>model</th>
+                    <th style={{textAlign: "right"}}>events</th>
+                    <th style={{textAlign: "right"}}>runs</th>
+                    <th style={{textAlign: "right"}}>% of total</th>
+                    <th style={{textAlign: "right"}}>cost (usd)</th>
+                  </tr></thead>
+                  <tbody>
+                    {d.tasks.map(t => (
+                      <tr key={t.id} style={{cursor: "pointer"}} onClick={() => onNav && onNav("task", t.id)}>
+                        <td className="mono" style={{fontSize: 13}}>{t.id}</td>
+                        <td><span className="chip" style={{fontSize: 11}}>{t.model}</span></td>
+                        <td className="tnum" style={{textAlign: "right"}}>{t.events}</td>
+                        <td className="tnum" style={{textAlign: "right"}}>{t.runs}</td>
+                        <td className="tnum" style={{textAlign: "right", color: "var(--text-slate)"}}>{d.totalCost > 0 ? ((t.cost / d.totalCost) * 100).toFixed(1) : "0.0"}%</td>
+                        <td style={{textAlign: "right", fontWeight: 500}} className="tnum">\${t.cost.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{fontSize: 13, color: "var(--text-slate)", padding: "16px 0"}}>No tasks found</div>
+              )}
+            </section>
+
+            {/* Inbox */}
+            {d.inbox.length > 0 && (
+              <section id="inbox" className="card" style={{padding: 24, marginBottom: 16}}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <div className="eyebrow" style={{marginBottom: 6}}>Inbox</div>
+                    <h4 className="t-h4" style={{margin: 0}}>Unassigned groups</h4>
+                  </div>
+                  <span className="chip chip--orange">{d.inbox.length} new</span>
+                </div>
+                <div className="flex-col gap-2">
+                  {d.inbox.map(g => (
+                    <div key={g.id} style={{padding: 14, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)"}}>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="chip" style={{fontSize: 10, padding: "2px 10px"}}>{g.source}</span>
+                        <span className="tnum" style={{fontWeight: 500, fontSize: 14}}>\${g.cost.toFixed(2)}</span>
+                      </div>
+                      <div className="mono" style={{fontSize: 12, fontWeight: 500, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{g.hint}</div>
+                      <div style={{fontSize: 11, color: "var(--text-slate)"}}>{g.events} events · {g.time} · <span className="mono">{g.model}</span></div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Footer */}
+            <footer style={{marginTop: 32, padding: "32px 28px", background: "var(--surface-ink)", color: "var(--text-cream)", borderRadius: "var(--r-xl)"}}>
+              <div className="flex justify-between items-center" style={{flexWrap: "wrap", gap: 24}}>
+                <div>
+                  <div className="eyebrow" style={{color: "var(--signal-orange-light)", marginBottom: 8}}>Provenance</div>
+                  <div style={{fontSize: 14}}>Generated by <span className="mono">@ttoksem/http dashboard</span> · {d.period} · ttoksem</div>
+                  <div style={{fontSize: 12, opacity: 0.6, marginTop: 4}} className="mono">workspace: {d.workspace} · currency: USD</div>
+                </div>
+              </div>
+            </footer>
+          </main>
+        </div>
+      );
+    };
+
+    // ═══════════════════════════════════════════════
+    // DETAIL COMPONENTS
+    // ═══════════════════════════════════════════════
+
+    const DetailHeader = ({ ghost, eyebrow, title, sub, kpis = [], actions, onBack }) => (
+      <section style={{position: "relative", padding: "32px 0 24px"}}>
+        <div style={{position: "absolute", top: 24, left: -8, fontSize: 144, fontWeight: 500, letterSpacing: "-0.04em", color: "color-mix(in oklab, var(--text-ink) 5%, transparent)", lineHeight: 0.85, pointerEvents: "none", whiteSpace: "nowrap"}}>{ghost}</div>
+        <div style={{position: "relative", paddingTop: 80}}>
+          <div className="flex justify-between items-end mb-4" style={{flexWrap: "wrap", gap: 16}}>
+            <div>
+              <div className="flex gap-2 items-center mb-2">
+                <button onClick={onBack} className="btn btn--ghost btn--sm" style={{padding: "0 10px", fontSize: 12, color: "var(--text-slate)"}}>← Back to report</button>
+              </div>
+              <div className="eyebrow" style={{marginBottom: 12}}>{eyebrow}</div>
+              <h1 className="mono" style={{fontSize: 36, fontWeight: 500, letterSpacing: "-0.025em", margin: 0, lineHeight: 1.1}}>{title}</h1>
+              {sub && <p className="t-small muted" style={{margin: "8px 0 0", maxWidth: 640}}>{sub}</p>}
+            </div>
+            {actions && <div className="flex gap-2 items-center">{actions}</div>}
+          </div>
+          {kpis.length > 0 && (
+            <div style={{display: "grid", gridTemplateColumns: \`repeat(\${kpis.length}, 1fr)\`, gap: 12, marginTop: 24}}>
+              {kpis.map((k, i) => (
+                <div key={i} className="kpi" style={{padding: 18}}>
+                  <div className="kpi__label">{k.label}</div>
+                  <div className="kpi__value tnum" style={{color: k.color || "var(--text-ink)"}}>{k.value}</div>
+                  {k.sub && <div className="kpi__sub">{k.sub}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+
+    const DetailSidebar = ({ active, onNav, workspace }) => {
+      const nav = [
+        ["Overview", "pro"],
+        ["Tasks", "task"],
+        ["Runs", "run"],
+        ["Inbox", "inbox"],
+        ["Pricing snapshots", "pricing"],
       ];
-      return '<div class="driver-list">' + rows.map(([label, value, valueText, tone]) =>
-        '<div class="driver-row"><div class="driver-top"><strong>' + text(label) + '</strong><div class="driver-cost">' + text(valueText) + '</div></div><div class="progress-track"><div class="progress-segment ' + (tone || "assigned") + '" style="width:' + Math.max(0, percent(Number(value), max)) + '%"></div></div></div>'
-      ).join("") + '</div>';
-    }
-    function renderReportTiles(data, workspace) {
-      const s = data.summary;
-      const topTask = (data.task_insights || []).find((row) => row.task_key !== "unassigned");
-      const topModel = topRecentModel(data);
-      const tiles = [
-        {
-          title: "Workspace daily cost",
-          metric: money(s.estimated_total, s.currency),
-          detail: integer(data.daily.length) + " daily buckets · " + integer(s.event_count) + " events",
-          href: "#dailySpark",
-        },
-        {
-          title: "Task cost summary",
-          metric: topTask ? money(topTask.estimated_total, s.currency) : "No task cost",
-          detail: topTask ? taskTitle(topTask) : "No assigned task usage",
-          href: topTask ? taskHref(topTask.task_key, workspace) : "#taskTable",
-        },
-        {
-          title: "Model cost breakdown",
-          metric: topModel ? topModel.key : "No model rows",
-          detail: topModel ? money(topModel.cost, s.currency) + " · " + integer(topModel.events) + " events" : "No recent usage",
-          href: "#costIntelligence",
-        },
-        {
-          title: "Data quality",
-          metric: integer(s.unpriced_count + s.unassigned_count) + " gaps",
-          detail: integer(s.unpriced_count) + " unpriced · " + integer(s.unassigned_count) + " unassigned",
-          href: "#attentionPanel",
-        },
-      ];
-      document.getElementById("reportTileCount").textContent = integer(tiles.length);
-      document.getElementById("reportTiles").innerHTML = '<div class="report-tile-grid">' + tiles.map((tile) =>
-        '<a class="report-tile" href="' + text(tile.href) + '"><h3>' + text(tile.title) + '</h3><strong>' + text(tile.metric) + '</strong><small>' + text(tile.detail) + '</small></a>'
-      ).join("") + '</div>';
-    }
-    function renderAtAGlanceTable(data, workspace) {
-      const rows = (data.task_insights || []).slice(0, 8);
-      document.getElementById("glanceCount").textContent = rows.length === 0 ? "0 rows" : plural(rows.length, "row");
-      if (rows.length === 0) {
-        document.getElementById("glanceTable").innerHTML = '<div class="empty">No report rows yet.</div>';
-        return;
+      return (
+        <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto"}}>
+          <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 32}}>
+            <PillMark size={28}/>
+            <span style={{fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em"}}>ttoksem</span>
+          </div>
+          <div className="eyebrow muted" style={{marginBottom: 12}}>Workspace</div>
+          <button className="chip chip--solid" style={{width: "100%", justifyContent: "space-between", padding: "10px 16px", border: "none", cursor: "default"}}>
+            <span className="mono">{workspace || defaultWorkspace}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+          </button>
+          <div className="eyebrow muted" style={{margin: "32px 0 12px"}}>Navigation</div>
+          <nav className="flex-col gap-2">
+            {nav.map(([l, key]) => (
+              <button key={l} onClick={() => onNav(key)} style={{
+                textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 12px", borderRadius: "var(--r-md)",
+                background: active === key ? "var(--text-ink)" : "transparent",
+                color: active === key ? "var(--text-cream)" : "var(--text-ink)",
+                border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, fontFamily: "inherit"
+              }}>
+                <span>{l}</span>
+              </button>
+            ))}
+          </nav>
+        </aside>
+      );
+    };
+
+    const DetailFooter = ({ source }) => (
+      <footer style={{marginTop: 32, padding: "32px 28px", background: "var(--surface-ink)", color: "var(--text-cream)", borderRadius: "var(--r-xl)"}}>
+        <div className="flex justify-between items-center" style={{flexWrap: "wrap", gap: 24}}>
+          <div>
+            <div className="eyebrow" style={{color: "var(--signal-orange-light)", marginBottom: 8}}>Provenance</div>
+            <div style={{fontSize: 14}}>Generated by <span className="mono">{source}</span> · ttoksem</div>
+          </div>
+        </div>
+      </footer>
+    );
+
+    const DetailShell = ({ activeNav, children, onNav, workspace }) => (
+      <div style={{background: "var(--surface-canvas)", display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh"}}>
+        <DetailSidebar active={activeNav} onNav={onNav} workspace={workspace}/>
+        <main style={{padding: "0 32px 64px"}}>{children}</main>
+      </div>
+    );
+
+    // Task Detail
+    const TaskDetail = ({ taskData, onNav, workspace }) => {
+      if (!taskData) return (
+        <DetailShell activeNav="task" onNav={onNav} workspace={workspace}>
+          <div style={{padding: "64px 0", textAlign: "center", color: "var(--text-slate)"}}>Loading task…</div>
+        </DetailShell>
+      );
+
+      const t = taskData;
+      const trend = t.daily && t.daily.length > 0 ? t.daily : [];
+      const maxTrend = Math.max(...trend, 0.01);
+
+      return (
+        <DetailShell activeNav="task" onNav={onNav} workspace={workspace}>
+          <DetailHeader
+            ghost="task"
+            eyebrow={\`task · \${t.workspace}\`}
+            title={t.id}
+            sub={\`Started \${t.started} · \${t.runs} runs · \${t.events.toLocaleString()} events\`}
+            onBack={() => onNav("pro")}
+            actions={<>
+              <span className="chip chip--pos"><span className="chip__dot"/>{t.status}</span>
+              <button className="btn btn--secondary btn--sm">Export</button>
+            </>}
+            kpis={[
+              { label: "Total cost", value: \`\$\${t.cost.toFixed(2)}\` },
+              { label: "Events", value: t.events.toLocaleString(), sub: \`\${t.runs} runs\` },
+              { label: "Tokens", value: t.tokens > 0 ? \`\${(t.tokens / 1_000_000).toFixed(2)}M\` : "—" },
+              { label: "Avg / run", value: t.runs > 0 ? \`\$\${(t.cost / t.runs).toFixed(2)}\` : "—", sub: t.runs > 0 ? \`\${Math.round(t.events / t.runs)} events / run\` : "" },
+            ]}
+          />
+
+          {trend.length > 0 && (
+            <section className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="flex justify-between items-end mb-4">
+                <div>
+                  <div className="eyebrow" style={{marginBottom: 6}}>Cost trend</div>
+                  <h4 className="t-h4" style={{margin: 0}}>Daily cost</h4>
+                </div>
+              </div>
+              <div style={{display: "flex", alignItems: "flex-end", gap: 4, height: 140}}>
+                {trend.map((v, i) => (
+                  <div key={i} style={{flex: 1, height: \`\${(v / maxTrend) * 100}%\`, background: i === trend.length - 1 ? "var(--signal-orange)" : "var(--text-ink)", borderRadius: "var(--r-pill)", minHeight: 4}}/>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {t.runs_list && t.runs_list.length > 0 && (
+            <section className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <div className="eyebrow" style={{marginBottom: 6}}>Runs</div>
+                  <h4 className="t-h4" style={{margin: 0}}>{t.runs} runs in this task</h4>
+                </div>
+              </div>
+              <table className="t">
+                <thead><tr>
+                  <th>run_id</th><th>source</th><th>started</th><th>duration</th><th style={{textAlign: "right"}}>events</th><th style={{textAlign: "right"}}>cost</th><th>status</th>
+                </tr></thead>
+                <tbody>
+                  {t.runs_list.map(r => (
+                    <tr key={r.id}>
+                      <td className="mono" style={{fontSize: 12}}>{r.id}</td>
+                      <td><span className="chip" style={{fontSize: 10}}>{r.source}</span></td>
+                      <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.started}</td>
+                      <td className="mono" style={{fontSize: 11}}>{r.duration}</td>
+                      <td className="tnum" style={{textAlign: "right"}}>{r.events}</td>
+                      <td className="tnum" style={{textAlign: "right", fontWeight: 500}}>\${r.cost.toFixed(2)}</td>
+                      <td><span className="chip chip--pos" style={{fontSize: 10}}><span className="chip__dot"/>{r.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {t.recent && t.recent.length > 0 && (
+            <section className="card" style={{padding: 24, marginBottom: 16}}>
+              <div className="eyebrow" style={{marginBottom: 6}}>Prompt samples</div>
+              <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Recent snapshots</h4>
+              <div className="flex-col gap-3">
+                {t.recent.map(p => (
+                  <div key={p.id} style={{padding: 14, borderLeft: \`3px solid \${p.role === "user" ? "var(--signal-orange)" : "var(--text-ink)"}\`, background: "var(--surface-canvas)", borderRadius: "0 var(--r-lg) var(--r-lg) 0"}}>
+                    <div className="flex justify-between items-center mb-2" style={{fontSize: 11}}>
+                      <span className="flex gap-2 items-center">
+                        <span className="chip" style={{fontSize: 10, padding: "2px 8px"}}>{p.role}</span>
+                        <span className="mono muted">{p.model}</span>
+                      </span>
+                      <span className="tnum muted">{p.time} · {p.tokens} tok</span>
+                    </div>
+                    <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)"}}>{p.text}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <DetailFooter source={\`@ttoksem/cli report task \${t.id}\`}/>
+        </DetailShell>
+      );
+    };
+
+    // Run Detail (static / demo)
+    const RunDetail = ({ onNav, workspace }) => (
+      <DetailShell activeNav="run" onNav={onNav} workspace={workspace}>
+        <DetailHeader
+          ghost="run trace"
+          eyebrow="run"
+          title="run detail"
+          sub="Select a run from the task view to see its trace"
+          onBack={() => onNav("task")}
+          kpis={[]}
+        />
+        <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+          Run trace view — navigate from a task row to view a specific run.
+        </div>
+        <DetailFooter source="@ttoksem/cli run show"/>
+      </DetailShell>
+    );
+
+    // Inbox Detail (static / demo)
+    const InboxDetail = ({ onNav, workspace }) => (
+      <DetailShell activeNav="inbox" onNav={onNav} workspace={workspace}>
+        <DetailHeader
+          ghost="inbox"
+          eyebrow="inbox"
+          title="inbox groups"
+          sub="Unassigned events waiting for task classification"
+          onBack={() => onNav("pro")}
+          kpis={[]}
+        />
+        <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+          Inbox detail — use the CLI to assign events: <code style={{fontFamily: "var(--font-mono)", fontSize: 12}}>pnpm cli inbox list</code>
+        </div>
+        <DetailFooter source="@ttoksem/cli inbox list"/>
+      </DetailShell>
+    );
+
+    // Pricing Detail (static / demo)
+    const PricingDetail = ({ onNav, workspace }) => (
+      <DetailShell activeNav="pricing" onNav={onNav} workspace={workspace}>
+        <DetailHeader
+          ghost="pricing"
+          eyebrow="pricing snapshots"
+          title="pricing catalog"
+          sub="Active pricing snapshots powering this report"
+          onBack={() => onNav("pro")}
+          kpis={[]}
+        />
+        <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+          Pricing snapshot detail — use the CLI: <code style={{fontFamily: "var(--font-mono)", fontSize: 12}}>pnpm cli pricing snapshot list</code>
+        </div>
+        <DetailFooter source="@ttoksem/cli pricing snapshot list"/>
+      </DetailShell>
+    );
+
+    // ═══════════════════════════════════════════════
+    // APP ROOT
+    // ═══════════════════════════════════════════════
+
+    function App() {
+      const [theme, setTheme] = React.useState("light");
+      const [view, setView] = React.useState(initialTaskKey ? "task" : "pro");
+      const [activeTaskKey, setActiveTaskKey] = React.useState(initialTaskKey);
+
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      const [dashData, setDashData] = React.useState(null);
+      const [taskData, setTaskData] = React.useState(null);
+      const [taskLoading, setTaskLoading] = React.useState(false);
+
+      React.useEffect(() => {
+        document.documentElement.setAttribute("data-theme", theme);
+      }, [theme]);
+
+      async function fetchDashboard(workspaceKey) {
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await fetch(\`/api/dashboard?workspace=\${encodeURIComponent(workspaceKey)}\`, {
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error(\`HTTP \${res.status}: \${res.statusText}\`);
+          const api = await res.json();
+          setDashData(mapDashboard(api, workspaceKey));
+        } catch (e) {
+          setError(e.message || "Failed to load dashboard");
+        } finally {
+          setLoading(false);
+        }
       }
-      const total = data.summary.estimated_total || 0;
-      document.getElementById("glanceTable").innerHTML = '<table><thead><tr><th style="width: 270px;">Report item</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 82px;">Share</th><th class="num" style="width: 82px;">Events</th><th class="num" style="width: 74px;">Runs</th><th style="width: 180px;">Priced / unpriced</th><th class="num" style="width: 92px;">Tokens</th><th>Reading</th></tr></thead><tbody>' +
-        rows.map((row) => {
-          const priced = Math.max(0, row.event_count - row.unpriced_count);
-          const reading = (row.signals || []).length > 0 ? row.signals.join(", ") : row.insight;
-          return '<tr><td>' + renderTaskLabel(row, workspace) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + text(percent(row.estimated_total, total) + "%") + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td>' + text(integer(priced) + " priced / " + integer(row.unpriced_count) + " unpriced") + '</td><td class="num">' + integer(row.token_count) + '</td><td class="wide-text">' + text(reading) + '</td></tr>';
-        }).join("") +
-        '</tbody></table>';
-    }
-    function topRecentModel(data) {
-      const byModel = new Map();
-      (data.recent || []).forEach((row) => {
-        const key = row.provider_model || "unknown";
-        const current = byModel.get(key) || { key, cost: 0, events: 0 };
-        current.cost += Number(row.cost || 0);
-        current.events += 1;
-        byModel.set(key, current);
-      });
-      return Array.from(byModel.values()).sort((a, b) => b.cost - a.cost)[0] || null;
-    }
-    function renderAttention(data, workspace) {
-      const items = data.attention || [];
-      document.getElementById("attentionCount").textContent = integer(items.length);
-      document.getElementById("attentionPanel").innerHTML = items.length === 0 ? '<div class="empty">No attention signals.</div>' :
-        '<div class="attention-list">' + items.map((item) =>
-          '<div class="attention-row"><span class="pill ' + severityClass(item.severity) + '">' + text(item.severity) + '</span><div><div class="attention-title">' + (item.task_key ? '<a href="' + text(taskHref(item.task_key, workspace)) + '">' + text(item.title) + '</a>' : text(item.title)) + '</div><div class="attention-body">' + text(item.body) + '</div></div><div class="attention-metric">' + text(item.metric) + '</div></div>'
-        ).join("") + '</div>';
-    }
-    function renderTaskInsights(data, workspace) {
-      const allRows = data.task_insights || [];
-      const page = pagedRows("insights", allRows, PAGE_SIZE.insights);
-      document.getElementById("insightCount").textContent = integer(allRows.length);
-      renderPager("insightPager", "insights", page);
-      if (allRows.length === 0) {
-        document.getElementById("insightTable").innerHTML = '<div class="empty">No task insight yet.</div>';
-        return;
+
+      async function fetchTask(workspaceKey, taskKey) {
+        setTaskLoading(true);
+        try {
+          const res = await fetch(\`/api/tasks/\${encodeURIComponent(taskKey)}?workspace=\${encodeURIComponent(workspaceKey)}\`, {
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error(\`HTTP \${res.status}: \${res.statusText}\`);
+          const api = await res.json();
+          setTaskData(mapTaskDetail(api, dashData));
+        } catch (e) {
+          console.error("Task load error:", e);
+        } finally {
+          setTaskLoading(false);
+        }
       }
-      document.getElementById("insightTable").innerHTML = '<table><thead><tr><th style="width: 260px;">Task</th><th style="width: 82px;">Status</th><th style="width: 330px;">Insight</th><th style="width: 162px;">Signals</th><th class="num" style="width: 70px;">Turns</th><th class="num" style="width: 64px;">Runs</th><th class="num" style="width: 88px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th class="num" style="width: 84px;">Unpriced</th><th style="width: 146px;">First</th><th style="width: 146px;">Last</th></tr></thead><tbody>' +
-        page.rows.map((row) => {
-          const promptHtml = promptBlock(row.latest_prompt, "prompt-snippet");
-          return '<tr><td>' + renderTaskLabel(row, workspace) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td class="wide-text"><div class="insight-text">' + text(row.insight) + '</div>' + promptHtml + '</td><td><div class="signal-list">' + renderSignals(row.signals) + '</div></td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.run_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, data.summary.currency)) + '</td><td class="num">' + integer(row.unpriced_count) + '</td><td class="date-cell">' + text(shortDate(row.first_activity_at)) + '</td><td class="date-cell">' + text(shortDate(row.last_activity_at)) + '</td></tr>';
-        }).join("") +
-        '</tbody></table>';
-    }
-    function renderTasks(data, workspace) {
-      const max = Math.max(...data.tasks.map((row) => row.estimated_total), 0.000001);
-      document.getElementById("taskCount").textContent = integer(data.tasks.length);
-      const page = pagedRows("tasks", data.tasks, PAGE_SIZE.tasks);
-      renderPager("taskPager", "tasks", page);
-      if (data.tasks.length === 0) {
-        document.getElementById("taskTable").innerHTML = '<div class="empty">No usage.</div>';
-        return;
+
+      React.useEffect(() => {
+        fetchDashboard(defaultWorkspace);
+      }, []);
+
+      React.useEffect(() => {
+        if (initialTaskKey) {
+          fetchTask(defaultWorkspace, initialTaskKey);
+        }
+      }, []);
+
+      function handleNav(newView, taskKey) {
+        if (newView === "task" && taskKey) {
+          setActiveTaskKey(taskKey);
+          setTaskData(null);
+          fetchTask(defaultWorkspace, taskKey);
+        }
+        setView(newView);
       }
-      document.getElementById("taskTable").innerHTML = '<div class="portfolio-view">' + renderTaskPortfolioChart(data, workspace) + renderPortfolioReadout(data, workspace) + '</div><div class="driver-list">' +
-        page.rows.map((row) => {
-          const width = Math.max(4, Math.round((row.estimated_total / max) * 100));
-          const label = renderTaskLabel(row, workspace);
-          const share = percent(row.estimated_total, data.summary.estimated_total);
-          return '<div class="driver-row"><div class="driver-top">' + label + '<div class="driver-cost">' + text(money(row.estimated_total, data.summary.currency)) + '</div></div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div><div class="driver-meta"><span>' + text(plural(row.event_count, "usage row")) + '</span><span>' + text(integer(row.token_count) + " tokens") + '</span><span>' + text(share + "% of workspace") + '</span><span>' + text(integer(row.unpriced_count) + " unpriced") + '</span></div></div>';
-        }).join("") +
-        '</div>';
-    }
-    function renderRecent(data, workspace) {
-      const allRows = data.recent || [];
-      const page = pagedRows("recent", allRows, PAGE_SIZE.recent);
-      document.getElementById("recentCount").textContent = integer(allRows.length);
-      renderPager("recentPager", "recent", page);
-      if (allRows.length === 0) {
-        document.getElementById("recentTable").innerHTML = '<div class="empty">No usage.</div>';
-        return;
+
+      if (loading) {
+        return (
+          <div id="loading-screen">
+            <div className="spinner"></div>
+            <div style={{fontSize: 14, color: "var(--text-slate)", fontFamily: "var(--font-sans)"}}>Loading dashboard…</div>
+          </div>
+        );
       }
-      document.getElementById("recentTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 240px;">Task</th><th style="width: 220px;">Provider</th><th style="width: 150px;">Kind</th><th class="num" style="width: 96px;">Tokens</th><th class="num" style="width: 128px;">Cost</th><th style="width: 130px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
-        page.rows.map((row) => {
-          const task = renderTaskLabel(row, workspace);
-          return '<tr><td class="date-cell" title="' + text(shortDate(row.occurred_at)) + '">' + text(shortDate(row.occurred_at)) + '</td><td>' + task + '</td><td title="' + text(row.provider_model) + '">' + text(row.provider_model) + '</td><td title="' + text(row.usage_kind) + '">' + text(row.usage_kind) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || data.summary.currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + promptPreview(row.prompt) + '</td></tr>';
-        }).join("") +
-        '</tbody></table>';
-    }
-    function renderBreakdown(id, rows, currency) {
-      const max = Math.max(...rows.map((row) => row.event_count), 1);
-      document.getElementById(id).innerHTML = rows.length === 0 ? '<div class="empty">No data.</div>' :
-        rows.map((row) => '<div class="break-row"><span class="pill ' + pillClass(row.key) + '">' + text(row.key) + '</span><div class="bar"><span style="width:' + Math.max(4, Math.round((row.event_count / max) * 100)) + '%"></span></div><span class="num">' + integer(row.event_count) + '</span></div>').join("");
-    }
-    function renderCostIntelligence(data) {
-      const byModel = new Map();
-      (data.recent || []).forEach((row) => {
-        const key = row.provider_model || "unknown";
-        const current = byModel.get(key) || { key, event_count: 0, token_count: 0, estimated_total: 0 };
-        current.event_count += 1;
-        current.token_count += Number(row.tokens || 0);
-        current.estimated_total += Number(row.cost || 0);
-        byModel.set(key, current);
-      });
-      const models = Array.from(byModel.values()).sort((a, b) => b.estimated_total - a.estimated_total).slice(0, 6);
-      const maxCost = Math.max(...models.map((row) => row.estimated_total), 0.000001);
-      const modelTotal = models.reduce((sum, row) => sum + row.estimated_total, 0);
-      const avgTokens = data.summary.event_count ? Math.round((data.recent || []).reduce((sum, row) => sum + Number(row.tokens || 0), 0) / Math.max(1, (data.recent || []).length)) : 0;
-      document.getElementById("modelCount").textContent = models.length === 0 ? "0 models" : plural(models.length, "model");
-      const modelRows = models.length === 0 ? '<div class="empty">No model usage.</div>' :
-        '<div class="mix-list">' + models.map((row) => {
-          const width = Math.max(4, Math.round((row.estimated_total / maxCost) * 100));
-          return '<div class="mix-row"><div><div class="mix-title" title="' + text(row.key) + '">' + text(row.key) + '</div><div class="mix-meta">' + text(plural(row.event_count, "request") + " · " + integer(row.token_count) + " tokens") + '</div></div><div class="mix-cost">' + text(money(row.estimated_total, data.summary.currency)) + '</div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div></div>';
-        }).join("") + '</div>';
-      const pricingRows = (data.pricing_breakdown || []).map((row) =>
-        '<div class="readout-card"><span>' + text(row.key) + '</span><strong>' + text(plural(row.event_count, "row")) + '</strong><small>' + text(money(row.estimated_total, data.summary.currency)) + '</small></div>'
-      ).join("");
-      const accuracyRows = (data.accuracy_breakdown || []).map((row) =>
-        '<div class="readout-card"><span>' + text(row.key) + '</span><strong>' + text(plural(row.event_count, "row")) + '</strong><small>' + text(money(row.estimated_total, data.summary.currency)) + '</small></div>'
-      ).join("");
-      document.getElementById("costIntelligence").innerHTML =
-        '<div class="cost-intel">' +
-          '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Model spend mix</div><div class="chart-sub">Recent usage grouped by provider/model</div></div><div class="chart-total">' + text(money(modelTotal, data.summary.currency)) + '</div></div>' + modelRows + '</div>' +
-          '<div class="intel-grid">' +
-            '<div class="readout-card"><span>Average tokens</span><strong>' + text(integer(avgTokens)) + '</strong><small>per recent usage event</small></div>' +
-            '<div class="readout-card"><span>Cost basis</span><strong>' + text(data.summary.observed_total > 0 ? "observed" : "estimated") + '</strong><small>' + text(data.summary.observed_total > 0 ? money(data.summary.observed_total, data.summary.currency) : "pricing rules") + '</small></div>' +
-          '</div>' +
-          '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Pricing and accuracy</div><div class="chart-sub">Whether cost is calculated, observed, or estimated</div></div></div><div class="intel-grid">' + (pricingRows || '<div class="empty">No pricing rows.</div>') + (accuracyRows || '<div class="empty">No accuracy rows.</div>') + '</div></div>' +
-        '</div>';
-    }
-    function renderSpark(data) {
-      renderSparkTo("dailySpark", "dayCount", data.daily, data.summary.currency);
-    }
-    function renderSparkTo(sparkId, countId, rows, currency) {
-      const max = Math.max(...rows.map((row) => row.estimated_total), 0.000001);
-      document.getElementById(countId).textContent = integer(rows.length) + (rows.length === 1 ? " day" : " days");
-      if (rows.length === 0) {
-        document.getElementById(sparkId).innerHTML = '<div class="empty">No daily cost data.</div>';
-        return;
+
+      if (error) {
+        return (
+          <div id="error-screen">
+            <PillMark size={40}/>
+            <div style={{fontSize: 18, fontWeight: 500, color: "var(--text-ink)", fontFamily: "var(--font-sans)"}}>Failed to load</div>
+            <div style={{fontSize: 14, color: "var(--text-slate)", fontFamily: "var(--font-sans)", maxWidth: 400, textAlign: "center"}}>{error}</div>
+            <button className="btn btn--primary btn--sm" onClick={() => fetchDashboard(defaultWorkspace)}>Retry</button>
+          </div>
+        );
       }
-      const total = rows.reduce((sum, row) => sum + (row.estimated_total || 0), 0);
-      const events = rows.reduce((sum, row) => sum + (row.event_count || 0), 0);
-      const first = rows[0];
-      const last = rows[rows.length - 1];
-      const range = rows.length === 1 ? first.date : first.date + " - " + last.date;
-      const dayLabel = integer(rows.length) + (rows.length === 1 ? " day" : " days");
-      const eventLabel = integer(events) + (events === 1 ? " event" : " events");
-      document.getElementById(sparkId).innerHTML =
-        '<div class="daily-summary"><div><div class="daily-label">' + text(range) + '</div><div class="daily-sub">' + text(eventLabel + " across " + dayLabel) + '</div></div><div class="daily-total">' + text(money(total, currency)) + '</div></div>' +
-        '<div class="daily-bars ' + (rows.length === 1 ? "single" : "") + '">' +
-        rows.map((row) => '<div title="' + text(row.date + " " + money(row.estimated_total, currency)) + '" style="height:' + Math.max(6, Math.round((row.estimated_total / max) * 48)) + 'px"></div>').join("") +
-        '</div>';
-    }
-    async function loadDashboard(workspace) {
-      workspaceLabel.textContent = workspace + " · " + clientTimeZone;
-      const response = await fetch('/api/dashboard?workspace=' + encodeURIComponent(workspace) + '&tzOffsetMinutes=' + encodeURIComponent(String(clientTimeZoneOffsetMinutes)), { headers: authHeaders() });
-      if (!response.ok) {
-        document.getElementById("kpis").innerHTML = '<article class="panel error">Dashboard error: ' + text(await response.text()) + '</article>';
-        return;
+
+      const themeBtn = (
+        <button
+          className="btn btn--secondary btn--sm"
+          style={{position: "fixed", top: 16, right: 16, zIndex: 100}}
+          onClick={() => setTheme(t => t === "light" ? "dark" : "light")}
+        >
+          {theme === "light" ? "Dark" : "Light"}
+        </button>
+      );
+
+      if (view === "task") {
+        const td = taskLoading ? null : taskData;
+        return <>
+          {themeBtn}
+          <TaskDetail taskData={td} onNav={handleNav} workspace={defaultWorkspace}/>
+        </>;
       }
-      const data = await response.json();
-      dashboardState.data = data;
-      dashboardState.workspace = workspace;
-      dashboardState.pages.tasks = 0;
-      dashboardState.pages.insights = 0;
-      dashboardState.pages.recent = 0;
-      renderWorkspacePulse(data, workspace);
-      renderTaskFlow(data);
-      renderKpis(data);
-      renderReportSummary(data);
-      renderReportTiles(data, workspace);
-      renderAtAGlanceTable(data, workspace);
-      renderAttention(data, workspace);
-      renderTaskInsights(data, workspace);
-      renderTasks(data, workspace);
-      renderRecent(data, workspace);
-      renderCostIntelligence(data);
-      renderSpark(data);
-    }
-    function showPage(mode) {
-      document.getElementById("overviewPage").classList.toggle("hidden", mode !== "overview");
-      document.getElementById("taskPage").classList.toggle("hidden", mode !== "task");
-    }
-    function detailCurrency(data) {
-      const eventWithCurrency = (data.recent || []).find((row) => row.currency);
-      return eventWithCurrency ? eventWithCurrency.currency : "USD";
-    }
-    function renderTaskKpis(data) {
-      const insight = data.insight;
-      const currency = detailCurrency(data);
-      document.getElementById("taskKpis").innerHTML = [
-        ["Usage", integer(insight.event_count), "events"],
-        ["Runs", integer(insight.run_count), integer(data.runs.length) + " visible"],
-        ["Tokens", integer(insight.token_count), "tracked usage"],
-        ["Estimated Cost", money(insight.estimated_total, currency), "task total"],
-        ["Unpriced", integer(insight.unpriced_count), "pricing gaps"],
-        ["Last Activity", shortDate(insight.last_activity_at), "latest usage"],
-      ].map(([label, value, sub]) => '<article class="panel kpi"><div class="kpi-label">' + text(label) + '</div><div class="kpi-value">' + text(value) + '</div><div class="kpi-sub">' + text(sub) + '</div></article>').join("");
-    }
-    function renderTaskSignal(data) {
-      const insight = data.insight;
-      document.getElementById("taskSignalCount").textContent = integer((insight.signals || []).length);
-      document.getElementById("taskSignalPanel").innerHTML =
-        '<div class="attention-list"><div class="attention-row"><span class="pill ' + pillClass(insight.status) + '">' + text(insight.status) + '</span><div><div class="attention-title">' + text(insight.insight) + '</div><div class="attention-body">' + promptPreview(insight.latest_prompt, "No prompt snapshot.") + '</div><div class="signal-list">' + renderSignals(insight.signals) + '</div></div><div class="attention-metric">' + text(money(insight.estimated_total, detailCurrency(data))) + '</div></div></div>';
-    }
-    function eventTokenTotal(row) {
-      return Number(row.total_tokens || row.tokens || 0);
-    }
-    function runDisplayId(value) {
-      const raw = String(value || "no-run");
-      const promptMatch = raw.match(/_prompt_(\\d+)_([a-z0-9]+)$/i);
-      if (promptMatch) return "prompt " + Number(promptMatch[1]) + " · " + promptMatch[2].slice(0, 6);
-      if (raw.length <= 32) return raw;
-      return raw.slice(0, 18) + "..." + raw.slice(-8);
-    }
-    function runLabel(value) {
-      const raw = String(value || "no-run");
-      return titledText(raw, runDisplayId(raw));
-    }
-    function tokenSplit(row) {
-      const input = Number(row.input_tokens || 0);
-      const output = Number(row.output_tokens || 0);
-      const total = Math.max(eventTokenTotal(row), input + output, 1);
-      const inputWidth = Math.round((input / total) * 100);
-      const outputWidth = Math.round((output / total) * 100);
-      if (inputWidth + outputWidth === 0) return '<div class="token-split"><span class="input" style="width:100%"></span></div>';
-      return '<div class="token-split" title="' + text(integer(input) + " input / " + integer(output) + " output") + '"><span class="input" style="width:' + inputWidth + '%"></span><span class="output" style="width:' + outputWidth + '%"></span></div>';
-    }
-    function renderTaskRunDriverChart(data) {
-      const rows = (data.runs || [])
-        .slice()
-        .sort((a, b) => Number(b.token_count || 0) - Number(a.token_count || 0) || Number(b.event_count || 0) - Number(a.event_count || 0))
-        .slice(0, 8);
-      if (rows.length === 0) {
-        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Run token drivers</div><div class="chart-sub">Run-level token concentration</div></div></div><div class="chart-empty">No run data.</div></div>';
+      if (view === "run") {
+        return <>
+          {themeBtn}
+          <RunDetail onNav={handleNav} workspace={defaultWorkspace}/>
+        </>;
       }
-      const currency = detailCurrency(data);
-      const totalTokens = rows.reduce((sum, row) => sum + Number(row.token_count || 0), 0);
-      const maxTokens = Math.max(...rows.map((row) => Number(row.token_count || 0)), 1);
-      const width = 700;
-      const rowHeight = 32;
-      const top = 18;
-      const left = 170;
-      const right = 150;
-      const height = top + rows.length * rowHeight + 20;
-      const plotWidth = width - left - right;
-      const grid = [0.25, 0.5, 0.75, 1].map((ratio) => {
-        const x = left + plotWidth * ratio;
-        return '<line class="chart-grid" x1="' + x.toFixed(1) + '" y1="' + top + '" x2="' + x.toFixed(1) + '" y2="' + (height - 14) + '"></line>';
-      }).join("");
-      const bars = rows.map((row, index) => {
-        const tokens = Number(row.token_count || 0);
-        const y = top + index * rowHeight + 6;
-        const barWidth = Math.max(3, (tokens / maxTokens) * plotWidth);
-        const share = percent(tokens, totalTokens);
-        const label = truncate(runDisplayId(row.run_id), 24);
-        const value = integer(tokens) + " tokens · " + share + "%";
-        const title = String(row.run_id || "no-run") + " · " + plural(row.event_count, "event") + " · " + integer(tokens) + " tokens · span " + durationText(row.span_duration_ms) + " · active " + durationText(row.event_duration_ms) + " · " + money(row.estimated_total, currency);
-        return '<text class="chart-label" x="' + (left - 10) + '" y="' + (y + 15) + '" text-anchor="end"><title>' + text(title) + '</title>' + text(label) + '</text>' +
-          '<rect class="chart-bar" x="' + left + '" y="' + y + '" width="' + barWidth.toFixed(1) + '" height="16" rx="5"><title>' + text(title) + '</title></rect>' +
-          '<text class="chart-value" x="' + (left + plotWidth + 10) + '" y="' + (y + 14) + '">' + text(value) + '</text>';
-      }).join("");
-      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Run token drivers</div><div class="chart-sub">Largest runs by token volume</div></div><div class="chart-total">' + text(integer(totalTokens)) + '</div></div>' +
-        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Run token driver chart">' + grid + bars + '</svg></div>';
-    }
-    function renderTaskEventTimelineChart(data) {
-      const events = (data.recent || [])
-        .filter((row) => row.occurred_at)
-        .slice()
-        .sort((a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)))
-        .slice(-28);
-      if (events.length === 0) {
-        return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Event token timeline</div><div class="chart-sub">Event-level token spikes</div></div></div><div class="chart-empty">No usage events.</div></div>';
+      if (view === "inbox") {
+        return <>
+          {themeBtn}
+          <InboxDetail onNav={handleNav} workspace={defaultWorkspace}/>
+        </>;
       }
-      const currency = detailCurrency(data);
-      const maxTokens = Math.max(...events.map(eventTokenTotal), 1);
-      const totalTokens = events.reduce((sum, row) => sum + eventTokenTotal(row), 0);
-      const width = 700;
-      const height = 220;
-      const left = 38;
-      const top = 18;
-      const right = 18;
-      const bottom = 36;
-      const plotWidth = width - left - right;
-      const plotHeight = height - top - bottom;
-      const barWidth = Math.max(5, Math.min(22, plotWidth / Math.max(events.length, 1) * 0.52));
-      const step = events.length > 1 ? plotWidth / (events.length - 1) : 0;
-      const xAt = (index) => events.length === 1 ? left + plotWidth / 2 : left + index * step;
-      const yFor = (tokens) => top + plotHeight - (tokens / maxTokens) * plotHeight;
-      const maxEventTokens = Math.max(...events.map(eventTokenTotal), 0);
-      const grid = [0, 0.5, 1].map((ratio) => {
-        const y = top + plotHeight - plotHeight * ratio;
-        return '<line class="chart-grid" x1="' + left + '" y1="' + y.toFixed(1) + '" x2="' + (width - right) + '" y2="' + y.toFixed(1) + '"></line>';
-      }).join("");
-      const bars = events.map((row, index) => {
-        const tokens = eventTokenTotal(row);
-        const x = xAt(index) - barWidth / 2;
-        const y = yFor(tokens);
-        const barHeight = Math.max(2, top + plotHeight - y);
-        const output = Math.min(Number(row.output_tokens || 0), tokens);
-        const outputHeight = tokens > 0 ? Math.max(0, (output / tokens) * barHeight) : 0;
-        const title = shortDate(row.occurred_at) + " · " + integer(tokens) + " tokens · " + String(row.run_id || "no-run") + " · " + money(row.cost, row.currency || currency);
-        const tone = tokens === maxEventTokens && maxEventTokens > 0 ? " hot" : " soft";
-        const base = '<rect class="chart-bar' + tone + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + barHeight.toFixed(1) + '" rx="4"><title>' + text(title) + '</title></rect>';
-        const outputBar = outputHeight > 1
-          ? '<rect class="chart-bar" x="' + x.toFixed(1) + '" y="' + (top + plotHeight - outputHeight).toFixed(1) + '" width="' + barWidth.toFixed(1) + '" height="' + outputHeight.toFixed(1) + '" rx="4"><title>' + text(integer(output) + " output tokens") + '</title></rect>'
-          : "";
-        return base + outputBar;
-      }).join("");
-      const sameDay = events.every((row) => String(row.occurred_at).slice(0, 10) === String(events[0].occurred_at).slice(0, 10));
-      const labels = events.map((row, index) => {
-        if (events.length > 10 && index % Math.ceil(events.length / 7) !== 0) return "";
-        return '<text class="chart-axis" x="' + xAt(index).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle">' + text(bucketHourLabel(String(row.occurred_at).slice(0, 13), sameDay)) + '</text>';
-      }).join("");
-      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Event token timeline</div><div class="chart-sub">Recent events by total tokens, output overlay</div></div><div class="chart-total">' + text(integer(totalTokens)) + '</div></div>' +
-        '<svg class="chart-svg" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Event token timeline chart">' +
-          grid +
-          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + 4) + '" text-anchor="end">' + text(integer(maxTokens)) + '</text>' +
-          '<text class="chart-axis" x="' + (left - 8) + '" y="' + (top + plotHeight + 4) + '" text-anchor="end">0</text>' +
-          bars + labels +
-        '</svg><div class="chart-legend"><span class="legend-item"><span class="legend-swatch soft"></span>input/other tokens</span><span class="legend-item"><span class="legend-swatch"></span>output tokens</span><span class="legend-item"><span class="legend-swatch" style="background: var(--bad);"></span>largest event</span></div></div>';
-    }
-    function renderTaskTopEvents(data) {
-      const rows = (data.recent || [])
-        .slice()
-        .sort((a, b) => eventTokenTotal(b) - eventTokenTotal(a) || String(b.occurred_at).localeCompare(String(a.occurred_at)))
-        .slice(0, 5);
-      if (rows.length === 0) return '<div class="chart-panel"><div class="chart-empty">No high-token events.</div></div>';
-      const currency = detailCurrency(data);
-      const maxTokens = Math.max(...rows.map(eventTokenTotal), 1);
-      return '<div class="chart-panel"><div class="chart-head"><div><div class="chart-title">Top token events</div><div class="chart-sub">Largest recent events with run and prompt context</div></div></div><div class="top-event-list">' +
-        rows.map((row) => {
-          const tokens = eventTokenTotal(row);
-          const width = percent(tokens, maxTokens);
-          const prompt = promptSnippet(row.prompt);
-          return '<div class="driver-row"><div class="driver-top"><div><strong title="' + text(shortDate(row.occurred_at)) + '">' + text(shortDate(row.occurred_at)) + '</strong><div class="driver-meta"><span>' + runLabel(row.run_id) + '</span><span title="' + text(row.provider_model) + '">' + text(row.provider_model) + '</span><span title="' + text(row.usage_kind) + '">' + text(row.usage_kind) + '</span><span>' + text(integer(row.input_tokens || 0) + " in / " + integer(row.output_tokens || 0) + " out") + '</span></div></div><div class="driver-cost">' + text(integer(tokens) + " tokens") + '</div></div><div class="progress-track"><div class="progress-segment assigned" style="width:' + width + '%"></div></div>' + tokenSplit(row) + '<div class="driver-meta"><span>' + text(money(row.cost, row.currency || currency)) + '</span><span>' + text(row.confidence) + '</span>' + (prompt ? '<span title="' + text(String(row.prompt || "")) + '">' + text(prompt) + '</span>' : "") + '</div></div>';
-        }).join("") +
-        '</div></div>';
-    }
-    function renderTaskDriverReport(data) {
-      document.getElementById("taskDriverCount").textContent = integer((data.runs || []).length) + " runs / " + integer((data.recent || []).length) + " events";
-      document.getElementById("taskRunDriverChart").innerHTML = renderTaskRunDriverChart(data);
-      document.getElementById("taskEventTimelineChart").innerHTML = renderTaskEventTimelineChart(data);
-      document.getElementById("taskTopEvents").innerHTML = renderTaskTopEvents(data);
-    }
-    function renderTaskRuns(data) {
-      document.getElementById("taskRunCount").textContent = integer(data.runs.length);
-      if (data.runs.length === 0) {
-        document.getElementById("taskRunTable").innerHTML = '<div class="empty">No runs.</div>';
-        return;
+      if (view === "pricing") {
+        return <>
+          {themeBtn}
+          <PricingDetail onNav={handleNav} workspace={defaultWorkspace}/>
+        </>;
       }
-      const currency = detailCurrency(data);
-      document.getElementById("taskRunTable").innerHTML = '<table><thead><tr><th style="width: 210px;">Run</th><th style="width: 88px;">Status</th><th style="width: 108px;">Source</th><th class="num" style="width: 78px;">Events</th><th class="num" style="width: 92px;">Tokens</th><th class="num" style="width: 120px;">Cost</th><th style="width: 150px;">Started</th><th style="width: 88px;">Span</th><th style="width: 88px;">Active</th><th style="width: 82px;">First +</th><th style="width: 82px;">Last +</th></tr></thead><tbody>' +
-        data.runs.map((row) => {
-          const start = runStartTime(row);
-          const runTitle = 'span ' + durationText(row.span_duration_ms) + ' · active ' + durationText(row.event_duration_ms) + ' · ended ' + shortDate(row.ended_at);
-          return '<tr><td>' + runLabel(row.run_id) + '</td><td><span class="pill ' + pillClass(row.status) + '">' + text(row.status) + '</span></td><td title="' + text(row.source) + '">' + text(row.source) + '</td><td class="num">' + integer(row.event_count) + '</td><td class="num">' + integer(row.token_count) + '</td><td class="num money-cell">' + text(money(row.estimated_total, currency)) + '</td><td class="date-cell" title="' + text(shortDate(start)) + '">' + text(shortDate(start)) + '</td><td class="date-cell" title="' + text(runTitle) + '">' + text(durationText(row.span_duration_ms)) + '</td><td class="date-cell" title="' + text(runTitle) + '">' + text(durationText(row.event_duration_ms)) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.first_activity_at) + '</td><td class="date-cell">' + elapsedTimeCell(start, row.last_activity_at) + '</td></tr>';
-        }).join("") +
-        '</tbody></table>';
+
+      return <>
+        {themeBtn}
+        <CompactPro data={dashData} onNav={handleNav}/>
+      </>;
     }
-    function renderTaskEvents(data) {
-      document.getElementById("taskEventCount").textContent = integer(data.recent.length);
-      if (data.recent.length === 0) {
-        document.getElementById("taskEventTable").innerHTML = '<div class="empty">No usage events.</div>';
-        return;
-      }
-      const currency = detailCurrency(data);
-      document.getElementById("taskEventTable").innerHTML = '<table><thead><tr><th style="width: 170px;">Time</th><th style="width: 170px;">Run</th><th style="width: 220px;">Provider</th><th style="width: 145px;">Kind</th><th class="num" style="width: 82px;">Input</th><th class="num" style="width: 82px;">Output</th><th class="num" style="width: 92px;">Total</th><th class="num" style="width: 118px;">Cost</th><th style="width: 124px;">Confidence</th><th>Prompt</th></tr></thead><tbody>' +
-        data.recent.map((row) => '<tr><td class="date-cell" title="' + text(shortDate(row.occurred_at)) + '">' + text(shortDate(row.occurred_at)) + '</td><td>' + runLabel(row.run_id) + '</td><td title="' + text(row.provider_model) + '">' + text(row.provider_model) + '</td><td title="' + text(row.usage_kind) + '">' + text(row.usage_kind) + '</td><td class="num">' + integer(row.input_tokens || 0) + '</td><td class="num">' + integer(row.output_tokens || 0) + '</td><td class="num">' + integer(row.tokens) + '</td><td class="num money-cell">' + text(money(row.cost, row.currency || currency)) + '</td><td><span class="pill ' + pillClass(row.confidence) + '">' + text(row.confidence) + '</span></td><td class="wide-text">' + promptPreview(row.prompt) + '</td></tr>').join("") +
-        '</tbody></table>';
-    }
-    async function loadTaskDetail(workspace, taskKey) {
-      showPage("task");
-      workspaceLabel.textContent = workspace + " · " + clientTimeZone;
-      document.getElementById("backLink").href = '/?workspace=' + encodeURIComponent(workspace);
-      const response = await fetch('/api/tasks/' + encodeURIComponent(taskKey) + '?workspace=' + encodeURIComponent(workspace) + '&tzOffsetMinutes=' + encodeURIComponent(String(clientTimeZoneOffsetMinutes)), { headers: authHeaders() });
-      if (!response.ok) {
-        document.getElementById("taskKpis").innerHTML = '<article class="panel error">Task error: ' + text(await response.text()) + '</article>';
-        return;
-      }
-      const data = await response.json();
-      const currency = detailCurrency(data);
-      document.title = data.task.name + " · ttoksem";
-      document.getElementById("taskTitle").textContent = data.task.name;
-      const description = data.task.description ? " · " + data.task.description : "";
-      document.getElementById("taskMeta").textContent = data.task.key + description + " · created " + shortDate(data.task.created_at);
-      document.getElementById("taskStatus").textContent = data.task.status;
-      renderTaskKpis(data);
-      renderTaskDriverReport(data);
-      renderTaskSignal(data);
-      renderTaskRuns(data);
-      renderTaskEvents(data);
-      renderSparkTo("taskDailySpark", "taskDayCount", data.daily, currency);
-      renderBreakdown("taskProviderBreakdown", data.provider_breakdown, currency);
-      renderBreakdown("taskPricingBreakdown", data.pricing_breakdown, currency);
-      renderBreakdown("taskAccuracyBreakdown", data.accuracy_breakdown, currency);
-    }
-    if (initialTaskKey) {
-      loadTaskDetail(workspaceInput.value, initialTaskKey);
-    } else {
-      showPage("overview");
-      loadDashboard(workspaceInput.value);
-    }
+
+    ReactDOM.createRoot(document.getElementById("app")).render(<App/>);
   </script>
 </body>
 </html>`;
