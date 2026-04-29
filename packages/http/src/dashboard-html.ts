@@ -622,7 +622,8 @@ body {
         tokens: insight?.token_count ?? 0,
         models: [],
         daily: (apiTask.daily || []).map(d => d.estimated_total),
-        runs_list: (apiTask.runs || []).slice(0, 5).map(r => ({
+        // No artificial slice — pagination in the UI handles long lists.
+        runs_list: (apiTask.runs || []).map(r => ({
           rawId: r.run_id || null,
           id: r.run_id ? r.run_id.slice(0, 18) + "…" : "—",
           source: r.provider_model || "unknown",
@@ -634,7 +635,7 @@ body {
         })),
         rawRuns: apiTask.runs || [],
         rawEvents: apiTask.recent || [],
-        recent: (apiTask.recent || []).slice(0, 3).map(e => ({
+        recent: (apiTask.recent || []).map(e => ({
           id: e.id,
           time: e.occurred_at ? e.occurred_at.slice(0, 16).replace("T", " ") : "—",
           role: "user",
@@ -1027,6 +1028,42 @@ body {
     // DETAIL COMPONENTS
     // ═══════════════════════════════════════════════
 
+    // usePaginated: returns { page, setPage, slice, pageCount, total }
+    // Auto-resets page to 1 when items array reference changes.
+    function usePaginated(items, pageSize) {
+      const [page, setPage] = React.useState(1);
+      const list = items || [];
+      const pageCount = Math.max(1, Math.ceil(list.length / pageSize));
+      const safePage = Math.min(page, pageCount);
+      React.useEffect(() => { setPage(1); }, [items]);
+      const start = (safePage - 1) * pageSize;
+      return {
+        page: safePage,
+        setPage,
+        slice: list.slice(start, start + pageSize),
+        pageCount,
+        total: list.length,
+        rangeFrom: list.length === 0 ? 0 : start + 1,
+        rangeTo: Math.min(start + pageSize, list.length),
+      };
+    }
+
+    const Paginator = ({ page, pageCount, total, rangeFrom, rangeTo, onChange, label = "items" }) => {
+      if (total <= 0) return null;
+      return (
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 16, paddingTop: 12, borderTop: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", fontSize: 12}}>
+          <span className="muted tnum">{rangeFrom}–{rangeTo} of {total} {label}</span>
+          {pageCount > 1 && (
+            <div className="flex gap-2 items-center">
+              <button className="btn btn--secondary btn--sm" disabled={page <= 1} onClick={() => onChange(Math.max(1, page - 1))} style={{opacity: page <= 1 ? 0.4 : 1}}>← Prev</button>
+              <span className="tnum" style={{minWidth: 80, textAlign: "center"}}>Page {page} of {pageCount}</span>
+              <button className="btn btn--secondary btn--sm" disabled={page >= pageCount} onClick={() => onChange(Math.min(pageCount, page + 1))} style={{opacity: page >= pageCount ? 0.4 : 1}}>Next →</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     const DetailHeader = ({ ghost, eyebrow, title, sub, kpis = [], actions, onBack }) => (
       <section style={{position: "relative", padding: "32px 0 24px"}}>
         <div style={{position: "absolute", top: 24, left: -8, fontSize: 144, fontWeight: 500, letterSpacing: "-0.04em", color: "color-mix(in oklab, var(--text-ink) 5%, transparent)", lineHeight: 0.85, pointerEvents: "none", whiteSpace: "nowrap"}}>{ghost}</div>
@@ -1114,6 +1151,10 @@ body {
 
     // Task Detail
     const TaskDetail = ({ taskData, onNav, workspace }) => {
+      // Hooks must be called unconditionally — pass empty arrays when data isn't ready yet.
+      const runsPage = usePaginated(taskData?.runs_list || [], 10);
+      const recentPage = usePaginated(taskData?.recent || [], 5);
+
       if (!taskData) return (
         <DetailShell activeNav="task" onNav={onNav} workspace={workspace}>
           <div style={{padding: "64px 0", textAlign: "center", color: "var(--text-slate)"}}>Loading task…</div>
@@ -1179,8 +1220,8 @@ body {
                   <th>run_id</th><th>source</th><th>started</th><th>duration</th><th style={{textAlign: "right"}}>events</th><th style={{textAlign: "right"}}>cost</th><th>status</th>
                 </tr></thead>
                 <tbody>
-                  {t.runs_list.map(r => (
-                    <tr key={r.id} style={{cursor: r.rawId ? "pointer" : "default"}} onClick={() => r.rawId && onNav("run", null, r.rawId)}>
+                  {runsPage.slice.map((r, i) => (
+                    <tr key={r.rawId || \`row-\${i}\`} style={{cursor: r.rawId ? "pointer" : "default"}} onClick={() => r.rawId && onNav("run", null, r.rawId)}>
                       <td className="mono" style={{fontSize: 12}}>{r.id}</td>
                       <td><span className="chip" style={{fontSize: 10}}>{r.source}</span></td>
                       <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.started}</td>
@@ -1192,6 +1233,7 @@ body {
                   ))}
                 </tbody>
               </table>
+              <Paginator {...runsPage} onChange={runsPage.setPage} label="runs"/>
             </section>
           )}
 
@@ -1200,7 +1242,7 @@ body {
               <div className="eyebrow" style={{marginBottom: 6}}>Prompt samples</div>
               <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Recent snapshots</h4>
               <div className="flex-col gap-3">
-                {t.recent.map(p => (
+                {recentPage.slice.map(p => (
                   <div key={p.id} style={{padding: 14, borderLeft: \`3px solid \${p.role === "user" ? "var(--signal-orange)" : "var(--text-ink)"}\`, background: "var(--surface-canvas)", borderRadius: "0 var(--r-lg) var(--r-lg) 0"}}>
                     <div className="flex justify-between items-center mb-2" style={{fontSize: 11}}>
                       <span className="flex gap-2 items-center">
@@ -1213,6 +1255,7 @@ body {
                   </div>
                 ))}
               </div>
+              <Paginator {...recentPage} onChange={recentPage.setPage} label="snapshots"/>
             </section>
           )}
 
@@ -1227,6 +1270,7 @@ body {
       const events = (taskData?.rawEvents || []).filter(e => e.run_id === runId);
       let acc = 0;
       const cumulative = events.map(e => { acc += (e.cost || 0); return acc; });
+      const eventsPage = usePaginated(events, 25);
       const totalCost = run?.estimated_total || events.reduce((a, e) => a + (e.cost || 0), 0);
       const totalTokens = run?.token_count || events.reduce((a, e) => a + (e.tokens || 0), 0);
       const fmt = s => s ? s.slice(0, 16).replace("T", " ") : "—";
@@ -1274,19 +1318,23 @@ body {
                     <th>occurred_at</th><th>provider/model</th><th>kind</th><th>mode</th><th style={{textAlign:"right"}}>tokens</th><th style={{textAlign:"right"}}>cost</th><th style={{textAlign:"right"}}>cumulative</th>
                   </tr></thead>
                   <tbody>
-                    {events.map((e, i) => (
-                      <tr key={e.id}>
-                        <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{e.occurred_at.slice(11, 19)}</td>
-                        <td className="mono" style={{fontSize: 11}}>{e.provider_model}</td>
-                        <td><span className="chip" style={{fontSize: 10}}>{e.usage_kind}</span></td>
-                        <td className="mono" style={{fontSize: 10, color: "var(--text-slate)"}}>{e.confidence}</td>
-                        <td className="tnum" style={{textAlign:"right", fontSize:12}}>{e.tokens ? e.tokens.toLocaleString() : "—"}</td>
-                        <td className="tnum" style={{textAlign:"right", fontSize:12, fontWeight:500}}>{e.cost ? \`$\${e.cost.toFixed(4)}\` : "—"}</td>
-                        <td className="tnum" style={{textAlign:"right", fontSize:12, color:"var(--text-slate)"}}>\${cumulative[i].toFixed(4)}</td>
-                      </tr>
-                    ))}
+                    {eventsPage.slice.map((e, i) => {
+                      const globalIndex = (eventsPage.page - 1) * 25 + i;
+                      return (
+                        <tr key={e.id}>
+                          <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{e.occurred_at.slice(11, 19)}</td>
+                          <td className="mono" style={{fontSize: 11}}>{e.provider_model}</td>
+                          <td><span className="chip" style={{fontSize: 10}}>{e.usage_kind}</span></td>
+                          <td className="mono" style={{fontSize: 10, color: "var(--text-slate)"}}>{e.confidence}</td>
+                          <td className="tnum" style={{textAlign:"right", fontSize:12}}>{e.tokens ? e.tokens.toLocaleString() : "—"}</td>
+                          <td className="tnum" style={{textAlign:"right", fontSize:12, fontWeight:500}}>{e.cost ? \`$\${e.cost.toFixed(4)}\` : "—"}</td>
+                          <td className="tnum" style={{textAlign:"right", fontSize:12, color:"var(--text-slate)"}}>\${cumulative[globalIndex].toFixed(4)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+                <Paginator {...eventsPage} onChange={eventsPage.setPage} label="events"/>
               </section>
             </>
           )}
@@ -1305,6 +1353,7 @@ body {
       const groups = inboxData || [];
       const totalEvents = groups.reduce((a, g) => a + g.event_count, 0);
       const totalCost = groups.reduce((a, g) => a + (g.estimated_total || 0), 0);
+      const groupsPage = usePaginated(groups, 10);
       return (
         <DetailShell activeNav="inbox" onNav={onNav} workspace={workspace}>
           <DetailHeader
@@ -1328,7 +1377,7 @@ body {
               <div className="eyebrow" style={{marginBottom: 6}}>Groups</div>
               <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Unassigned inbox groups</h4>
               <div className="flex-col gap-3">
-                {groups.map(g => (
+                {groupsPage.slice.map(g => (
                   <div key={g.group_id} style={{padding: 16, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)"}}>
                     <div className="flex justify-between items-center mb-3">
                       <div className="flex gap-2 items-center">
@@ -1364,6 +1413,7 @@ body {
                   </div>
                 ))}
               </div>
+              <Paginator {...groupsPage} onChange={groupsPage.setPage} label="groups"/>
             </section>
           )}
           <DetailFooter source="@ttoksem/cli inbox list"/>
@@ -1376,7 +1426,18 @@ body {
       const snapshots = pricingData?.snapshots || [];
       const rules = pricingData?.rules || [];
       const activeSnaps = snapshots.filter(s => !s.valid_from || s.valid_from <= new Date().toISOString());
-      const providers = [...new Set(rules.map(r => r.provider))];
+      const providers = [...new Set(rules.map(r => r.provider))].sort();
+      const [providerFilter, setProviderFilter] = React.useState("");
+      const [search, setSearch] = React.useState("");
+      const filteredRules = React.useMemo(() => {
+        const term = search.trim().toLowerCase();
+        return rules.filter(r => {
+          if (providerFilter && r.provider !== providerFilter) return false;
+          if (term && !((r.model || "").toLowerCase().includes(term) || (r.provider || "").toLowerCase().includes(term))) return false;
+          return true;
+        });
+      }, [rules, providerFilter, search]);
+      const rulesPage = usePaginated(filteredRules, 50);
       return (
         <DetailShell activeNav="pricing" onNav={onNav} workspace={workspace}>
           <DetailHeader
@@ -1418,12 +1479,28 @@ body {
               <div className="flex justify-between items-start mb-4" style={{flexWrap: "wrap", gap: 12}}>
                 <div style={{minWidth: 0}}>
                   <div className="eyebrow" style={{marginBottom: 6}}>Rules</div>
-                  <h4 className="t-h4" style={{margin: 0}}>Active pricing rules · {rules.length}</h4>
+                  <h4 className="t-h4" style={{margin: 0}}>Active pricing rules · {filteredRules.length === rules.length ? rules.length : \`\${filteredRules.length} of \${rules.length}\`}</h4>
                 </div>
-                <div style={{display: "flex", flexWrap: "wrap", gap: 6, maxWidth: 720, justifyContent: "flex-end"}}>
-                  {providers.slice(0, 10).map(p => <span key={p} className="chip" style={{fontSize: 11}}>{p}</span>)}
-                  {providers.length > 10 && <span className="chip chip--orange" style={{fontSize: 11}}>+{providers.length - 10} more</span>}
-                </div>
+              </div>
+              <div className="flex gap-2 items-center mb-4" style={{flexWrap: "wrap"}}>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search provider or model…"
+                  style={{padding: "8px 12px", borderRadius: "var(--r-md)", border: "1.5px solid color-mix(in oklab, var(--text-ink) 12%, transparent)", fontSize: 13, fontFamily: "inherit", background: "var(--surface-canvas)", color: "var(--text-ink)", minWidth: 240, outline: "none"}}
+                />
+                <select
+                  value={providerFilter}
+                  onChange={(e) => setProviderFilter(e.target.value)}
+                  style={{padding: "8px 12px", borderRadius: "var(--r-md)", border: "1.5px solid color-mix(in oklab, var(--text-ink) 12%, transparent)", fontSize: 13, fontFamily: "inherit", background: "var(--surface-canvas)", color: "var(--text-ink)", outline: "none", cursor: "pointer"}}
+                >
+                  <option value="">All providers ({providers.length})</option>
+                  {providers.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                {(search || providerFilter) && (
+                  <button className="btn btn--ghost btn--sm" onClick={() => { setSearch(""); setProviderFilter(""); }}>Clear</button>
+                )}
               </div>
               <div style={{overflowX: "auto"}}>
               <table className="t" style={{minWidth: 720}}>
@@ -1432,7 +1509,7 @@ body {
                   <th style={{textAlign:"right"}}>price / unit</th><th>currency</th><th>effective_from</th>
                 </tr></thead>
                 <tbody>
-                  {rules.slice(0, 40).map(r => (
+                  {rulesPage.slice.map(r => (
                     <tr key={r.id}>
                       <td className="mono" style={{fontSize: 11}}>{r.provider}</td>
                       <td className="mono" style={{fontSize: 11}}>{r.model}</td>
@@ -1443,10 +1520,13 @@ body {
                       <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.effective_from.slice(0, 10)}</td>
                     </tr>
                   ))}
+                  {rulesPage.total === 0 && (
+                    <tr><td colSpan={7} style={{textAlign: "center", color: "var(--text-slate)", padding: "32px 0", fontSize: 13}}>No rules match the current filter.</td></tr>
+                  )}
                 </tbody>
               </table>
               </div>
-              {rules.length > 40 && <div style={{marginTop: 12, fontSize: 12, color: "var(--text-slate)", textAlign: "center"}}>Showing 40 of {rules.length} rules</div>}
+              <Paginator {...rulesPage} onChange={rulesPage.setPage} label="rules"/>
             </section>
           )}
           {snapshots.length === 0 && rules.length === 0 && (
