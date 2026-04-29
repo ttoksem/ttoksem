@@ -287,7 +287,18 @@ body {
         const stored = localStorage.getItem("ttoksemToken");
         if (stored) return stored;
       } catch (_) {}
-      return new URLSearchParams(location.search).get("token") || null;
+      const urlToken = new URLSearchParams(location.search).get("token");
+      if (urlToken) {
+        try { localStorage.setItem("ttoksemToken", urlToken); } catch (_) {}
+        // Strip token from URL so it isn't bookmarked or leaked in referrers
+        try {
+          const clean = new URL(location.href);
+          clean.searchParams.delete("token");
+          history.replaceState(null, "", clean.toString());
+        } catch (_) {}
+        return urlToken;
+      }
+      return null;
     }
 
     window.__authToken = initAuthToken();
@@ -1605,6 +1616,69 @@ body {
 
     ReactDOM.createRoot(document.getElementById("app")).render(<App/>);
   </script>
+</body>
+</html>`;
+}
+
+export function renderLoginHtml(workspace: string, errorMsg?: string): string {
+  const workspaceJson = JSON.stringify(workspace);
+  const err = errorMsg ? `<div class="err">${errorMsg}</div>` : "";
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ttoksem · Sign in</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Sofia+Sans:wght@400;500;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --canvas:#F3F0EE;--ink:#141413;--cream:#FAF8F6;--orange:#CF4500;
+  --slate:#6B6560;--border:color-mix(in oklab,#141413 12%,transparent);
+  --font:'Sofia Sans',system-ui,sans-serif;
+}
+body{background:var(--canvas);color:var(--ink);font-family:var(--font);min-height:100dvh;display:grid;place-items:center;}
+.shell{width:min(380px,90vw);}
+.brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:500;letter-spacing:-0.02em;margin-bottom:40px;}
+.mark{width:32px;height:32px;background:var(--ink);border-radius:50%;display:grid;place-items:center;}
+.mark svg{display:block;}
+.card{background:#fff;border-radius:20px;padding:32px;box-shadow:0 2px 12px color-mix(in oklab,var(--ink) 8%,transparent);}
+h1{font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:6px;}
+.sub{font-size:14px;color:var(--slate);margin-bottom:24px;}
+label{display:block;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--slate);margin-bottom:8px;}
+input{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:var(--font);font-size:15px;background:var(--canvas);color:var(--ink);outline:none;transition:border-color 120ms;}
+input:focus{border-color:var(--ink);}
+button{width:100%;margin-top:16px;padding:11px;background:var(--ink);color:var(--cream);border:none;border-radius:10px;font-family:var(--font);font-size:15px;font-weight:500;letter-spacing:-0.01em;cursor:pointer;transition:opacity 120ms;}
+button:active{opacity:0.85;}
+.err{margin-top:14px;padding:10px 14px;background:color-mix(in oklab,#c0392b 10%,transparent);color:#c0392b;border-radius:8px;font-size:13px;font-weight:500;}
+.ws{margin-top:18px;font-size:12px;color:var(--slate);text-align:center;}
+.ws code{font-family:monospace;background:var(--canvas);padding:1px 6px;border-radius:4px;}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="brand">
+      <div class="mark">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="9" r="4" fill="#FAF8F6"/>
+          <path d="M9 2v3M9 13v3M2 9h3M13 9h3" stroke="#FAF8F6" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      ttoksem
+    </div>
+    <div class="card">
+      <h1>Sign in</h1>
+      <div class="sub">Enter your workspace access key to continue.</div>
+      <form method="post" action="/login">
+        <label for="key">Access key</label>
+        <input id="key" name="key" type="password" autocomplete="current-password" placeholder="••••••••" autofocus required/>
+        <button type="submit">Continue →</button>
+        ${err}
+      </form>
+    </div>
+    <div class="ws">workspace: <code id="ws"></code></div>
+  </div>
+  <script>document.getElementById("ws").textContent=${workspaceJson};</script>
 </body>
 </html>`;
 }

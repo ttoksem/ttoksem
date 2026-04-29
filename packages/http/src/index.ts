@@ -1,6 +1,7 @@
 import { type Context } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { renderDashboardHtml } from "./dashboard-html.js";
+import { renderDashboardHtml, renderLoginHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
 import {
   AiUsageObservedSchema,
@@ -65,6 +66,7 @@ const InboxAssignResultSchema = z.object({
 // ── Shared security ───────────────────────────────────────────────────────────
 
 const BEARER_AUTH = [{ bearerAuth: [] as string[] }];
+const SESSION_COOKIE = "ttoksem_session";
 
 // ── Route definitions ─────────────────────────────────────────────────────────
 
@@ -562,12 +564,40 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     ...(options.serverUrl ? { servers: [{ url: options.serverUrl }] } : {}),
   });
 
-  // ── HTML dashboard ─────────────────────────────────────────────────────────
+  // ── HTML dashboard & login ────────────────────────────────────────────────
 
-  app.get("/", (context) => context.html(renderDashboardHtml(defaultWorkspaceKey, null)));
-  app.get("/tasks/:taskKey", (context) =>
-    context.html(renderDashboardHtml(defaultWorkspaceKey, context.req.param("taskKey"))),
-  );
+  async function requireSession(context: Context): Promise<boolean> {
+    if (!options.auth || options.auth.mode === "none") return true;
+    const token = bearerToken(context) ?? getCookie(context, SESSION_COOKIE);
+    if (!token) return false;
+    return options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token, requiredScopes: ["read"] });
+  }
+
+  app.get("/login", async (context) => {
+    if (await requireSession(context)) return context.redirect("/");
+    return context.html(renderLoginHtml(defaultWorkspaceKey));
+  });
+
+  app.post("/login", async (context) => {
+    if (!options.auth || options.auth.mode === "none") return context.redirect("/");
+    const body = await context.req.parseBody();
+    const key = (body["key"] as string | undefined)?.trim() ?? "";
+    if (!key) return context.html(renderLoginHtml(defaultWorkspaceKey, "Access key is required."), 400);
+    const valid = await options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token: key, requiredScopes: ["read"] });
+    if (!valid) return context.html(renderLoginHtml(defaultWorkspaceKey, "Invalid access key. Please try again."), 401);
+    setCookie(context, SESSION_COOKIE, key, { httpOnly: true, path: "/", sameSite: "Strict", maxAge: 60 * 60 * 24 * 30 });
+    return context.redirect("/");
+  });
+
+  app.get("/", async (context) => {
+    if (!(await requireSession(context))) return context.redirect("/login");
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, null));
+  });
+
+  app.get("/tasks/:taskKey", async (context) => {
+    if (!(await requireSession(context))) return context.redirect("/login");
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, context.req.param("taskKey")));
+  });
 
   app.onError((error, context) =>
     context.json(
@@ -616,7 +646,7 @@ async function authorizeRequest(
   requiredScopes: string[],
 ): Promise<Response | null> {
   if (!auth || auth.mode === "none") return null;
-  const token = bearerToken(context) ?? context.req.query("token");
+  const token = bearerToken(context) ?? context.req.query("token") ?? getCookie(context, SESSION_COOKIE);
   if (!token) {
     return context.json(
       { error: "Unauthorized", detail: "Provide a database access key with Authorization: Bearer <token>." },
