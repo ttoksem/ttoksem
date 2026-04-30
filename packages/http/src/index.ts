@@ -679,6 +679,15 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     return context.redirect("/");
   });
 
+  // Sign-out: clear the session cookie (Max-Age=0 marks it for deletion). The
+  // cookie is httpOnly so JS can't kill it; this route is the only way to
+  // cycle a session without manually editing browser cookies. SameSite=Strict
+  // already protects against cross-site logout CSRF.
+  app.post("/logout", async (context) => {
+    setCookie(context, SESSION_COOKIE, "", { httpOnly: true, path: "/", sameSite: "Strict", maxAge: 0 });
+    return context.redirect("/login");
+  });
+
   app.get("/", async (context) => {
     if (!(await requireSession(context))) return context.redirect("/login");
     return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "pro" }));

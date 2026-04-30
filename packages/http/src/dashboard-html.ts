@@ -767,7 +767,7 @@ body {
       return (
         <div style={{background: "var(--surface-canvas)", display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh"}}>
           {/* Sidebar */}
-          <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto"}}>
+          <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto", display: "flex", flexDirection: "column"}}>
             <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 32}}>
               <PillMark size={28}/>
               <span style={{fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em"}}>ttoksem</span>
@@ -852,6 +852,16 @@ body {
               <div className="mono" style={{fontSize: 11, color: "var(--text-slate)", marginBottom: 4}}>{d.taskCount} tasks · {d.runCount} runs</div>
               <div className="flex gap-2"><span className="chip" style={{fontSize: 10, padding: "2px 8px"}}>dashboard:read</span></div>
             </div>
+
+            {/* Sign-out pinned to the bottom of the sidebar via marginTop:auto.
+                Posts to /logout (server clears the httpOnly session cookie and
+                redirects to /login) — the cookie is httpOnly so JS can't kill
+                it any other way. */}
+            <form method="post" action="/logout" style={{marginTop: "auto", paddingTop: 16, borderTop: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)"}}>
+              <button type="submit" className="btn btn--secondary btn--sm" style={{width: "100%", justifyContent: "center"}}>
+                Sign out
+              </button>
+            </form>
           </aside>
 
           {/* Main */}
@@ -1358,7 +1368,7 @@ body {
         : active === "run" ? "Run trace"
         : null;
       return (
-        <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto"}}>
+        <aside style={{padding: "24px 20px", borderRight: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", background: "var(--surface-lifted)", position: "sticky", top: 0, height: "100vh", overflowY: "auto", display: "flex", flexDirection: "column"}}>
           <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 32}}>
             <PillMark size={28}/>
             <span style={{fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em"}}>ttoksem</span>
@@ -1393,6 +1403,11 @@ body {
               </div>
             </>
           )}
+          <form method="post" action="/logout" style={{marginTop: "auto", paddingTop: 16, borderTop: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)"}}>
+            <button type="submit" className="btn btn--secondary btn--sm" style={{width: "100%", justifyContent: "center"}}>
+              Sign out
+            </button>
+          </form>
         </aside>
       );
     };
