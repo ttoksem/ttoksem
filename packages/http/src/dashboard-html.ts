@@ -1431,19 +1431,43 @@ body {
               <section className="card" style={{padding: 24, marginBottom: 16}}>
                 <div className="eyebrow" style={{marginBottom: 6}}>Events</div>
                 <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Timeline · {events.length} events</h4>
-                <table className="t">
+                <table className="t" style={{tableLayout: "fixed", width: "100%"}}>
+                  <colgroup>
+                    <col style={{width: 70}}/>
+                    <col/>
+                    <col style={{width: 200}}/>
+                    <col style={{width: 130}}/>
+                    <col style={{width: 100}}/>
+                    <col style={{width: 90}}/>
+                    <col style={{width: 100}}/>
+                  </colgroup>
                   <thead><tr>
-                    <th>occurred_at</th><th>provider/model</th><th>kind</th><th>mode</th><th style={{textAlign:"right"}}>tokens</th><th style={{textAlign:"right"}}>cost</th><th style={{textAlign:"right"}}>cumulative</th>
+                    <th>time</th>
+                    <th>prompt</th>
+                    <th>provider/model</th>
+                    <th>kind</th>
+                    <th style={{textAlign:"right"}}>tokens</th>
+                    <th style={{textAlign:"right"}}>cost</th>
+                    <th style={{textAlign:"right"}}>cumulative</th>
                   </tr></thead>
                   <tbody>
                     {eventsPage.slice.map((e, i) => {
                       const globalIndex = (eventsPage.page - 1) * 25 + i;
+                      const promptOneLine = (e.prompt || "").replace(/\\s+/g, " ").trim();
                       return (
                         <tr key={e.id}>
                           <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{e.occurred_at.slice(11, 19)}</td>
-                          <td className="mono" style={{fontSize: 11}}>{e.provider_model}</td>
-                          <td><span className="chip" style={{fontSize: 10}}>{e.usage_kind}</span></td>
-                          <td className="mono" style={{fontSize: 10, color: "var(--text-slate)"}}>{e.confidence}</td>
+                          <td
+                            style={{fontSize: 12, lineHeight: 1.35, color: promptOneLine ? "var(--text-ink)" : "var(--text-slate)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}
+                            title={e.prompt || "(no prompt snapshot)"}
+                          >
+                            {promptOneLine || "—"}
+                          </td>
+                          <td className="mono" style={{fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{e.provider_model}</td>
+                          <td>
+                            <span className="chip" style={{fontSize: 10}}>{e.usage_kind}</span>
+                            <div className="mono" style={{fontSize: 10, color: "var(--text-slate)", marginTop: 2}}>{e.confidence}</div>
+                          </td>
                           <td className="tnum" style={{textAlign:"right", fontSize:12}}>{e.tokens ? e.tokens.toLocaleString() : "—"}</td>
                           <td className="tnum" style={{textAlign:"right", fontSize:12, fontWeight:500}}>{e.cost ? \`$\${e.cost.toFixed(4)}\` : "—"}</td>
                           <td className="tnum" style={{textAlign:"right", fontSize:12, color:"var(--text-slate)"}}>\${cumulative[globalIndex].toFixed(4)}</td>
