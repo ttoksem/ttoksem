@@ -356,6 +356,26 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     app.use("*", logger());
   }
 
+  // Verbose request/response capture for non-2xx, gated by TTOKSEM_HTTP_DEBUG=1.
+  // Default off so normal runs stay quiet; flip the env flag and restart when
+  // a 4xx/5xx isn't reproducing locally and the URL alone isn't enough to
+  // explain it. Bodies are clipped to keep stderr usable.
+  if (process.env.TTOKSEM_HTTP_DEBUG === "1") {
+    app.use("*", async (context, next) => {
+      const requestBody = await readRequestBodyForDebug(context.req.raw.clone());
+      await next();
+      const status = context.res.status;
+      if (status >= 400) {
+        const responseBody = await readResponseBodyForDebug(context.res.clone());
+        console.error(
+          `[http-debug] ${context.req.method} ${context.req.path} status=${status}` +
+            (requestBody ? `\n  req: ${requestBody}` : "") +
+            (responseBody ? `\n  res: ${responseBody}` : ""),
+        );
+      }
+    });
+  }
+
   // ── System ─────────────────────────────────────────────────────────────────
 
   app.openapi(routeHealth, (c) => c.json({ ok: true, service: "ttoksem-http" }, 200));
@@ -718,6 +738,15 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     let status: 400 | 404 | 500 = 500;
     if (isRequestValidationError(error)) status = 400;
     else if (isNotFoundError(error)) status = 404;
+    // Always log server errors with the stack — 4xx is usually obvious from the
+    // message alone, but 5xx without a stack means we're flying blind. Prefix
+    // tags so it's easy to grep in /tmp/ttoksem-dash.log.
+    if (status >= 500) {
+      const stack = error instanceof Error && error.stack ? error.stack : message;
+      console.error(`[error] ${context.req.method} ${context.req.path} status=${status}\n${stack}`);
+    } else {
+      console.error(`[warn] ${context.req.method} ${context.req.path} status=${status} msg=${message}`);
+    }
     return context.json({ error: message }, status);
   });
 
@@ -758,6 +787,33 @@ function isNotFoundError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   // Service throws "Task not found.", "Task not found: <key>", "Workspace not found.", etc.
   return /\bnot found\b/i.test(error.message);
+}
+
+const HTTP_DEBUG_BODY_LIMIT = 2000;
+
+async function readRequestBodyForDebug(request: Request): Promise<string> {
+  if (request.method === "GET" || request.method === "HEAD") return "";
+  try {
+    const text = await request.text();
+    if (!text) return "";
+    return text.length > HTTP_DEBUG_BODY_LIMIT
+      ? text.slice(0, HTTP_DEBUG_BODY_LIMIT) + `…(${text.length - HTTP_DEBUG_BODY_LIMIT} more)`
+      : text;
+  } catch {
+    return "<unreadable>";
+  }
+}
+
+async function readResponseBodyForDebug(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text) return "";
+    return text.length > HTTP_DEBUG_BODY_LIMIT
+      ? text.slice(0, HTTP_DEBUG_BODY_LIMIT) + `…(${text.length - HTTP_DEBUG_BODY_LIMIT} more)`
+      : text;
+  } catch {
+    return "<unreadable>";
+  }
 }
 
 async function authorizeRequest(
