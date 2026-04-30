@@ -30,36 +30,57 @@ Post-MVP scope includes optional deferred MCP-facing assignment workflows.
 read-only dashboard with cookie-backed login. The same routes run on
 the Cloudflare Worker entrypoint when deployed against D1.
 
-- **Overview** (`/`) — total cost, event/token totals, models
-  breakdown, and a daily timeline. The **Unpriced** KPI card shows
-  events that don't yet match a pricing rule and click-throughs to
-  `/pricing#unpriced`. An **Action needed** banner separates true
-  todo items (Assignment inbox · Pricing gap · Task drift) from
-  informational **Insights** (top cost driver). Recently active tasks
-  and the cost-ranked task table both sit below.
-- **Inbox** (`/inbox`) — unassigned usage groups sorted by group id.
-  Each group shows the suggested task (when confident), a prompt
-  sample, and inline **Accept** / **Assign** actions. Assigning uses a
-  searchable task combobox that sorts by recency and offers a
-  `+ Create '<key>' & assign` row when the typed key doesn't exist
-  yet — the server creates the task on demand without making it
-  active.
-- **Pricing** (`/pricing`) — loaded pricing source snapshots, the
-  active rules table (filterable by provider and free-text search),
-  and an **Unpriced** section that groups missing-rule events by
-  `provider · model · usage_kind` so each row maps cleanly to one
-  pricing rule you might add. Rows expand to show sample event ids
-  and `unpriced_reason`.
-- **Task detail** (`/tasks/:key`) — KPIs (total cost, events, tokens,
-  avg per run), a 24h scatter run timeline (dot size = cost), the
-  paginated runs list, recent events, and a per-event cost
-  distribution chart with hover crosshair and click-to-jump-to-card.
-  Active tasks get a **Close task** button on the header.
-- **Run detail** (`/runs/:runId`) — reconstructed trace of what the
-  assistant actually did during the run: text excerpts, tool calls
-  (Bash, Edit, Read, Grep, etc.) with per-tool input summaries, and
-  thinking excerpts where present. Falls back to a JSONL re-read for
-  events imported before the assistant-summary enrichment landed.
+### Overview (`/`)
+
+![Overview screen](docs/images/dashboard-overview.png)
+
+Total cost, event/token totals, models breakdown, and a daily
+timeline. The **Unpriced** KPI card shows events that don't yet match
+a pricing rule and click-throughs to `/pricing#unpriced`. An **Action
+needed** banner separates true todo items (Assignment inbox · Pricing
+gap · Task drift) from informational **Insights** (top cost driver).
+Recently active tasks and the cost-ranked task table both sit below.
+
+### Inbox (`/inbox`)
+
+![Inbox screen](docs/images/dashboard-inbox.png)
+
+Unassigned usage groups sorted by group id. Each group shows the
+suggested task (when confident), a prompt sample, and inline
+**Accept** / **Assign** actions. Assigning uses a searchable task
+combobox that sorts by recency and offers a `+ Create '<key>' &
+assign` row when the typed key doesn't exist yet — the server creates
+the task on demand without making it active.
+
+### Pricing (`/pricing`)
+
+![Pricing screen](docs/images/dashboard-pricing.png)
+
+Loaded pricing source snapshots, the active rules table (filterable
+by provider and free-text search), and an **Unpriced** section that
+groups missing-rule events by `provider · model · usage_kind` so each
+row maps cleanly to one pricing rule you might add. Rows expand to
+show sample event ids and `unpriced_reason`.
+
+### Task detail (`/tasks/:key`)
+
+![Task detail screen](docs/images/dashboard-task-detail.png)
+
+KPIs (total cost, events, tokens, avg per run), a 24h scatter run
+timeline (dot size = cost), the paginated runs list, recent events,
+and a per-event cost distribution chart with hover crosshair and
+click-to-jump-to-card. Active tasks get a **Close task** button on
+the header.
+
+### Run detail (`/runs/:runId`)
+
+![Run detail screen](docs/images/dashboard-run-detail.png)
+
+Reconstructed trace of what the assistant actually did during the
+run: text excerpts, tool calls (Bash, Edit, Read, Grep, etc.) with
+per-tool input summaries, and thinking excerpts where present. Falls
+back to a JSONL re-read for events imported before the
+assistant-summary enrichment landed.
 
 Read-only sessions (tokens with only `dashboard:read`) see the same
 views but inbox/task write actions are disabled with a tooltip
