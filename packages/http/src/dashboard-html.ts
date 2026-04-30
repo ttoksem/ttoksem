@@ -634,7 +634,29 @@ body {
           cost: t.estimated_total,
           trend: [],
           status: t.status,
+          last_activity_at: t.last_activity_at,
+          first_activity_at: t.first_activity_at,
+          latest_prompt: t.latest_prompt,
+          signals: t.signals || [],
         })),
+        // Most-recently-active tasks for the "Recent tasks" overview section.
+        // Sorted by last_activity_at desc; 'unassigned' is excluded because
+        // it's a synthetic bucket, not a real task users navigate into.
+        recentTasks: [...api.task_insights]
+          .filter(t => t.task_key !== "unassigned" && t.last_activity_at)
+          .sort((a, b) => (b.last_activity_at || "").localeCompare(a.last_activity_at || ""))
+          .slice(0, 6)
+          .map(t => ({
+            id: t.task_key,
+            name: t.task_name || t.task_key,
+            status: t.status,
+            cost: t.estimated_total,
+            events: t.event_count,
+            runs: t.run_count,
+            lastActivity: t.last_activity_at,
+            latestPrompt: t.latest_prompt,
+            signals: t.signals || [],
+          })),
         inbox: [...inboxMap.values()].slice(0, 3),
         anomalies,
       };
@@ -788,6 +810,7 @@ body {
               {[
                 ["Daily timeline", "timeline", null],
                 ["Models & providers", "models", null],
+                ["Recent tasks", "recent-tasks", null],
                 ["Tasks", "tasks", null],
                 ["Anomalies", "anomalies", d.anomalies.length > 0 ? String(d.anomalies.length) : null],
               ].map(([label, sectionId, badge]) => (
@@ -1035,6 +1058,76 @@ body {
                 )}
               </div>
             </section>
+
+            {/* Recent tasks — what was active most recently. Cards are
+                clickable; the most-recent prompt sits underneath each task
+                name as the obvious "what was this about" cue. */}
+            {d.recentTasks && d.recentTasks.length > 0 && (
+              <section id="recent-tasks" className="card" style={{padding: 24, marginBottom: 16}}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <div className="eyebrow" style={{marginBottom: 6}}>Recent</div>
+                    <h3 className="t-h3" style={{margin: 0}}>Recently active tasks</h3>
+                  </div>
+                  <span className="muted" style={{fontSize: 11}}>{d.recentTasks.length} most-recent · click to open</span>
+                </div>
+                <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12}}>
+                  {d.recentTasks.map(t => {
+                    const ts = t.lastActivity || "";
+                    const dateStr = ts ? \`\${ts.slice(0, 10)} \${ts.slice(11, 16)}\` : "—";
+                    const promptOneLine = (t.latestPrompt || "").replace(/\\s+/g, " ").trim();
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => onNav && onNav("task", t.id)}
+                        style={{
+                          padding: 14,
+                          border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
+                          borderRadius: "var(--r-lg)",
+                          background: "var(--surface-canvas)",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          transition: "border-color 120ms",
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.borderColor = "color-mix(in oklab, var(--signal-orange) 35%, transparent)"}
+                        onMouseOut={(e) => e.currentTarget.style.borderColor = "color-mix(in oklab, var(--text-ink) 8%, transparent)"}
+                      >
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="flex gap-2 items-center" style={{flexWrap: "wrap"}}>
+                            <span className="mono" style={{fontSize: 13, fontWeight: 500}}>{t.id}</span>
+                            <span className={\`chip \${t.status === "closed" ? "chip--pos" : "chip--orange"}\`} style={{fontSize: 10}}>
+                              <span className="chip__dot"/>{t.status || "—"}
+                            </span>
+                          </span>
+                          <span className="tnum" style={{fontWeight: 500, fontSize: 14}}>\${(t.cost || 0).toFixed(2)}</span>
+                        </div>
+                        {promptOneLine && (
+                          <div style={{fontSize: 12, lineHeight: 1.45, color: "var(--text-ink)", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}} title={t.latestPrompt}>
+                            {promptOneLine}
+                          </div>
+                        )}
+                        <div className="flex gap-3 items-center muted" style={{fontSize: 11, flexWrap: "wrap"}}>
+                          <span className="mono">{dateStr}</span>
+                          <span>·</span>
+                          <span>{t.runs || 0} run{t.runs === 1 ? "" : "s"}</span>
+                          <span>·</span>
+                          <span>{(t.events || 0).toLocaleString()} events</span>
+                          {t.signals && t.signals.length > 0 && (
+                            <>
+                              <span>·</span>
+                              {t.signals.slice(0, 3).map((s, i) => (
+                                <span key={i} className="chip" style={{fontSize: 9, padding: "1px 6px"}}>{s}</span>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* Tasks table */}
             <section id="tasks" className="card" style={{padding: 24, marginBottom: 16}}>
