@@ -1124,6 +1124,22 @@ body {
       );
     };
 
+    // Distinguishes "still fetching" from "loaded but empty". Without this,
+    // the user can't tell whether to wait or whether there's actually nothing.
+    const LoadingPanel = ({ label = "Loading…" }) => (
+      <div style={{padding: "64px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
+        <div style={{display: "inline-flex", alignItems: "center", gap: 12}}>
+          <div style={{
+            width: 18, height: 18, borderRadius: "50%",
+            border: "2px solid color-mix(in oklab, var(--text-ink) 12%, transparent)",
+            borderTopColor: "var(--signal-orange)",
+            animation: "spin 0.7s linear infinite",
+          }}/>
+          <span>{label}</span>
+        </div>
+      </div>
+    );
+
     const DetailHeader = ({ ghost, eyebrow, title, sub, kpis = [], actions, onBack }) => (
       <section style={{position: "relative", padding: "32px 0 24px"}}>
         <div style={{position: "absolute", top: 24, left: -8, fontSize: 144, fontWeight: 500, letterSpacing: "-0.04em", color: "color-mix(in oklab, var(--text-ink) 5%, transparent)", lineHeight: 0.85, pointerEvents: "none", whiteSpace: "nowrap"}}>{ghost}</div>
@@ -1342,6 +1358,11 @@ body {
 
     // Run Detail — real data from taskData.rawRuns + rawEvents filtered by runId
     const RunDetail = ({ onNav, workspace, runId, taskData }) => {
+      // Run trace is rendered from the parent task's data. Three states:
+      //   no runId         → user landed here without picking a run
+      //   runId, no task   → task fetch still loading
+      //   runId, task      → real data (run may or may not exist for that id)
+      const isLoading = runId && !taskData;
       const run = taskData?.rawRuns?.find(r => r.run_id === runId) || null;
       const events = (taskData?.rawEvents || []).filter(e => e.run_id === runId);
       let acc = 0;
@@ -1369,7 +1390,8 @@ body {
               { label: "Duration", value: dur },
             ] : []}
           />
-          {events.length > 0 && (
+          {isLoading && <LoadingPanel label="Loading run trace…"/>}
+          {!isLoading && events.length > 0 && (
             <>
               <section className="card" style={{padding: 28, marginBottom: 16}}>
                 <div className="flex justify-between items-end mb-4">
@@ -1414,7 +1436,7 @@ body {
               </section>
             </>
           )}
-          {events.length === 0 && (
+          {!isLoading && events.length === 0 && (
             <div style={{padding: "48px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
               {runId ? "No events found for this run." : "Navigate to a task and click a run row to view its trace."}
             </div>
@@ -1426,6 +1448,11 @@ body {
 
     // Inbox Detail — real data from GET /api/inbox/groups
     const InboxDetail = ({ onNav, workspace, inboxData }) => {
+      // inboxData === null means the fetch is still in flight; an empty
+      // array means the fetch returned zero groups. Surfacing the difference
+      // matters — a spinner avoids users staring at "Inbox is empty" while
+      // we're actually still loading.
+      const isLoading = inboxData === null;
       const groups = inboxData || [];
       const totalEvents = groups.reduce((a, g) => a + g.event_count, 0);
       const totalCost = groups.reduce((a, g) => a + (g.estimated_total || 0), 0);
@@ -1436,15 +1463,17 @@ body {
             ghost="inbox"
             eyebrow={\`inbox · \${workspace}\`}
             title="unassigned groups"
-            sub={\`\${groups.length} group\${groups.length !== 1 ? "s" : ""} · \${totalEvents} events waiting for task classification\`}
+            sub={isLoading ? "Loading inbox groups…" : \`\${groups.length} group\${groups.length !== 1 ? "s" : ""} · \${totalEvents} events waiting for task classification\`}
             onBack={() => onNav("pro")}
-            kpis={groups.length > 0 ? [
+            kpis={!isLoading && groups.length > 0 ? [
               { label: "Groups", value: groups.length },
               { label: "Events", value: totalEvents },
               { label: "Est. cost", value: \`$\${totalCost.toFixed(4)}\` },
             ] : []}
           />
-          {groups.length === 0 ? (
+          {isLoading ? (
+            <LoadingPanel label="Loading inbox groups…"/>
+          ) : groups.length === 0 ? (
             <div style={{padding: "48px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
               Inbox is empty — all events are assigned to tasks.
             </div>
@@ -1499,6 +1528,7 @@ body {
 
     // Pricing Detail — real data from GET /api/pricing/snapshots + /api/pricing/rules
     const PricingDetail = ({ onNav, workspace, pricingData }) => {
+      const isLoading = pricingData === null;
       const snapshots = pricingData?.snapshots || [];
       const rules = pricingData?.rules || [];
       const activeSnaps = snapshots.filter(s => !s.valid_from || s.valid_from <= new Date().toISOString());
@@ -1520,15 +1550,16 @@ body {
             ghost="pricing"
             eyebrow={\`pricing · \${workspace}\`}
             title="pricing catalog"
-            sub={\`\${snapshots.length} snapshot\${snapshots.length !== 1 ? "s" : ""} · \${rules.length} rules · \${providers.length} providers\`}
+            sub={isLoading ? "Loading pricing catalog…" : \`\${snapshots.length} snapshot\${snapshots.length !== 1 ? "s" : ""} · \${rules.length} rules · \${providers.length} providers\`}
             onBack={() => onNav("pro")}
-            kpis={[
+            kpis={isLoading ? [] : [
               { label: "Snapshots", value: snapshots.length },
               { label: "Rules", value: rules.length },
               { label: "Providers", value: providers.length },
             ]}
           />
-          {snapshots.length > 0 && (
+          {isLoading && <LoadingPanel label="Loading pricing catalog…"/>}
+          {!isLoading && snapshots.length > 0 && (
             <section className="card" style={{padding: 24, marginBottom: 16}}>
               <div className="eyebrow" style={{marginBottom: 6}}>Snapshots</div>
               <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Pricing source catalogs</h4>
@@ -1550,7 +1581,7 @@ body {
               </div>
             </section>
           )}
-          {rules.length > 0 && (
+          {!isLoading && rules.length > 0 && (
             <section className="card" style={{padding: 24, marginBottom: 16, minWidth: 0, overflow: "hidden"}}>
               <div className="flex justify-between items-start mb-4" style={{flexWrap: "wrap", gap: 12}}>
                 <div style={{minWidth: 0}}>
@@ -1605,7 +1636,7 @@ body {
               <Paginator {...rulesPage} onChange={rulesPage.setPage} label="rules"/>
             </section>
           )}
-          {snapshots.length === 0 && rules.length === 0 && (
+          {!isLoading && snapshots.length === 0 && rules.length === 0 && (
             <div style={{padding: "48px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 14}}>
               No pricing snapshots yet. Import one with <code style={{fontFamily: "var(--font-mono)", fontSize: 12}}>pnpm cli pricing import-litellm</code>
             </div>
