@@ -235,7 +235,7 @@ const routeAssignInboxGroup = createRoute({
   request: {
     params: z.object({ groupId: z.string() }),
     query: WorkspaceQuery,
-    body: { content: { "application/json": { schema: z.object({ task_key: z.string(), all: z.boolean().optional(), workspace: z.string().optional() }) } } },
+    body: { content: { "application/json": { schema: z.object({ task_key: z.string(), all: z.boolean().optional(), create_if_missing: z.boolean().optional(), workspace: z.string().optional() }) } } },
   },
   responses: {
     200: { content: { "application/json": { schema: InboxAssignResultSchema } }, description: "Group assigned" },
@@ -568,6 +568,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       groupId: c.req.valid("param").groupId,
       taskKey: body.task_key,
       all: body.all,
+      createIfMissing: body.create_if_missing,
     });
     return c.json(result, 200);
   });

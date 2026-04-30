@@ -2422,10 +2422,20 @@ body {
       async function assignGroup(g) {
         const key = (assignDraft[g.group_id] || "").trim();
         if (!key || pendingId) return;
+        // If the user typed a key that doesn't match any existing task,
+        // ask the server to create it as part of the assign — that's the
+        // point of the "+ Create … & assign" combobox row. The server
+        // refuses missing keys without this flag so typos can't silently
+        // spawn tasks.
+        const known = (tasks || []).some(t => t.key === key);
         setPendingId(g.group_id);
         setErrorById(prev => { const n = { ...prev }; delete n[g.group_id]; return n; });
         try {
-          await postInbox(\`\${encodeURIComponent(g.group_id)}/assign\`, { task_key: key, all: true });
+          await postInbox(\`\${encodeURIComponent(g.group_id)}/assign\`, {
+            task_key: key,
+            all: true,
+            create_if_missing: !known,
+          });
           onGroupResolved && onGroupResolved(g.group_id);
         } catch (e) {
           setErrorById(prev => ({ ...prev, [g.group_id]: e.message }));

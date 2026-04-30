@@ -812,9 +812,26 @@ export class LedgerService {
     groupId: string;
     taskKey: string;
     all?: boolean;
+    createIfMissing?: boolean;
   }): Promise<InboxAssignmentResult> {
     const workspace = await this.resolveWorkspace(input.workspace);
-    const task = await this.store.getTaskByKey(workspace.id, input.taskKey);
+    const existing = await this.store.getTaskByKey(workspace.id, input.taskKey);
+    // Inline "create new task while assigning" path used by the dashboard
+    // combobox. Creates the task but does NOT make it active — activation
+    // is the user's `task start` decision, not a side effect of inbox
+    // cleanup. Without this flag, an unknown key still errors loudly so
+    // typos don't silently spawn garbage tasks.
+    const task = existing ?? (input.createIfMissing
+      ? await this.store.createTask({
+          id: this.idFactory("task"),
+          workspace_id: workspace.id,
+          key: input.taskKey,
+          name: input.taskKey,
+          description: null,
+          source: "dashboard",
+          now: this.clock.now(),
+        })
+      : null);
     if (!task) throw new Error(`Task not found: ${input.taskKey}`);
 
     const { group, events } = await this.resolveInboxGroup(workspace.id, input.groupId);
