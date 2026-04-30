@@ -13,7 +13,7 @@ export interface ServiceContext {
 export type MakeService = () => Promise<ServiceContext>;
 
 interface AuthKeyCreateOptions {
-  name: string;
+  name?: string;
   scope: string[];
   workspaceScope: string[];
   expiresAt?: string;
@@ -25,7 +25,7 @@ export function registerAuthCommands(program: Command, makeService: MakeService)
 
   authKey
     .command("create")
-    .requiredOption("--name <name>", "access key name")
+    .option("--name <name>", "access key name (default: 'key-<timestamp>')")
     .option("--scope <scope>", "scope; may be repeated or comma-separated", collectOption, [])
     .option("--workspace-scope <key>", "restrict key to a workspace key; may be repeated or comma-separated", collectOption, [])
     .option("--expires-at <iso>", "UTC ISO timestamp when this key expires")
@@ -33,8 +33,16 @@ export function registerAuthCommands(program: Command, makeService: MakeService)
     .action(async (options: AuthKeyCreateOptions) => {
       const { service, close } = await makeService();
       await service.init();
+      // Default name: 'key-YYYYMMDD-HHmmss' so a quick "create + paste token"
+      // workflow doesn't fail on a missing flag. The user can still pass an
+      // explicit --name when they want something more memorable.
+      const defaultName = (() => {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `key-${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+      })();
       const result = await createAccessKeyWithToken(service, {
-        name: options.name,
+        name: options.name ?? defaultName,
         scopes: options.scope.length > 0 ? options.scope : ["dashboard:read"],
         workspaceKeys: options.workspaceScope,
         expiresAt: options.expiresAt,
