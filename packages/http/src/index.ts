@@ -31,6 +31,15 @@ export type HttpAuthOptions =
         token: string;
         requiredScopes: string[];
       }): Promise<boolean>;
+      /**
+       * Look up the granted scopes for a token without requiring a specific
+       * scope. Used by /api/me/permissions so the dashboard can gate UI
+       * affordances on what the current session can actually do.
+       */
+      describeAccessToken?(input: {
+        workspaceKey: string;
+        token: string;
+      }): Promise<{ scopes: string[] } | null>;
     };
 
 // ── Shared query params ───────────────────────────────────────────────────────
@@ -512,15 +521,10 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 
   // ── Inbox ──────────────────────────────────────────────────────────────────
 
-  // Inbox classification (assign / accept) is part of the dashboard read+sort
-  // workflow, not a generic API write. Allow dashboard:read keys to perform it
-  // so the dashboard user doesn't need a separate api:write token to clean up
-  // their own inbox. Real write paths (task create/update, usage record, etc.)
-  // still require api:write.
   app.openapi(routeAssignInboxGroup, async (c) => {
     const body = c.req.valid("json");
     const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
     if (authResponse) return authResponse as never;
     const result = await options.service.assignInboxGroup({
       workspace: workspaceResolver(workspaceKey),
@@ -535,7 +539,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const body = c.req.valid("json") ?? {};
     const workspaceKey = (body as Record<string, unknown>).workspace as string | undefined
       ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
     if (authResponse) return authResponse as never;
     const result = await options.service.acceptInboxGroup({
       workspace: workspaceResolver(workspaceKey),
@@ -548,7 +552,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   app.openapi(routeAssignInboxEvent, async (c) => {
     const body = c.req.valid("json");
     const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
     if (authResponse) return authResponse as never;
     const usageEvent = await options.service.assignInboxEvent({
       workspace: workspaceResolver(workspaceKey),
@@ -640,6 +644,24 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     if (!token) return false;
     return options.auth.verifyAccessToken({ workspaceKey: defaultWorkspaceKey, token, requiredScopes: ["dashboard:read"] });
   }
+
+  // Returns the granted scopes for the current request's token, or null when
+  // there's no token / no auth-mode introspection support. Used to gate UI
+  // affordances (assign / accept buttons) on what the user actually has.
+  async function describeRequestToken(context: Context): Promise<{ scopes: string[] } | null> {
+    if (!options.auth || options.auth.mode === "none") return { scopes: ["*"] };
+    const token = bearerToken(context) ?? context.req.query("token") ?? getCookie(context, SESSION_COOKIE);
+    if (!token) return null;
+    if (!options.auth.describeAccessToken) return null;
+    return options.auth.describeAccessToken({ workspaceKey: defaultWorkspaceKey, token });
+  }
+
+  app.get("/api/me/permissions", async (context) => {
+    if (!(await requireSession(context))) return context.json({ error: "Unauthorized" }, 401);
+    const desc = await describeRequestToken(context);
+    if (!desc) return context.json({ error: "Token introspection not available" }, 501);
+    return context.json({ workspace: defaultWorkspaceKey, scopes: desc.scopes });
+  });
 
   app.get("/login", async (context) => {
     if (await requireSession(context)) return context.redirect("/");

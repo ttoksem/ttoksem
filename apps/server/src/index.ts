@@ -43,6 +43,18 @@ export async function serveDashboard(options: ServeDashboardOptions): Promise<Ru
               });
               return result.allowed;
             },
+            describeAccessToken: async ({ workspaceKey, token }) => {
+              // Use a benign required scope that every legit dashboard key
+              // already carries; we only need verifyAccessKey for the lookup
+              // side-effect of returning the matched key with its scopes.
+              const result = await service.verifyAccessKey({
+                workspaceKey,
+                tokenHash: hashAccessToken(token),
+                requiredScopes: ["dashboard:read"],
+              });
+              if (!result.key) return null;
+              return { scopes: result.key.scopes_json };
+            },
           },
   });
   const server = serve({

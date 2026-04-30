@@ -2058,7 +2058,13 @@ body {
     };
 
     // Inbox Detail — real data from GET /api/inbox/groups
-    const InboxDetail = ({ onNav, workspace, inboxData, taskKeys = [], onGroupResolved }) => {
+    const InboxDetail = ({ onNav, workspace, inboxData, taskKeys = [], onGroupResolved, permissions }) => {
+      // canWrite: true once we know the session has api:write (or auth is off
+      // entirely with the '*' wildcard). null/undefined = still loading; an
+      // empty array = explicitly no write scope.
+      const canWrite = Array.isArray(permissions) && (permissions.includes("*") || permissions.includes("api:write"));
+      const permsLoading = permissions === null;
+      const writeBlockedHint = "This dashboard token only has dashboard:read. Reissue a key with --scope api:write to enable inbox actions:\\n\\n  pnpm cli auth key create --name dashboard --scope dashboard:read --scope api:write";
       // inboxData === null means the fetch is still in flight; an empty
       // array means the fetch returned zero groups. Surfacing the difference
       // matters — a spinner avoids users staring at "Inbox is empty" while
@@ -2133,6 +2139,23 @@ body {
               { label: "Est. cost", value: \`$\${totalCost.toFixed(4)}\` },
             ] : []}
           />
+          {/* Read-only token notice. Show only after permissions resolve and
+              we know the user is missing api:write — drives them to mint a
+              fuller key without surprise 403s on every click. */}
+          {!isLoading && !permsLoading && !canWrite && groups.length > 0 && (
+            <div style={{
+              padding: "12px 16px",
+              marginBottom: 16,
+              background: "color-mix(in oklab, var(--warn) 8%, transparent)",
+              border: "1px solid color-mix(in oklab, var(--warn) 30%, transparent)",
+              borderRadius: "var(--r-md)",
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}>
+              <span style={{fontWeight: 600}}>Read-only session.</span> Inbox actions are disabled because your dashboard token only has <span className="mono">dashboard:read</span>.
+              {" "}Reissue with <span className="mono">--scope dashboard:read --scope api:write</span> to assign or accept groups.
+            </div>
+          )}
           {isLoading ? (
             <LoadingPanel label="Loading inbox groups…"/>
           ) : groups.length === 0 ? (
@@ -2167,9 +2190,10 @@ body {
                           <span className="chip chip--pos" style={{fontSize: 10}}>{Math.round(g.suggested_task.confidence * 100)}% match</span>
                           <button
                             className="btn btn--primary btn--sm"
-                            disabled={isPending}
+                            disabled={isPending || !canWrite || permsLoading}
                             onClick={() => acceptGroup(g)}
-                            style={{fontSize: 11, padding: "4px 12px"}}
+                            title={!canWrite && !permsLoading ? writeBlockedHint : undefined}
+                            style={{fontSize: 11, padding: "4px 12px", opacity: !canWrite && !permsLoading ? 0.45 : 1, cursor: !canWrite && !permsLoading ? "help" : undefined}}
                           >
                             {isPending ? "Accepting…" : "Accept"}
                           </button>
@@ -2207,8 +2231,9 @@ body {
                           list="inbox-task-keys"
                           value={draftKey}
                           onChange={(e) => setAssignDraft(prev => ({ ...prev, [g.group_id]: e.target.value }))}
-                          placeholder="Assign to task…"
-                          disabled={isPending}
+                          placeholder={canWrite ? "Assign to task…" : "Read-only token"}
+                          disabled={isPending || !canWrite || permsLoading}
+                          title={!canWrite && !permsLoading ? writeBlockedHint : undefined}
                           style={{
                             padding: "5px 10px",
                             fontSize: 12,
@@ -2219,13 +2244,15 @@ body {
                             color: "var(--text-ink)",
                             outline: "none",
                             width: 220,
+                            opacity: !canWrite && !permsLoading ? 0.5 : 1,
                           }}
                         />
                         <button
                           className="btn btn--secondary btn--sm"
                           type="submit"
-                          disabled={isPending || !draftKey.trim()}
-                          style={{fontSize: 11, padding: "4px 12px"}}
+                          disabled={isPending || !draftKey.trim() || !canWrite || permsLoading}
+                          title={!canWrite && !permsLoading ? writeBlockedHint : undefined}
+                          style={{fontSize: 11, padding: "4px 12px", opacity: !canWrite && !permsLoading ? 0.45 : 1, cursor: !canWrite && !permsLoading ? "help" : undefined}}
                         >
                           {isPending ? "Assigning…" : "Assign"}
                         </button>
@@ -2389,6 +2416,9 @@ body {
       // Actions are fetched per-runId — keyed map so we don't refetch when
       // bouncing between sibling runs in the same task.
       const [runActionsByRun, setRunActionsByRun] = React.useState({});
+      // Granted scopes for the current session. Drives whether write-class
+      // affordances (inbox accept / assign) are enabled in the UI.
+      const [permissions, setPermissions] = React.useState(null); // null = loading, [] = none, [...] = granted scopes
 
       React.useEffect(() => {
         document.documentElement.setAttribute("data-theme", theme);
@@ -2408,6 +2438,23 @@ body {
           setError(e.message || "Failed to load dashboard");
         } finally {
           setLoading(false);
+        }
+      }
+
+      async function fetchPermissions() {
+        try {
+          const res = await fetch("/api/me/permissions", { headers: authHeaders() });
+          if (!res.ok) {
+            // 501 = auth mode is "none" or introspection unavailable; treat as
+            // wide-open (all scopes effectively granted). Other errors → empty.
+            setPermissions(res.status === 501 ? ["*"] : []);
+            return;
+          }
+          const json = await res.json();
+          setPermissions(Array.isArray(json.scopes) ? json.scopes : []);
+        } catch (e) {
+          console.error("Permission lookup failed:", e);
+          setPermissions([]);
         }
       }
 
@@ -2480,6 +2527,7 @@ body {
 
       React.useEffect(() => {
         fetchDashboard(defaultWorkspace);
+        fetchPermissions();
       }, []);
 
       // Resolve a deep-link to /runs/:runId by looking up which task the run
@@ -2635,6 +2683,7 @@ body {
             inboxData={inboxData}
             taskKeys={(dashData?.tasks || []).map(t => t.id).filter(k => k && k !== "unassigned")}
             onGroupResolved={(groupId) => setInboxData(prev => Array.isArray(prev) ? prev.filter(g => g.group_id !== groupId) : prev)}
+            permissions={permissions}
           />
         </>;
       }

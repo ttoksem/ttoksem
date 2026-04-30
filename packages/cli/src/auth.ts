@@ -82,9 +82,13 @@ export async function ensureDashboardAccessKey(
     await service.init();
     const keys = await service.listAccessKeys();
     if (keys.some((key) => grantsDashboardAccess(key, workspaceKey))) return null;
+    // Dashboard end-users own the workspace they're looking at, so the
+    // auto-issued key carries both read and write scopes — the inbox
+    // assign/accept flow needs api:write, and forcing users to mint a
+    // second key just to clean up their own inbox would be hostile UX.
     return await createAccessKeyWithToken(service, {
       name,
-      scopes: ["dashboard:read"],
+      scopes: ["dashboard:read", "api:write"],
     });
   } finally {
     await close();
