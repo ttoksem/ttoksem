@@ -627,6 +627,14 @@ export class LedgerService {
     return event;
   }
 
+  async listUnpricedUsage(input: {
+    workspace: WorkspaceResolver;
+    limit?: number;
+  }): Promise<UsageEventRecord[]> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    return this.store.listUnpricedUsageEvents(workspace.id, input.limit ?? 100);
+  }
+
   async repriceUnpricedUsage(input: {
     workspace: WorkspaceResolver;
     limit?: number;

@@ -1041,8 +1041,15 @@ body {
               </div>
               <button
                 className="kpi"
-                onClick={() => onNav && onNav("pricing", null)}
-                title={d.unpriced > 0 ? "Open pricing rules to fill the gap" : "View loaded pricing rules"}
+                onClick={() => {
+                  onNav && onNav("pricing", null);
+                  // Set the hash AFTER the route push so PricingDetail's
+                  // hash-watch effect runs against the freshly mounted DOM.
+                  if (typeof window !== "undefined") {
+                    setTimeout(() => { window.location.hash = "unpriced"; }, 50);
+                  }
+                }}
+                title={d.unpriced > 0 ? "List the events without a pricing rule" : "View loaded pricing rules"}
                 style={{
                   padding: 18,
                   textAlign: "left",
@@ -2644,6 +2651,7 @@ body {
       const isLoading = pricingData === null;
       const snapshots = pricingData?.snapshots || [];
       const rules = pricingData?.rules || [];
+      const unpriced = pricingData?.unpriced || [];
       const activeSnaps = snapshots.filter(s => !s.valid_from || s.valid_from <= new Date().toISOString());
       const providers = [...new Set(rules.map(r => r.provider))].sort();
       const [providerFilter, setProviderFilter] = React.useState("");
@@ -2657,21 +2665,112 @@ body {
         });
       }, [rules, providerFilter, search]);
       const rulesPage = usePaginated(filteredRules, 50);
+
+      // Group unpriced events by (provider, model, usage_kind) so the user
+      // sees what *combinations* are missing rules — that's the actionable
+      // unit when adding a pricing rule. Each row keeps a count of events
+      // and a click toggles a list of the underlying event ids.
+      const unpricedGroups = React.useMemo(() => {
+        const map = new Map();
+        for (const e of unpriced) {
+          const k = \`\${e.provider}|\${e.model}|\${e.usage_kind}\`;
+          if (!map.has(k)) {
+            map.set(k, { provider: e.provider, model: e.model, usage_kind: e.usage_kind, events: [] });
+          }
+          map.get(k).events.push(e);
+        }
+        return [...map.values()].sort((a, b) => b.events.length - a.events.length);
+      }, [unpriced]);
+      const unpricedPage = usePaginated(unpricedGroups, 12);
+      const [expandedGroup, setExpandedGroup] = React.useState(null);
+
+      // Honor #unpriced anchor so the Unpriced KPI on the overview can deep-link
+      // to this section without first scrolling past snapshots/rules.
+      React.useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (!isLoading && window.location.hash === "#unpriced") {
+          const el = document.getElementById("unpriced");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, [isLoading]);
+
       return (
         <DetailShell activeNav="pricing" onNav={onNav} workspace={workspace}>
           <DetailHeader
             ghost="pricing"
             eyebrow={\`pricing · \${workspace}\`}
             title="pricing catalog"
-            sub={isLoading ? "Loading pricing catalog…" : \`\${snapshots.length} snapshot\${snapshots.length !== 1 ? "s" : ""} · \${rules.length} rules · \${providers.length} providers\`}
+            sub={isLoading ? "Loading pricing catalog…" : \`\${snapshots.length} snapshot\${snapshots.length !== 1 ? "s" : ""} · \${rules.length} rules · \${providers.length} providers · \${unpriced.length} unpriced\`}
             onBack={() => onNav("pro")}
             kpis={isLoading ? [] : [
               { label: "Snapshots", value: snapshots.length },
               { label: "Rules", value: rules.length },
               { label: "Providers", value: providers.length },
+              { label: "Unpriced", value: unpriced.length },
             ]}
           />
           {isLoading && <LoadingPanel label="Loading pricing catalog…"/>}
+          {!isLoading && unpricedGroups.length > 0 && (
+            <section id="unpriced" className="card" style={{padding: 24, marginBottom: 16, borderColor: "color-mix(in oklab, var(--warn) 30%, transparent)"}}>
+              <div className="eyebrow" style={{marginBottom: 6, color: "var(--warn)"}}>Unpriced</div>
+              <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>{unpriced.length} unpriced event{unpriced.length === 1 ? "" : "s"} · {unpricedGroups.length} missing rule combination{unpricedGroups.length === 1 ? "" : "s"}</h4>
+              <p className="muted" style={{fontSize: 12, margin: "0 0 16px"}}>
+                Add a pricing rule for each combination below, or run <code className="mono" style={{padding: "2px 6px", background: "var(--surface-canvas)", borderRadius: 4, fontSize: 11}}>pnpm cli pricing import-litellm</code> to load defaults.
+              </p>
+              <div className="flex-col gap-2">
+                {unpricedPage.slice.map((g, gi) => {
+                  const key = \`\${g.provider}/\${g.model}/\${g.usage_kind}\`;
+                  const expanded = expandedGroup === key;
+                  return (
+                    <div key={key} style={{border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-md)", background: "var(--surface-canvas)", overflow: "hidden"}}>
+                      <button
+                        onClick={() => setExpandedGroup(expanded ? null : key)}
+                        style={{
+                          width: "100%",
+                          display: "grid",
+                          gridTemplateColumns: "auto 1fr auto auto auto",
+                          gap: 12,
+                          alignItems: "center",
+                          padding: "12px 16px",
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          textAlign: "left",
+                          color: "var(--text-ink)",
+                        }}
+                      >
+                        <span style={{fontSize: 11, color: "var(--text-slate)", width: 12}}>{expanded ? "▾" : "▸"}</span>
+                        <span className="mono" style={{fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis"}}>
+                          <span style={{color: "var(--text-slate)"}}>{g.provider}</span>
+                          {" / "}
+                          <span>{g.model}</span>
+                        </span>
+                        <span className="chip" style={{fontSize: 10}}>{g.usage_kind}</span>
+                        <span className="tnum" style={{fontWeight: 500, fontSize: 13}}>{g.events.length.toLocaleString()}</span>
+                        <span className="muted" style={{fontSize: 11}}>events</span>
+                      </button>
+                      {expanded && (
+                        <div style={{padding: "0 16px 12px", fontSize: 11}}>
+                          <div className="muted" style={{marginBottom: 6}}>Sample events ({Math.min(g.events.length, 8)} of {g.events.length}):</div>
+                          <div className="flex-col" style={{gap: 4}}>
+                            {g.events.slice(0, 8).map(e => (
+                              <div key={e.id} style={{display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, alignItems: "center", color: "var(--text-slate)", padding: "4px 0", borderBottom: "1px solid color-mix(in oklab, var(--text-ink) 5%, transparent)"}}>
+                                <span className="mono" title={e.id}>{shortenId(e.id, 8, 6)}</span>
+                                <span className="mono" style={{overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{(e.occurred_at || "").slice(0, 19).replace("T", " ")}</span>
+                                <span style={{color: "var(--warn)"}}>{e.unpriced_reason || "missing rule"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <Paginator {...unpricedPage} onChange={unpricedPage.setPage} label="combinations"/>
+            </section>
+          )}
           {!isLoading && snapshots.length > 0 && (
             <section className="card" style={{padding: 24, marginBottom: 16}}>
               <div className="eyebrow" style={{marginBottom: 6}}>Snapshots</div>
@@ -2878,15 +2977,20 @@ body {
 
       async function fetchPricing(workspaceKey) {
         try {
-          const [snapRes, rulesRes] = await Promise.all([
+          const [snapRes, rulesRes, unpricedRes] = await Promise.all([
             fetch(\`/api/pricing/snapshots?workspace=\${encodeURIComponent(workspaceKey)}\`, { headers: authHeaders() }),
             fetch(\`/api/pricing/rules?workspace=\${encodeURIComponent(workspaceKey)}\`, { headers: authHeaders() }),
+            fetch(\`/api/usage/unpriced?workspace=\${encodeURIComponent(workspaceKey)}&limit=200\`, { headers: authHeaders() }),
           ]);
-          const [snapJson, rulesJson] = await Promise.all([snapRes.json(), rulesRes.json()]);
-          setPricingData({ snapshots: snapJson.snapshots || [], rules: rulesJson.rules || [] });
+          const [snapJson, rulesJson, unpricedJson] = await Promise.all([snapRes.json(), rulesRes.json(), unpricedRes.json()]);
+          setPricingData({
+            snapshots: snapJson.snapshots || [],
+            rules: rulesJson.rules || [],
+            unpriced: unpricedJson.events || [],
+          });
         } catch (e) {
           console.error("Pricing load error:", e);
-          setPricingData({ snapshots: [], rules: [] });
+          setPricingData({ snapshots: [], rules: [], unpriced: [] });
         }
       }
 

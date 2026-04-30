@@ -207,6 +207,15 @@ const routeRecordUsage = createRoute({
   },
 });
 
+const routeListUnpriced = createRoute({
+  method: "get", path: "/api/usage/unpriced", tags: ["Usage"],
+  summary: "List usage events that don't have a pricing rule yet", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery.extend({ limit: z.string().optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ events: z.array(UsageEventRecordSchema) }) } }, description: "Unpriced usage events" },
+  },
+});
+
 const routeMoveUsage = createRoute({
   method: "post", path: "/api/usage/events/{usageId}/move", tags: ["Usage"],
   summary: "Move a usage event to a different task", security: BEARER_AUTH,
@@ -532,6 +541,19 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     });
     const usageEvent = await options.service.recordUsage(message);
     return c.json({ usage_event: usageEvent }, 201);
+  });
+
+  app.openapi(routeListUnpriced, async (c) => {
+    const query = c.req.valid("query");
+    const workspaceKey = query.workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const limit = parseLimit(query.limit, 200);
+    const events = await options.service.listUnpricedUsage({
+      workspace: workspaceResolver(workspaceKey),
+      limit,
+    });
+    return c.json({ events }, 200);
   });
 
   app.openapi(routeMoveUsage, async (c) => {
