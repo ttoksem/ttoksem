@@ -1096,9 +1096,14 @@ function buildInboxGroups(
   const groupEvents = new Map<string, UsageEventRecord[]>();
   const groupSuggestions = new Map<string, InboxTaskSuggestion | null>();
 
+  // Precompute per-task match metadata once. Without this, every event would
+  // recompute lowercase/normalize/split across all 50+ tasks — that turned
+  // a 1k-event scan into a 4-second wall.
+  const taskMatchData = precomputeTaskMatchData(tasks);
+
   for (const event of events) {
     if (event.assignment_status !== "unassigned" && event.assignment_status !== "suggested") continue;
-    const suggestion = suggestTaskForEvents([event], tasks);
+    const suggestion = suggestTaskForEvent(event, taskMatchData);
     const groupId = inboxGroupId(workspaceId, event, suggestion);
     const existing = groupEvents.get(groupId) ?? [];
     existing.push(event);
@@ -1222,16 +1227,61 @@ function inboxReasonCodes(context: InboxGroup["source_context"]): string[] {
   return reasons;
 }
 
-function suggestTaskForEvents(events: UsageEventRecord[], tasks: TaskRecord[]): InboxTaskSuggestion | null {
+interface TaskMatchData {
+  task: TaskRecord;
+  normalizedKey: string;   // normalizeMatchText(task.key) — done once per task
+  normalizedName: string;  // normalizeMatchText(task.name)
+  tokens: string[];        // task.key split into substantive tokens for fuzzy match
+}
+
+function precomputeTaskMatchData(tasks: TaskRecord[]): TaskMatchData[] {
+  return tasks.map((task) => {
+    const tokens = task.key
+      .split(/[^a-z0-9]+/i)
+      .map((token) => token.toLowerCase())
+      .filter((token) => token.length >= 4 && !TASK_MATCH_STOP_WORDS.has(token));
+    return {
+      task,
+      normalizedKey: normalizeMatchText(task.key),
+      normalizedName: normalizeMatchText(task.name),
+      tokens,
+    };
+  });
+}
+
+function suggestTaskForEvent(event: UsageEventRecord, taskMatchData: TaskMatchData[]): InboxTaskSuggestion | null {
+  const text = inboxSuggestionText([event]);
+  if (!text) return null;
+  const normalizedText = normalizeMatchText(text);
+  if (!normalizedText) return null;
+  const explicitKey = explicitSuggestedTaskKey([event]);
   let best: InboxTaskSuggestion | null = null;
-  const text = inboxSuggestionText(events);
-  const explicitKey = explicitSuggestedTaskKey(events);
-  for (const task of tasks) {
-    const suggestion = explicitKey === task.key ? taskSuggestion(task, 0.95, "source_context suggested task") : taskTextMatch(task, text);
+  for (const td of taskMatchData) {
+    const suggestion = explicitKey === td.task.key
+      ? taskSuggestion(td.task, 0.95, "source_context suggested task")
+      : taskTextMatchPrecomputed(td, normalizedText);
     if (!suggestion) continue;
     if (!best || suggestion.confidence > best.confidence) best = suggestion;
   }
   return best;
+}
+
+function taskTextMatchPrecomputed(td: TaskMatchData, normalizedText: string): InboxTaskSuggestion | null {
+  if (td.normalizedKey && normalizedText.includes(td.normalizedKey)) {
+    return taskSuggestion(td.task, 0.86, "task key appears in context");
+  }
+  if (td.normalizedName && normalizedText.includes(td.normalizedName)) {
+    return taskSuggestion(td.task, 0.84, "task name appears in context");
+  }
+  if (td.tokens.length === 0) return null;
+  const hits = td.tokens.filter((token) => normalizedText.includes(token));
+  if (hits.length >= 2 && hits.length / td.tokens.length >= 0.5) {
+    return taskSuggestion(td.task, 0.72, `context matched task words: ${hits.slice(0, 3).join(",")}`);
+  }
+  if (hits.length === 1 && hits[0] && hits[0].length >= 8) {
+    return taskSuggestion(td.task, 0.62, `context matched task word: ${hits[0]}`);
+  }
+  return null;
 }
 
 function explicitSuggestedTaskKey(events: UsageEventRecord[]): string | null {
@@ -1264,29 +1314,6 @@ function inboxSuggestionText(events: UsageEventRecord[]): string {
     .filter((value): value is string => Boolean(value))
     .join(" ")
     .toLowerCase();
-}
-
-function taskTextMatch(task: TaskRecord, text: string): InboxTaskSuggestion | null {
-  if (!text) return null;
-  const key = task.key.toLowerCase();
-  const name = task.name.toLowerCase();
-  const normalizedText = normalizeMatchText(text);
-  if (normalizedText.includes(normalizeMatchText(key))) return taskSuggestion(task, 0.86, "task key appears in context");
-  if (normalizedText.includes(normalizeMatchText(name))) return taskSuggestion(task, 0.84, "task name appears in context");
-
-  const tokens = task.key
-    .split(/[^a-z0-9]+/i)
-    .map((token) => token.toLowerCase())
-    .filter((token) => token.length >= 4 && !TASK_MATCH_STOP_WORDS.has(token));
-  if (tokens.length === 0) return null;
-  const hits = tokens.filter((token) => normalizedText.includes(token));
-  if (hits.length >= 2 && hits.length / tokens.length >= 0.5) {
-    return taskSuggestion(task, 0.72, `context matched task words: ${hits.slice(0, 3).join(",")}`);
-  }
-  if (hits.length === 1 && hits[0] && hits[0].length >= 8) {
-    return taskSuggestion(task, 0.62, `context matched task word: ${hits[0]}`);
-  }
-  return null;
 }
 
 function taskSuggestion(task: TaskRecord, confidence: number, reason: string): InboxTaskSuggestion {
