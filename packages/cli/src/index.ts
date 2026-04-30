@@ -54,7 +54,7 @@ workspace
   .option("--name <name>", "workspace name")
   .option("--root <path>", "workspace root path")
   .action(async (options: { key?: string; name?: string; root?: string }) => {
-    const { service, close } = await makeService();
+    const { service, close } = await makeService({ allowCreate: true });
     await service.init();
     const rootPath = resolveFromCommandCwd(options.root ?? ".");
     const key = options.key ?? slug(rootPath.split("/").filter(Boolean).at(-1) ?? "workspace");
@@ -606,8 +606,7 @@ dashboard
       authMode === "access-key"
         ? await ensureDashboardAccessKey(makeService, options.workspace, options.createKeyName)
         : null;
-    const dbPath = defaultDbPath();
-    mkdirSync(dirname(dbPath), { recursive: true });
+    const dbPath = resolveDbPath(false);
     const server = await serveDashboard({
       dbPath,
       workspaceKey: options.workspace,
@@ -1098,13 +1097,13 @@ interface PricingMigrateEventsOptions {
   mode: string;
 }
 
-async function makeService(): Promise<{
+async function makeService(opts: { allowCreate?: boolean } = {}): Promise<{
   service: LedgerService;
   dbPath: string;
   close: () => Promise<void>;
 }> {
-  const dbPath = defaultDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
+  const dbPath = resolveDbPath(opts.allowCreate ?? false);
+  if (opts.allowCreate) mkdirSync(dirname(dbPath), { recursive: true });
   const store = new SqliteLedgerStore(dbPath);
   return {
     service: new LedgerService({ store }),
@@ -1113,10 +1112,39 @@ async function makeService(): Promise<{
   };
 }
 
-function defaultDbPath(): string {
-  return process.env.TTOKSEM_DB
-    ? resolve(process.env.TTOKSEM_DB)
-    : resolveFromCommandCwd(".ttoksem/ttoksem.db");
+// Resolve which SQLite ledger to open. Order:
+// 1. TTOKSEM_DB env var — explicit override always wins.
+// 2. Walk up from INIT_CWD/cwd looking for an existing .ttoksem/ttoksem.db,
+//    so running the CLI from any subdir (or accidentally one level up of the
+//    repo) still hits the same workspace ledger.
+// 3. If nothing found and allowCreate is false (every command except
+//    `workspace init`), refuse rather than silently spawning a fresh empty
+//    DB at cwd — that's how data ended up split across two files.
+// 4. If allowCreate is true, fall back to cwd/.ttoksem/ttoksem.db.
+function resolveDbPath(allowCreate: boolean): string {
+  if (process.env.TTOKSEM_DB) return resolve(process.env.TTOKSEM_DB);
+
+  const startDir = process.env.INIT_CWD ?? process.cwd();
+  const found = findExistingDbUpwards(startDir);
+  if (found) return found;
+
+  if (allowCreate) return resolve(startDir, ".ttoksem/ttoksem.db");
+
+  throw new Error(
+    `No .ttoksem/ttoksem.db found in any ancestor of ${startDir}. ` +
+      `Run 'ttoksem workspace init' from your repo root to create one, or set TTOKSEM_DB to an absolute path.`,
+  );
+}
+
+function findExistingDbUpwards(startDir: string): string | null {
+  let dir = resolve(startDir);
+  while (true) {
+    const candidate = join(dir, ".ttoksem", "ttoksem.db");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 async function waitForShutdown(close: () => Promise<void>): Promise<void> {
