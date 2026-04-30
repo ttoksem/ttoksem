@@ -1388,32 +1388,39 @@ body {
       return { background: "color-mix(in oklab, var(--text-slate) 12%, transparent)", color: "var(--text-slate)" };
     }
 
-    const RunActionsSection = ({ actions }) => {
+    /**
+     * Per-turn timeline. Each card renders one usage event together with the
+     * assistant action that produced it. Events and actions are joined by
+     * event id (one assistant message → one usage event → one action card).
+     * Cumulative cost is precomputed by the caller so the running total
+     * stays correct across pages if pagination is later reintroduced.
+     */
+    const RunTimelineSection = ({ events, actions, cumulative }) => {
       const isLoading = actions === "loading" || actions === undefined;
       const list = Array.isArray(actions) ? actions : [];
+      // event_id → action lookup (action shape: {event_id, text_excerpt, tool_calls, has_thinking, message_id, source})
+      const actionByEvent = new Map();
+      for (const a of list) actionByEvent.set(a.event_id, a);
       const totalCalls = list.reduce((sum, a) => sum + (a.tool_calls?.length || 0), 0);
       const fmt = s => s ? s.slice(11, 19) : "—";
       return (
         <section className="card" style={{padding: 24, marginBottom: 16}}>
           <div className="flex justify-between items-end mb-4">
             <div>
-              <div className="eyebrow" style={{marginBottom: 6}}>Actions</div>
-              <h4 className="t-h4" style={{margin: 0}}>What the assistant did{!isLoading && \` · \${totalCalls} tool call\${totalCalls === 1 ? "" : "s"}\`}</h4>
+              <div className="eyebrow" style={{marginBottom: 6}}>Timeline</div>
+              <h4 className="t-h4" style={{margin: 0}}>{events.length} event{events.length === 1 ? "" : "s"}{!isLoading && \` · \${totalCalls} tool call\${totalCalls === 1 ? "" : "s"}\`}</h4>
             </div>
           </div>
           {isLoading && <LoadingPanel label="Reconstructing actions…"/>}
-          {!isLoading && list.length === 0 && (
-            <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 13}}>
-              No actions recorded for this run.
-            </div>
-          )}
-          {!isLoading && list.length > 0 && (
+          {!isLoading && (
             <div className="flex-col gap-3">
-              {list.map((a, idx) => {
-                const empty = !a.text_excerpt && (a.tool_calls?.length || 0) === 0 && !a.has_thinking;
+              {events.map((e, idx) => {
+                const a = actionByEvent.get(e.id);
+                const tools = a?.tool_calls || [];
+                const empty = !a || (!a.text_excerpt && tools.length === 0 && !a.has_thinking);
                 return (
                   <div
-                    key={a.event_id}
+                    key={e.id}
                     style={{
                       padding: 14,
                       border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
@@ -1421,21 +1428,30 @@ body {
                       background: "var(--surface-canvas)",
                     }}
                   >
-                    <div className="flex justify-between items-center mb-2" style={{fontSize: 11}}>
-                      <span className="flex gap-2 items-center">
+                    {/* Header row: index, time, optional flags / metrics on the right. */}
+                    <div className="flex justify-between items-center mb-2" style={{fontSize: 11, flexWrap: "wrap", gap: 8}}>
+                      <span className="flex gap-2 items-center" style={{flexWrap: "wrap"}}>
                         <span className="mono muted">#{idx + 1}</span>
-                        <span className="mono muted">{fmt(a.occurred_at)}</span>
-                        {a.has_thinking && <span className="chip" style={{fontSize: 10}}>thinking</span>}
-                        {a.source === "missing" && <span className="chip chip--warn" style={{fontSize: 10}}>session file missing</span>}
+                        <span className="mono muted">{fmt(e.occurred_at)}</span>
+                        {a?.has_thinking && <span className="chip" style={{fontSize: 10}}>thinking</span>}
+                        {a?.source === "missing" && <span className="chip chip--warn" style={{fontSize: 10}}>session file missing</span>}
+                        {a?.message_id && (
+                          <span className="mono muted" style={{fontSize: 10}} title={a.message_id}>{a.message_id.slice(0, 12)}…</span>
+                        )}
                       </span>
-                      <span className="mono muted" style={{fontSize: 10}} title={a.message_id || ""}>{a.message_id ? a.message_id.slice(0, 12) + "…" : "—"}</span>
+                      <span className="flex gap-3 items-center tnum" style={{fontSize: 11, color: "var(--text-slate)"}}>
+                        <span title="tokens">{e.tokens ? e.tokens.toLocaleString() : "—"} tok</span>
+                        <span style={{fontWeight: 500, color: "var(--text-ink)"}} title="event cost">{e.cost ? \`$\${e.cost.toFixed(4)}\` : "—"}</span>
+                        <span title="cumulative">cum \${cumulative[idx].toFixed(4)}</span>
+                      </span>
                     </div>
-                    {a.text_excerpt && (
-                      <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)", marginBottom: a.tool_calls?.length ? 10 : 0}}>{a.text_excerpt}</div>
+                    {/* Body: text excerpt (if any) followed by tool-call rows. */}
+                    {a?.text_excerpt && (
+                      <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)", marginBottom: tools.length ? 10 : 0}}>{a.text_excerpt}</div>
                     )}
-                    {a.tool_calls && a.tool_calls.length > 0 && (
+                    {tools.length > 0 && (
                       <div className="flex-col gap-2">
-                        {a.tool_calls.map((tc, i) => {
+                        {tools.map((tc, i) => {
                           const color = toolKindColor(tc.name);
                           return (
                             <div key={i} className="flex gap-3 items-start" style={{padding: "6px 10px", borderRadius: "var(--r-md)", background: "var(--surface-lifted)"}}>
@@ -1452,7 +1468,7 @@ body {
                       </div>
                     )}
                     {empty && (
-                      <div style={{fontSize: 12, color: "var(--text-slate)"}}>Empty turn (no text or tool calls captured).</div>
+                      <div style={{fontSize: 12, color: "var(--text-slate)"}}>Empty turn — no text or tool calls captured.</div>
                     )}
                   </div>
                 );
@@ -1473,11 +1489,14 @@ body {
       const events = (taskData?.rawEvents || []).filter(e => e.run_id === runId);
       let acc = 0;
       const cumulative = events.map(e => { acc += (e.cost || 0); return acc; });
-      const eventsPage = usePaginated(events, 25);
       const totalCost = run?.estimated_total || events.reduce((a, e) => a + (e.cost || 0), 0);
       const totalTokens = run?.token_count || events.reduce((a, e) => a + (e.tokens || 0), 0);
       const fmt = s => s ? s.slice(0, 16).replace("T", " ") : "—";
       const dur = run?.span_duration_ms ? \`\${Math.round(run.span_duration_ms / 1000)}s\` : (run?.event_duration_ms ? \`\${Math.round(run.event_duration_ms / 1000)}s\` : "—");
+      // The user prompt is the same across every event in this run (the run
+      // *is* one user prompt's worth of work). Pick it up from the first event
+      // and render it once at the top, not per-event.
+      const runPrompt = (events.find(e => e.prompt)?.prompt || "").replace(/\\s+/g, " ").trim();
       return (
         <DetailShell activeNav="run" onNav={onNav} workspace={workspace}>
           <DetailHeader
@@ -1496,13 +1515,28 @@ body {
               { label: "Duration", value: dur },
             ] : []}
           />
+          {/* User prompt that triggered this run — single line truncated for
+              recognition; full text on hover. Run-level metadata, not per-event. */}
+          {!isLoading && runPrompt && (
+            <section style={{
+              padding: "12px 16px",
+              marginBottom: 16,
+              borderLeft: "3px solid var(--signal-orange)",
+              background: "var(--surface-lifted)",
+              borderRadius: "0 var(--r-lg) var(--r-lg) 0",
+            }}>
+              <div className="eyebrow muted" style={{marginBottom: 4}}>User prompt</div>
+              <div
+                style={{fontSize: 14, lineHeight: 1.45, color: "var(--text-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}
+                title={runPrompt}
+              >
+                {runPrompt}
+              </div>
+            </section>
+          )}
           {isLoading && <LoadingPanel label="Loading run trace…"/>}
           {!isLoading && events.length > 0 && (
             <>
-              {/* Actions reconstructed from the assistant content blocks (text +
-                  tool_use). Newer events read from the stored payload directly,
-                  older ones fall back to re-parsing the session JSONL. */}
-              <RunActionsSection actions={actions}/>
               <section className="card" style={{padding: 28, marginBottom: 16}}>
                 <div className="flex justify-between items-end mb-4">
                   <div>
@@ -1518,56 +1552,10 @@ body {
                   </svg>
                 </div>
               </section>
-              <section className="card" style={{padding: 24, marginBottom: 16}}>
-                <div className="eyebrow" style={{marginBottom: 6}}>Events</div>
-                <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Timeline · {events.length} events</h4>
-                <table className="t" style={{tableLayout: "fixed", width: "100%"}}>
-                  <colgroup>
-                    <col style={{width: 70}}/>
-                    <col/>
-                    <col style={{width: 200}}/>
-                    <col style={{width: 130}}/>
-                    <col style={{width: 100}}/>
-                    <col style={{width: 90}}/>
-                    <col style={{width: 100}}/>
-                  </colgroup>
-                  <thead><tr>
-                    <th>time</th>
-                    <th>prompt</th>
-                    <th>provider/model</th>
-                    <th>kind</th>
-                    <th style={{textAlign:"right"}}>tokens</th>
-                    <th style={{textAlign:"right"}}>cost</th>
-                    <th style={{textAlign:"right"}}>cumulative</th>
-                  </tr></thead>
-                  <tbody>
-                    {eventsPage.slice.map((e, i) => {
-                      const globalIndex = (eventsPage.page - 1) * 25 + i;
-                      const promptOneLine = (e.prompt || "").replace(/\\s+/g, " ").trim();
-                      return (
-                        <tr key={e.id}>
-                          <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{e.occurred_at.slice(11, 19)}</td>
-                          <td
-                            style={{fontSize: 12, lineHeight: 1.35, color: promptOneLine ? "var(--text-ink)" : "var(--text-slate)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}
-                            title={e.prompt || "(no prompt snapshot)"}
-                          >
-                            {promptOneLine || "—"}
-                          </td>
-                          <td className="mono" style={{fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{e.provider_model}</td>
-                          <td>
-                            <span className="chip" style={{fontSize: 10}}>{e.usage_kind}</span>
-                            <div className="mono" style={{fontSize: 10, color: "var(--text-slate)", marginTop: 2}}>{e.confidence}</div>
-                          </td>
-                          <td className="tnum" style={{textAlign:"right", fontSize:12}}>{e.tokens ? e.tokens.toLocaleString() : "—"}</td>
-                          <td className="tnum" style={{textAlign:"right", fontSize:12, fontWeight:500}}>{e.cost ? \`$\${e.cost.toFixed(4)}\` : "—"}</td>
-                          <td className="tnum" style={{textAlign:"right", fontSize:12, color:"var(--text-slate)"}}>\${cumulative[globalIndex].toFixed(4)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <Paginator {...eventsPage} onChange={eventsPage.setPage} label="events"/>
-              </section>
+              {/* Unified per-turn timeline. Joins each usage event with its
+                  matching action card so the user sees cost AND what the
+                  assistant did in one row, not as two parallel sections. */}
+              <RunTimelineSection events={events} actions={actions} cumulative={cumulative}/>
             </>
           )}
           {!isLoading && events.length === 0 && (
