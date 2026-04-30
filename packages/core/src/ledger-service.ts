@@ -252,7 +252,10 @@ export interface InboxAssignmentResult {
 /** Single tool invocation summary surfaced to the dashboard run trace. */
 export interface RunActionToolCall {
   name: string;
+  /** Single-line, ~160 chars, for the compact card row. */
   summary: string;
+  /** Multi-line full input rendering for the expanded card view. */
+  detail: string;
 }
 
 /**
@@ -266,6 +269,7 @@ export interface RunAction {
   occurred_at: string;
   message_id: string | null;
   text_excerpt: string | null;
+  thinking_excerpt: string | null;
   tool_calls: RunActionToolCall[];
   has_thinking: boolean;
   /** Where this summary came from — useful for diagnostics. */
@@ -1784,12 +1788,13 @@ function defaultIdFactory(prefix: string): string {
 
 interface RunActionSummary {
   text_excerpt: string | null;
+  thinking_excerpt: string | null;
   tool_calls: RunActionToolCall[];
   has_thinking: boolean;
 }
 
 function emptySummary(): RunActionSummary {
-  return { text_excerpt: null, tool_calls: [], has_thinking: false };
+  return { text_excerpt: null, thinking_excerpt: null, tool_calls: [], has_thinking: false };
 }
 
 function buildRunAction(
@@ -1803,6 +1808,7 @@ function buildRunAction(
     occurred_at: event.occurred_at,
     message_id: messageId,
     text_excerpt: summary.text_excerpt,
+    thinking_excerpt: summary.thinking_excerpt,
     tool_calls: summary.tool_calls,
     has_thinking: summary.has_thinking,
     source,
@@ -1826,10 +1832,12 @@ function readInlineAssistantSummary(
     if (!isRecord(tc)) continue;
     const name = stringField(tc.name) ?? "tool";
     const summary = stringField(tc.summary) ?? "";
-    tool_calls.push({ name, summary });
+    const detail = stringField(tc.detail) ?? "";
+    tool_calls.push({ name, summary, detail });
   }
   return {
     text_excerpt: stringField(raw.text_excerpt),
+    thinking_excerpt: stringField(raw.thinking_excerpt),
     tool_calls,
     has_thinking: Boolean(raw.has_thinking),
   };
@@ -1870,7 +1878,8 @@ function readClaudeSessionSummaries(filePath: string): Map<string, RunActionSumm
     const summary = summarizeClaudeAssistantContent(message?.content);
     out.set(messageId, {
       text_excerpt: summary.text_excerpt,
-      tool_calls: summary.tool_calls.map((tc) => ({ name: tc.name, summary: tc.summary })),
+      thinking_excerpt: summary.thinking_excerpt,
+      tool_calls: summary.tool_calls.map((tc) => ({ name: tc.name, summary: tc.summary, detail: tc.detail })),
       has_thinking: summary.has_thinking,
     });
   }

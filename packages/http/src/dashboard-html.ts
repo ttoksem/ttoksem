@@ -1435,10 +1435,20 @@ body {
     const RunTimelineSection = ({ events, actions, cumulative }) => {
       const isLoading = actions === "loading" || actions === undefined;
       const list = Array.isArray(actions) ? actions : [];
-      // event_id → action lookup (action shape: {event_id, text_excerpt, tool_calls, has_thinking, message_id, source})
+      // event_id → action lookup (action shape: {event_id, text_excerpt, thinking_excerpt, tool_calls, has_thinking, message_id, source})
       const actionByEvent = new Map();
       for (const a of list) actionByEvent.set(a.event_id, a);
       const totalCalls = list.reduce((sum, a) => sum + (a.tool_calls?.length || 0), 0);
+      // Card expansion state — Set of event_ids currently expanded.
+      const [expanded, setExpanded] = React.useState(new Set());
+      const toggleExpanded = (eventId) => {
+        setExpanded(prev => {
+          const next = new Set(prev);
+          if (next.has(eventId)) next.delete(eventId);
+          else next.add(eventId);
+          return next;
+        });
+      };
       const fmt = s => s ? s.slice(11, 19) : "—";
       return (
         <section className="card" style={{padding: 24, marginBottom: 16}}>
@@ -1447,6 +1457,7 @@ body {
               <div className="eyebrow" style={{marginBottom: 6}}>Timeline</div>
               <h4 className="t-h4" style={{margin: 0}}>{events.length} event{events.length === 1 ? "" : "s"}{!isLoading && \` · \${totalCalls} tool call\${totalCalls === 1 ? "" : "s"}\`}</h4>
             </div>
+            <div className="muted" style={{fontSize: 11}}>Click a card for full detail</div>
           </div>
           {isLoading && <LoadingPanel label="Reconstructing actions…"/>}
           {!isLoading && (
@@ -1455,25 +1466,29 @@ body {
                 const a = actionByEvent.get(e.id);
                 const tools = a?.tool_calls || [];
                 const empty = !a || (!a.text_excerpt && tools.length === 0 && !a.has_thinking);
+                const isOpen = expanded.has(e.id);
                 return (
                   <div
                     key={e.id}
+                    onClick={() => toggleExpanded(e.id)}
                     style={{
                       padding: 14,
-                      border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
+                      border: "1px solid " + (isOpen ? "color-mix(in oklab, var(--signal-orange) 35%, transparent)" : "color-mix(in oklab, var(--text-ink) 8%, transparent)"),
                       borderRadius: "var(--r-lg)",
                       background: "var(--surface-canvas)",
+                      cursor: "pointer",
+                      transition: "border-color 120ms",
                     }}
                   >
                     {/* Header row: index, time, optional flags / metrics on the right. */}
                     <div className="flex justify-between items-center mb-2" style={{fontSize: 11, flexWrap: "wrap", gap: 8}}>
                       <span className="flex gap-2 items-center" style={{flexWrap: "wrap"}}>
-                        <span className="mono muted">#{idx + 1}</span>
+                        <span className="mono muted">{isOpen ? "▾" : "▸"} #{idx + 1}</span>
                         <span className="mono muted">{fmt(e.occurred_at)}</span>
                         {a?.has_thinking && <span className="chip" style={{fontSize: 10}}>thinking</span>}
                         {a?.source === "missing" && <span className="chip chip--warn" style={{fontSize: 10}}>session file missing</span>}
                         {a?.message_id && (
-                          <span className="mono muted" style={{fontSize: 10, cursor: "help"}} title={a.message_id}>{shortenId(a.message_id, 10, 8)}</span>
+                          <span className="mono muted" style={{fontSize: 10, cursor: "help"}} title={a.message_id} onClick={(ev) => ev.stopPropagation()}>{shortenId(a.message_id, 10, 8)}</span>
                         )}
                       </span>
                       <span className="flex gap-3 items-center tnum" style={{fontSize: 11, color: "var(--text-slate)"}}>
@@ -1482,11 +1497,11 @@ body {
                         <span title="cumulative">cum \${cumulative[idx].toFixed(4)}</span>
                       </span>
                     </div>
-                    {/* Body: text excerpt (if any) followed by tool-call rows. */}
-                    {a?.text_excerpt && (
-                      <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)", marginBottom: tools.length ? 10 : 0}}>{a.text_excerpt}</div>
+                    {/* Compact body (always visible): one-line text + one-line tool summaries. */}
+                    {!isOpen && a?.text_excerpt && (
+                      <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)", marginBottom: tools.length ? 10 : 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{a.text_excerpt}</div>
                     )}
-                    {tools.length > 0 && (
+                    {!isOpen && tools.length > 0 && (
                       <div className="flex-col gap-2">
                         {tools.map((tc, i) => {
                           const color = toolKindColor(tc.name);
@@ -1504,8 +1519,67 @@ body {
                         })}
                       </div>
                     )}
-                    {empty && (
+                    {!isOpen && empty && (
                       <div style={{fontSize: 12, color: "var(--text-slate)"}}>Empty turn — no text or tool calls captured.</div>
+                    )}
+                    {/* Expanded body: full text wrap + per-tool detail + thinking + token breakdown. */}
+                    {isOpen && (
+                      <div className="flex-col gap-3" style={{marginTop: 10, paddingTop: 12, borderTop: "1px dashed color-mix(in oklab, var(--text-ink) 12%, transparent)"}}>
+                        {a?.text_excerpt && (
+                          <div>
+                            <div className="eyebrow muted" style={{marginBottom: 4}}>Assistant text</div>
+                            <div style={{fontSize: 13, lineHeight: 1.55, color: "var(--text-ink)", whiteSpace: "pre-wrap", wordBreak: "break-word"}}>{a.text_excerpt}</div>
+                          </div>
+                        )}
+                        {tools.length > 0 && (
+                          <div>
+                            <div className="eyebrow muted" style={{marginBottom: 4}}>Tool calls · {tools.length}</div>
+                            <div className="flex-col gap-2">
+                              {tools.map((tc, i) => {
+                                const color = toolKindColor(tc.name);
+                                return (
+                                  <div key={i} style={{padding: 10, borderRadius: "var(--r-md)", background: "var(--surface-lifted)"}}>
+                                    <div className="flex gap-2 items-center mb-2">
+                                      <span style={{
+                                        fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: "var(--r-pill)",
+                                        background: color.background, color: color.color, fontFamily: "var(--font-mono)",
+                                      }}>{tc.name}</span>
+                                    </div>
+                                    {(tc.detail || tc.summary) ? (
+                                      <pre className="mono" style={{margin: 0, fontSize: 11, lineHeight: 1.5, color: "var(--text-ink)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 320, overflowY: "auto"}}>{tc.detail || tc.summary}</pre>
+                                    ) : (
+                                      <span className="muted" style={{fontSize: 12}}>(no input)</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {a?.thinking_excerpt && (
+                          <div>
+                            <div className="eyebrow muted" style={{marginBottom: 4}}>Thinking</div>
+                            <pre style={{margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--text-slate)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 240, overflowY: "auto"}}>{a.thinking_excerpt}</pre>
+                          </div>
+                        )}
+                        {a && a.has_thinking && !a.thinking_excerpt && (
+                          <div className="muted" style={{fontSize: 12}}>(thinking block present but content not captured)</div>
+                        )}
+                        <div>
+                          <div className="eyebrow muted" style={{marginBottom: 4}}>Token breakdown</div>
+                          <div className="flex gap-4 mono" style={{fontSize: 11, flexWrap: "wrap"}}>
+                            <span>input: <b>{(e.input_tokens ?? 0).toLocaleString()}</b></span>
+                            <span>output: <b>{(e.output_tokens ?? 0).toLocaleString()}</b></span>
+                            <span className="muted">total: {(e.total_tokens ?? e.tokens ?? 0).toLocaleString()}</span>
+                            <span className="muted">cost: \${e.cost ? e.cost.toFixed(6) : "—"}</span>
+                            <span className="muted">{e.confidence}</span>
+                            {a?.source && <span className="muted">· source: {a.source}</span>}
+                          </div>
+                        </div>
+                        {empty && (
+                          <div style={{fontSize: 12, color: "var(--text-slate)"}}>This turn had no text, tool calls, or thinking captured.</div>
+                        )}
+                      </div>
                     )}
                   </div>
                 );

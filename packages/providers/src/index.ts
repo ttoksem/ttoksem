@@ -255,11 +255,18 @@ export interface ClaudeAssistantToolCall {
   name: string;
   /** Single-line human-readable summary of the most informative input field. */
   summary: string;
+  /**
+   * Multi-line detail for expanded views: every input field rendered as
+   * `key: value` with newlines preserved. Capped to keep payloads bounded.
+   */
+  detail: string;
 }
 
 export interface ClaudeAssistantSummary {
-  /** First non-empty text block, truncated to keep payloads small. */
+  /** First non-empty text block. Newlines preserved; ~1.5KB cap. */
   text_excerpt: string | null;
+  /** First non-empty thinking block. Newlines preserved; ~1.2KB cap. */
+  thinking_excerpt: string | null;
   /** Tool invocations in the order they appeared in the assistant message. */
   tool_calls: ClaudeAssistantToolCall[];
   /** True when an interleaved thinking block was present. */
@@ -268,6 +275,7 @@ export interface ClaudeAssistantSummary {
 
 const EMPTY_SUMMARY: ClaudeAssistantSummary = Object.freeze({
   text_excerpt: null,
+  thinking_excerpt: null,
   tool_calls: [],
   has_thinking: false,
 });
@@ -275,6 +283,7 @@ const EMPTY_SUMMARY: ClaudeAssistantSummary = Object.freeze({
 export function summarizeClaudeAssistantContent(content: unknown): ClaudeAssistantSummary {
   if (!Array.isArray(content)) return EMPTY_SUMMARY;
   let text_excerpt: string | null = null;
+  let thinking_excerpt: string | null = null;
   let has_thinking = false;
   const tool_calls: ClaudeAssistantToolCall[] = [];
   for (const raw of content) {
@@ -283,15 +292,21 @@ export function summarizeClaudeAssistantContent(content: unknown): ClaudeAssista
     const type = typeof block.type === "string" ? block.type : "";
     if (type === "text") {
       const t = stringField(block.text);
-      if (t && !text_excerpt) text_excerpt = compact(t, 240);
+      if (t && !text_excerpt) text_excerpt = compact(t, 1500, true);
     } else if (type === "tool_use") {
       const name = stringField(block.name) ?? "tool";
-      tool_calls.push({ name, summary: summarizeToolUseInput(name, block.input) });
+      tool_calls.push({
+        name,
+        summary: summarizeToolUseInput(name, block.input),
+        detail: detailToolUseInput(block.input),
+      });
     } else if (type === "thinking") {
       has_thinking = true;
+      const t = stringField(block.thinking);
+      if (t && !thinking_excerpt) thinking_excerpt = compact(t, 1200, true);
     }
   }
-  return { text_excerpt, tool_calls, has_thinking };
+  return { text_excerpt, thinking_excerpt, tool_calls, has_thinking };
 }
 
 function summarizeToolUseInput(name: string, input: unknown): string {
@@ -344,9 +359,55 @@ function summarizeToolUseInput(name: string, input: unknown): string {
   }
 }
 
-function compact(value: unknown, max: number): string {
+/**
+ * Render every scalar input field as `key: value`, separator newlines.
+ * For TodoWrite, expand each todo. Capped at ~1.5KB.
+ */
+function detailToolUseInput(input: unknown): string {
+  const i = recordField(input);
+  if (!i) return "";
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(i)) {
+    if (v == null) continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      lines.push(`${k}: ${v}`);
+    } else if (Array.isArray(v)) {
+      // TodoWrite has todos: [{content, status, activeForm}, ...]; render readable.
+      if (k === "todos") {
+        v.forEach((t, idx) => {
+          if (t && typeof t === "object") {
+            const r = t as Record<string, unknown>;
+            const status = stringField(r.status) ?? "?";
+            const content = stringField(r.content) ?? "";
+            lines.push(`todo[${idx}] (${status}): ${content}`);
+          }
+        });
+      } else {
+        lines.push(`${k}: [${v.length} items]`);
+      }
+    } else if (typeof v === "object") {
+      lines.push(`${k}: ${JSON.stringify(v).slice(0, 200)}`);
+    }
+  }
+  return compact(lines.join("\n"), 1500, true);
+}
+
+/**
+ * Length-cap a string; when `preserveNewlines` is false, also collapse all
+ * whitespace runs to a single space (suitable for single-line summaries).
+ */
+function compact(value: unknown, max: number, preserveNewlines = false): string {
   if (value == null) return "";
-  const s = String(value).replace(/\s+/g, " ").trim();
+  let s = String(value);
+  if (!preserveNewlines) {
+    s = s.replace(/\s+/g, " ");
+  } else {
+    // Drop carriage returns and trailing whitespace per line; otherwise leave
+    // newlines and indentation alone so multi-line output renders cleanly in
+    // <pre> / white-space: pre-wrap.
+    s = s.replace(/\r/g, "").replace(/[ \t]+\n/g, "\n");
+  }
+  s = s.trim();
   if (s.length <= max) return s;
   return s.slice(0, max) + "…";
 }
