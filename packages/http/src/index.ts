@@ -512,10 +512,15 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 
   // ── Inbox ──────────────────────────────────────────────────────────────────
 
+  // Inbox classification (assign / accept) is part of the dashboard read+sort
+  // workflow, not a generic API write. Allow dashboard:read keys to perform it
+  // so the dashboard user doesn't need a separate api:write token to clean up
+  // their own inbox. Real write paths (task create/update, usage record, etc.)
+  // still require api:write.
   app.openapi(routeAssignInboxGroup, async (c) => {
     const body = c.req.valid("json");
     const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
     if (authResponse) return authResponse as never;
     const result = await options.service.assignInboxGroup({
       workspace: workspaceResolver(workspaceKey),
@@ -530,7 +535,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const body = c.req.valid("json") ?? {};
     const workspaceKey = (body as Record<string, unknown>).workspace as string | undefined
       ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
     if (authResponse) return authResponse as never;
     const result = await options.service.acceptInboxGroup({
       workspace: workspaceResolver(workspaceKey),
@@ -543,7 +548,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   app.openapi(routeAssignInboxEvent, async (c) => {
     const body = c.req.valid("json");
     const workspaceKey = body.workspace ?? c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
     if (authResponse) return authResponse as never;
     const usageEvent = await options.service.assignInboxEvent({
       workspace: workspaceResolver(workspaceKey),

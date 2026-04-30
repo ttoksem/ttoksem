@@ -2058,7 +2058,7 @@ body {
     };
 
     // Inbox Detail — real data from GET /api/inbox/groups
-    const InboxDetail = ({ onNav, workspace, inboxData }) => {
+    const InboxDetail = ({ onNav, workspace, inboxData, taskKeys = [], onGroupResolved }) => {
       // inboxData === null means the fetch is still in flight; an empty
       // array means the fetch returned zero groups. Surfacing the difference
       // matters — a spinner avoids users staring at "Inbox is empty" while
@@ -2068,6 +2068,57 @@ body {
       const totalEvents = groups.reduce((a, g) => a + g.event_count, 0);
       const totalCost = groups.reduce((a, g) => a + (g.estimated_total || 0), 0);
       const groupsPage = usePaginated(groups, 10);
+
+      // Per-group operation state. pendingId tracks which group is mid-fetch
+      // so we can disable buttons; errorById holds the latest server message
+      // so failures stick visibly until the user retries. assignDraft holds
+      // the in-flight task key in each group's text input.
+      const [pendingId, setPendingId] = React.useState(null);
+      const [errorById, setErrorById] = React.useState({});
+      const [assignDraft, setAssignDraft] = React.useState({});
+
+      async function postInbox(path, body) {
+        const res = await fetch(\`/api/inbox/\${path}?workspace=\${encodeURIComponent(workspace)}\`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+        if (!res.ok) {
+          let detail = \`HTTP \${res.status}\`;
+          try { detail = (await res.json())?.detail || detail; } catch (_) {}
+          throw new Error(detail);
+        }
+        return res.json();
+      }
+
+      async function acceptGroup(g) {
+        if (pendingId) return;
+        setPendingId(g.group_id);
+        setErrorById(prev => { const n = { ...prev }; delete n[g.group_id]; return n; });
+        try {
+          await postInbox(\`\${encodeURIComponent(g.group_id)}/accept\`, { all: true });
+          onGroupResolved && onGroupResolved(g.group_id);
+        } catch (e) {
+          setErrorById(prev => ({ ...prev, [g.group_id]: e.message }));
+        } finally {
+          setPendingId(null);
+        }
+      }
+
+      async function assignGroup(g) {
+        const key = (assignDraft[g.group_id] || "").trim();
+        if (!key || pendingId) return;
+        setPendingId(g.group_id);
+        setErrorById(prev => { const n = { ...prev }; delete n[g.group_id]; return n; });
+        try {
+          await postInbox(\`\${encodeURIComponent(g.group_id)}/assign\`, { task_key: key, all: true });
+          onGroupResolved && onGroupResolved(g.group_id);
+        } catch (e) {
+          setErrorById(prev => ({ ...prev, [g.group_id]: e.message }));
+        } finally {
+          setPendingId(null);
+        }
+      }
       return (
         <DetailShell activeNav="inbox" onNav={onNav} workspace={workspace}>
           <DetailHeader
@@ -2092,9 +2143,16 @@ body {
             <section className="card" style={{padding: 24, marginBottom: 16}}>
               <div className="eyebrow" style={{marginBottom: 6}}>Groups</div>
               <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Unassigned inbox groups</h4>
+              <datalist id="inbox-task-keys">
+                {taskKeys.map(k => <option key={k} value={k}/>)}
+              </datalist>
               <div className="flex-col gap-3">
-                {groupsPage.slice.map(g => (
-                  <div key={g.group_id} style={{padding: 16, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)"}}>
+                {groupsPage.slice.map(g => {
+                  const isPending = pendingId === g.group_id;
+                  const errMsg = errorById[g.group_id];
+                  const draftKey = assignDraft[g.group_id] || "";
+                  return (
+                  <div key={g.group_id} style={{padding: 16, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)", opacity: isPending ? 0.7 : 1, transition: "opacity 120ms"}}>
                     <div className="flex justify-between items-center mb-3">
                       <div className="flex gap-2 items-center">
                         <span className="chip chip--orange" style={{fontSize: 10}}><span className="chip__dot"/>{g.assignment_status}</span>
@@ -2103,9 +2161,19 @@ body {
                       <span className="tnum" style={{fontWeight: 500, fontSize: 14}}>\${(g.estimated_total || 0).toFixed(4)}</span>
                     </div>
                     {g.suggested_task && (
-                      <div style={{marginBottom: 10, padding: "8px 12px", background: "color-mix(in oklab, var(--pos) 8%, transparent)", borderRadius: "var(--r-sm)", display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                      <div style={{marginBottom: 10, padding: "8px 12px", background: "color-mix(in oklab, var(--pos) 8%, transparent)", borderRadius: "var(--r-sm)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap"}}>
                         <span style={{fontSize: 12}}>Suggested: <span className="mono" style={{fontWeight: 500}}>{g.suggested_task.task_key}</span></span>
-                        <span className="chip chip--pos" style={{fontSize: 10}}>{Math.round(g.suggested_task.confidence * 100)}% match</span>
+                        <span className="flex gap-2 items-center">
+                          <span className="chip chip--pos" style={{fontSize: 10}}>{Math.round(g.suggested_task.confidence * 100)}% match</span>
+                          <button
+                            className="btn btn--primary btn--sm"
+                            disabled={isPending}
+                            onClick={() => acceptGroup(g)}
+                            style={{fontSize: 11, padding: "4px 12px"}}
+                          >
+                            {isPending ? "Accepting…" : "Accept"}
+                          </button>
+                        </span>
                       </div>
                     )}
                     {(() => {
@@ -2118,16 +2186,59 @@ body {
                         </div>
                       );
                     })()}
-                    <div className="flex gap-3 items-center" style={{fontSize: 11, color: "var(--text-slate)"}}>
-                      <span>{g.event_count ?? 0} events</span>
-                      <span>·</span>
-                      <span className="mono">{g.source_context?.tool || "unknown"}</span>
-                      <span>·</span>
-                      <span>{(g.first_occurred_at || "").slice(0, 10) || "—"}</span>
-                      {g.source_context?.git_branch && <><span>·</span><span className="mono">{g.source_context.git_branch}</span></>}
+                    <div className="flex justify-between items-center" style={{gap: 12, flexWrap: "wrap"}}>
+                      <div className="flex gap-3 items-center" style={{fontSize: 11, color: "var(--text-slate)", flex: "1 1 auto", minWidth: 0}}>
+                        <span>{g.event_count ?? 0} events</span>
+                        <span>·</span>
+                        <span className="mono">{g.source_context?.tool || "unknown"}</span>
+                        <span>·</span>
+                        <span>{(g.first_occurred_at || "").slice(0, 10) || "—"}</span>
+                        {g.source_context?.git_branch && <><span>·</span><span className="mono">{g.source_context.git_branch}</span></>}
+                      </div>
+                      {/* Manual assign: free-text input with autocomplete from
+                          existing task keys. User can also type a key that
+                          doesn't exist yet — server creates the task on assign. */}
+                      <form
+                        onSubmit={(e) => { e.preventDefault(); assignGroup(g); }}
+                        className="flex gap-2 items-center"
+                        style={{flexShrink: 0}}
+                      >
+                        <input
+                          list="inbox-task-keys"
+                          value={draftKey}
+                          onChange={(e) => setAssignDraft(prev => ({ ...prev, [g.group_id]: e.target.value }))}
+                          placeholder="Assign to task…"
+                          disabled={isPending}
+                          style={{
+                            padding: "5px 10px",
+                            fontSize: 12,
+                            fontFamily: "var(--font-mono)",
+                            border: "1px solid color-mix(in oklab, var(--text-ink) 12%, transparent)",
+                            borderRadius: "var(--r-md)",
+                            background: "var(--surface-white)",
+                            color: "var(--text-ink)",
+                            outline: "none",
+                            width: 220,
+                          }}
+                        />
+                        <button
+                          className="btn btn--secondary btn--sm"
+                          type="submit"
+                          disabled={isPending || !draftKey.trim()}
+                          style={{fontSize: 11, padding: "4px 12px"}}
+                        >
+                          {isPending ? "Assigning…" : "Assign"}
+                        </button>
+                      </form>
                     </div>
+                    {errMsg && (
+                      <div style={{marginTop: 8, padding: "6px 10px", background: "color-mix(in oklab, var(--neg) 10%, transparent)", color: "var(--neg)", borderRadius: "var(--r-sm)", fontSize: 11}}>
+                        {errMsg}
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <Paginator {...groupsPage} onChange={groupsPage.setPage} label="groups"/>
             </section>
@@ -2518,7 +2629,13 @@ body {
       if (view === "inbox") {
         return <>
           {themeBtn}
-          <InboxDetail onNav={handleNav} workspace={defaultWorkspace} inboxData={inboxData}/>
+          <InboxDetail
+            onNav={handleNav}
+            workspace={defaultWorkspace}
+            inboxData={inboxData}
+            taskKeys={(dashData?.tasks || []).map(t => t.id).filter(k => k && k !== "unassigned")}
+            onGroupResolved={(groupId) => setInboxData(prev => Array.isArray(prev) ? prev.filter(g => g.group_id !== groupId) : prev)}
+          />
         </>;
       }
       if (view === "pricing") {
