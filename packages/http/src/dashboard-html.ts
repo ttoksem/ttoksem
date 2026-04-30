@@ -607,8 +607,9 @@ body {
       const anomalies = api.attention.map(a => ({
         kind: a.title,
         count: parseInt(a.metric) || 1,
+        metric: a.metric,
         hint: a.body,
-        action: a.task_key ? \`view task \${a.task_key}\` : "review",
+        taskKey: a.task_key || null,
         sev: a.severity === "bad" ? "warn" : a.severity,
       }));
 
@@ -923,13 +924,45 @@ body {
                     </div>
                   </div>
                   <div className="flex gap-2" style={{flexWrap: "wrap", justifyContent: "flex-end"}}>
-                    {d.anomalies.map((a, i) => (
-                      <div key={i} className="chip" style={{background: "var(--surface-white)", padding: "6px 12px", fontSize: 12, gap: 8}}>
-                        <span className="chip__dot" style={{background: a.sev === "warn" ? "var(--warn)" : "var(--info)"}}/>
-                        <span style={{fontWeight: 500}}>{a.kind} · {a.count}</span>
-                        <span className="muted" style={{maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{a.hint}</span>
-                      </div>
-                    ))}
+                    {d.anomalies.map((a, i) => {
+                      // Resolve where this attention item should navigate. The
+                      // title carries the intent ('Assignment inbox' → inbox,
+                      // 'Pricing gap' → pricing) — task_key alone is enough
+                      // for the rest. The synthetic 'unassigned' task is a
+                      // bucket, not a navigable task, so route it to /inbox.
+                      let target = null; // {view, taskKey?}
+                      if (a.kind === "Assignment inbox") target = { view: "inbox" };
+                      else if (a.kind === "Pricing gap") target = { view: "pricing" };
+                      else if (a.taskKey === "unassigned") target = { view: "inbox" };
+                      else if (a.taskKey) target = { view: "task", taskKey: a.taskKey };
+                      const clickable = target != null;
+                      return (
+                        <button
+                          key={i}
+                          disabled={!clickable}
+                          onClick={() => clickable && onNav && onNav(target.view, target.taskKey || null)}
+                          className="chip"
+                          style={{
+                            background: "var(--surface-white)",
+                            padding: "6px 12px",
+                            fontSize: 12,
+                            gap: 8,
+                            border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
+                            cursor: clickable ? "pointer" : "default",
+                            fontFamily: "inherit",
+                            transition: "transform 80ms, border-color 120ms",
+                          }}
+                          onMouseOver={(e) => clickable && (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--signal-orange) 35%, transparent)")}
+                          onMouseOut={(e) => (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--text-ink) 8%, transparent)")}
+                          title={a.hint}
+                        >
+                          <span className="chip__dot" style={{background: a.sev === "warn" ? "var(--warn)" : a.sev === "bad" ? "#c0392b" : "var(--info)"}}/>
+                          <span style={{fontWeight: 500}}>{a.kind} · {a.metric || a.count}</span>
+                          <span className="muted" style={{maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{a.hint}</span>
+                          {clickable && <span style={{color: "var(--text-slate)", fontSize: 11}}>→</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </section>
