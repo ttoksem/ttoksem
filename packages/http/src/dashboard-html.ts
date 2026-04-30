@@ -1039,11 +1039,28 @@ body {
                 <div className="kpi__value tnum">\${d.daily.length > 0 ? (total / d.daily.length).toFixed(2) : "0.00"}</div>
                 {d.daily.length > 0 && <DotCalendar days={Math.min(28, d.daily.length)} data={d.daily} max={maxDay} accent="var(--signal-orange)"/>}
               </div>
-              <div className="kpi" style={{padding: 18, borderColor: d.unpriced > 0 ? "color-mix(in oklab, var(--warn) 30%, transparent)" : undefined}}>
-                <div className="kpi__label" style={{color: d.unpriced > 0 ? "var(--warn)" : undefined}}>Unpriced</div>
+              <button
+                className="kpi"
+                onClick={() => onNav && onNav("pricing", null)}
+                title={d.unpriced > 0 ? "Open pricing rules to fill the gap" : "View loaded pricing rules"}
+                style={{
+                  padding: 18,
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  borderColor: d.unpriced > 0 ? "color-mix(in oklab, var(--warn) 30%, transparent)" : undefined,
+                  transition: "transform 80ms, border-color 120ms",
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--signal-orange) 45%, transparent)")}
+                onMouseOut={(e) => (e.currentTarget.style.borderColor = d.unpriced > 0 ? "color-mix(in oklab, var(--warn) 30%, transparent)" : "")}
+              >
+                <div className="kpi__label" style={{color: d.unpriced > 0 ? "var(--warn)" : undefined, display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                  <span>Unpriced</span>
+                  <span style={{fontSize: 11, color: "var(--text-slate)"}}>→</span>
+                </div>
                 <div className="kpi__value tnum" style={{color: d.unpriced > 0 ? "var(--warn)" : undefined}}>{d.unpriced}</div>
                 <div className="kpi__sub mono" style={{fontSize: 11}}>{d.unpriced > 0 ? "missing_pricing_rule" : "all priced"}</div>
-              </div>
+              </button>
             </section>
 
             {/* Action-needed banner: only actionable items (warn/bad). */}
