@@ -709,6 +709,22 @@ export class LedgerService {
    * The JSONL fallback caches each file by path within a single call so a run
    * with N events from one file only reads/parses it once.
    */
+  /**
+   * Resolve which task a run belongs to. Used by the dashboard so a deep-link
+   * to /runs/:runId can fetch the owning task before rendering RunDetail.
+   * Returns null when the run id is unknown to the workspace or when no event
+   * for that run carries a task_id.
+   */
+  async runMeta(input: { workspace: WorkspaceResolver; runId: string }): Promise<{ run_id: string; task_key: string; task_name: string } | null> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const events = await this.store.listUsageEventsByRun(workspace.id, input.runId);
+    const withTask = events.find((e) => e.task_id);
+    if (!withTask?.task_id) return null;
+    const task = await this.store.getTaskById(withTask.task_id);
+    if (!task) return null;
+    return { run_id: input.runId, task_key: task.key, task_name: task.name };
+  }
+
   async runActions(input: { workspace: WorkspaceResolver; runId: string }): Promise<RunAction[]> {
     const workspace = await this.resolveWorkspace(input.workspace);
     const events = await this.store.listUsageEventsByRun(workspace.id, input.runId);

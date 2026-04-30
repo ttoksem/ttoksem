@@ -303,6 +303,21 @@ const routeRunActions = createRoute({
   },
 });
 
+const routeRunMeta = createRoute({
+  method: "get", path: "/api/runs/{runId}/meta", tags: ["Runs"],
+  summary: "Resolve which task a run belongs to (deep-link support)", security: BEARER_AUTH,
+  request: {
+    params: z.object({ runId: z.string() }),
+    query: WorkspaceQuery,
+  },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({
+      run_id: z.string(), task_key: z.string(), task_name: z.string(),
+    }) } }, description: "Run task lookup" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Run not found" },
+  },
+});
+
 const routeListPricingSnapshots = createRoute({
   method: "get", path: "/api/pricing/snapshots", tags: ["Pricing"],
   summary: "List pricing source snapshots", security: BEARER_AUTH,
@@ -566,6 +581,19 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     return c.json({ actions }, 200);
   });
 
+  app.openapi(routeRunMeta, async (c) => {
+    const { workspace: wk } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const meta = await options.service.runMeta({
+      workspace: workspaceResolver(workspaceKey),
+      runId: c.req.valid("param").runId,
+    });
+    if (!meta) return c.json({ error: "Run not found." }, 404);
+    return c.json(meta, 200);
+  });
+
   // ── Pricing ────────────────────────────────────────────────────────────────
 
   app.openapi(routeListPricingSnapshots, async (c) => {
@@ -642,6 +670,11 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   app.get("/tasks/:taskKey", async (context) => {
     if (!(await requireSession(context))) return context.redirect("/login");
     return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "task", taskKey: context.req.param("taskKey") }));
+  });
+
+  app.get("/runs/:runId", async (context) => {
+    if (!(await requireSession(context))) return context.redirect("/login");
+    return context.html(renderDashboardHtml(defaultWorkspaceKey, { view: "run", runId: context.req.param("runId") }));
   });
 
   app.onError((error, context) => {

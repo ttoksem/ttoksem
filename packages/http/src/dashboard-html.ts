@@ -1,8 +1,9 @@
 import type { DashboardData } from "@ttoksem/core";
 
 export interface DashboardInitialState {
-  view: "pro" | "inbox" | "pricing" | "task";
+  view: "pro" | "inbox" | "pricing" | "task" | "run";
   taskKey?: string | null;
+  runId?: string | null;
 }
 
 export function renderDashboardHtml(
@@ -17,6 +18,7 @@ export function renderDashboardHtml(
     : { view: "pro" };
   const workspaceJson = JSON.stringify(defaultWorkspaceKey);
   const taskKeyJson = JSON.stringify(state.taskKey ?? null);
+  const runIdJson = JSON.stringify(state.runId ?? null);
   const initialViewJson = JSON.stringify(state.view);
   return `<!doctype html>
 <html lang="en">
@@ -296,6 +298,7 @@ body {
   <script>
     const defaultWorkspace = ${workspaceJson};
     const initialTaskKey = ${taskKeyJson};
+    const initialRunId = ${runIdJson};
     const initialView = ${initialViewJson};
 
     // Auth: the dashboard authenticates via the httpOnly ttoksem_session
@@ -307,17 +310,19 @@ body {
     function authHeaders() { return {}; }
 
     // URL <-> view-state mapping (kept simple; mirrors the server routes).
-    function viewToPath(view, taskKey) {
+    function viewToPath(view, taskKey, runId) {
       if (view === "task" && taskKey) return "/tasks/" + encodeURIComponent(taskKey);
+      if (view === "run" && runId) return "/runs/" + encodeURIComponent(runId);
       if (view === "inbox") return "/inbox";
       if (view === "pricing") return "/pricing";
-      // "run" has no canonical URL yet (needs taskKey context); fall through.
       return "/";
     }
     function parseLocationToView() {
       const path = window.location.pathname;
-      const m = path.match(/^\\/tasks\\/([^/]+)/);
-      if (m) return { view: "task", taskKey: decodeURIComponent(m[1]) };
+      const taskMatch = path.match(/^\\/tasks\\/([^/]+)/);
+      if (taskMatch) return { view: "task", taskKey: decodeURIComponent(taskMatch[1]) };
+      const runMatch = path.match(/^\\/runs\\/([^/]+)/);
+      if (runMatch) return { view: "run", runId: decodeURIComponent(runMatch[1]) };
       if (path === "/inbox") return { view: "inbox" };
       if (path === "/pricing") return { view: "pricing" };
       return { view: "pro" };
@@ -2134,7 +2139,7 @@ body {
       const [theme, setTheme] = React.useState("light");
       const [view, setView] = React.useState(initialView || (initialTaskKey ? "task" : "pro"));
       const [activeTaskKey, setActiveTaskKey] = React.useState(initialTaskKey);
-      const [activeRunId, setActiveRunId] = React.useState(null);
+      const [activeRunId, setActiveRunId] = React.useState(initialRunId);
 
       const [loading, setLoading] = React.useState(true);
       const [error, setError] = React.useState(null);
@@ -2240,12 +2245,38 @@ body {
         fetchDashboard(defaultWorkspace);
       }, []);
 
+      // Resolve a deep-link to /runs/:runId by looking up which task the run
+      // belongs to, then fetching the task so RunDetail has the data it needs.
+      // Failures fall back to overview so the user isn't stuck on a blank page.
+      async function fetchRunByDeepLink(runId) {
+        try {
+          const res = await fetch(\`/api/runs/\${encodeURIComponent(runId)}/meta?workspace=\${encodeURIComponent(defaultWorkspace)}\`, {
+            headers: authHeaders(),
+          });
+          if (!res.ok) {
+            setView("pro");
+            return;
+          }
+          const meta = await res.json();
+          if (meta.task_key) {
+            setActiveTaskKey(meta.task_key);
+            setTaskData(null);
+            fetchTask(defaultWorkspace, meta.task_key);
+          }
+          fetchRunActions(defaultWorkspace, runId);
+        } catch (e) {
+          console.error("Run deep-link resolution failed:", e);
+          setView("pro");
+        }
+      }
+
       React.useEffect(() => {
         if (initialTaskKey) {
           fetchTask(defaultWorkspace, initialTaskKey);
         }
         if (initialView === "inbox") fetchInbox(defaultWorkspace);
         if (initialView === "pricing") fetchPricing(defaultWorkspace);
+        if (initialView === "run" && initialRunId) fetchRunByDeepLink(initialRunId);
       }, []);
 
       // Sync URL with view state so the browser back/forward buttons work.
@@ -2259,13 +2290,21 @@ body {
             setTaskData(null);
             fetchTask(defaultWorkspace, next.taskKey);
           }
+          if (next.view === "run" && next.runId) {
+            setActiveRunId(next.runId);
+            // If we already have taskData and the run is in it, no extra
+            // fetch needed; otherwise resolve the run's task afresh.
+            const known = taskData?.rawRuns?.some(r => r.run_id === next.runId);
+            if (!known) fetchRunByDeepLink(next.runId);
+            else fetchRunActions(defaultWorkspace, next.runId);
+          }
           if (next.view === "inbox" && !inboxData) fetchInbox(defaultWorkspace);
           if (next.view === "pricing" && !pricingData) fetchPricing(defaultWorkspace);
           setView(next.view);
         }
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-      }, [inboxData, pricingData]);
+      }, [inboxData, pricingData, taskData]);
 
       function handleNav(newView, taskKey, runIdParam) {
         if (newView === "task" && taskKey) {
@@ -2286,9 +2325,13 @@ body {
         setView(newView);
         // Push a real history entry so browser back/forward navigates between
         // views, not only between hash anchors.
-        const path = viewToPath(newView, newView === "task" ? taskKey : null);
+        const path = viewToPath(
+          newView,
+          newView === "task" ? taskKey : null,
+          newView === "run" ? runIdParam : null,
+        );
         if (path !== window.location.pathname) {
-          window.history.pushState({ view: newView, taskKey: taskKey || null }, "", path);
+          window.history.pushState({ view: newView, taskKey: taskKey || null, runId: runIdParam || null }, "", path);
         }
       }
 
