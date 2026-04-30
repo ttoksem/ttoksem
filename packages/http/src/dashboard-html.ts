@@ -1657,10 +1657,12 @@ body {
     }
 
     // Task Detail
-    const TaskDetail = ({ taskData, onNav, workspace }) => {
+    const TaskDetail = ({ taskData, onNav, workspace, permissions, onTaskChanged }) => {
       // Hooks must be called unconditionally — pass empty arrays when data isn't ready yet.
       const runsPage = usePaginated(taskData?.runs_list || [], 10);
       const recentPage = usePaginated(taskData?.recent || [], 5);
+      const [closing, setClosing] = React.useState(false);
+      const [closeError, setCloseError] = React.useState(null);
 
       if (!taskData) return (
         <DetailShell activeNav="task" onNav={onNav} workspace={workspace}>
@@ -1669,6 +1671,35 @@ body {
       );
 
       const t = taskData;
+      const canWrite = Array.isArray(permissions) && (permissions.includes("*") || permissions.includes("api:write"));
+      const isClosed = t.status === "closed" || t.status === "archived";
+
+      async function closeTask() {
+        if (closing || isClosed || !canWrite) return;
+        if (!window.confirm(\`Close task '\${t.name || t.id}'? This stops it from receiving new captured events.\`)) return;
+        setClosing(true);
+        setCloseError(null);
+        try {
+          const res = await fetch(\`/api/tasks/\${encodeURIComponent(t.id)}/close?workspace=\${encodeURIComponent(workspace)}\`, {
+            method: "POST",
+            headers: authHeaders(),
+          });
+          if (!res.ok) {
+            let detail = \`HTTP \${res.status}\`;
+            try { detail = (await res.json())?.error || detail; } catch (_) {}
+            throw new Error(detail);
+          }
+          onTaskChanged && onTaskChanged();
+        } catch (e) {
+          setCloseError(e.message);
+        } finally {
+          setClosing(false);
+        }
+      }
+
+      const statusChipClass = t.status === "active" ? "chip--pos"
+        : t.status === "closed" ? "chip"
+        : "chip--orange";
 
       return (
         <DetailShell activeNav="task" onNav={onNav} workspace={workspace}>
@@ -1679,8 +1710,18 @@ body {
             sub={\`Started \${t.started} · \${t.runs} runs · \${t.events.toLocaleString()} events\`}
             onBack={() => onNav("pro")}
             actions={<>
-              <span className="chip chip--pos"><span className="chip__dot"/>{t.status}</span>
-              <button className="btn btn--secondary btn--sm">Export</button>
+              <span className={\`chip \${statusChipClass}\`}><span className="chip__dot"/>{t.status}</span>
+              {!isClosed && (
+                <button
+                  className="btn btn--secondary btn--sm"
+                  onClick={closeTask}
+                  disabled={closing || !canWrite}
+                  title={!canWrite ? "Read-only token: api:write required to close tasks" : undefined}
+                  style={{opacity: !canWrite ? 0.45 : 1, cursor: !canWrite ? "help" : undefined}}
+                >
+                  {closing ? "Closing…" : "Close task"}
+                </button>
+              )}
             </>}
             kpis={[
               { label: "Total cost", value: \`\$\${t.cost.toFixed(2)}\` },
@@ -1689,6 +1730,12 @@ body {
               { label: "Avg / run", value: t.runs > 0 ? \`\$\${(t.cost / t.runs).toFixed(2)}\` : "—", sub: t.runs > 0 ? \`\${Math.round(t.events / t.runs)} events / run\` : "" },
             ]}
           />
+
+          {closeError && (
+            <div style={{marginBottom: 12, padding: "8px 12px", background: "color-mix(in oklab, var(--neg) 10%, transparent)", color: "var(--neg)", borderRadius: "var(--r-sm)", fontSize: 12}}>
+              Close failed: {closeError}
+            </div>
+          )}
 
           {/* Run timeline replaces a daily-bar chart that degenerated to a
               single tall stripe for short tasks and aggregated away the
@@ -2990,7 +3037,13 @@ body {
         const td = taskLoading ? null : taskData;
         return <>
           {themeBtn}
-          <TaskDetail taskData={td} onNav={handleNav} workspace={defaultWorkspace}/>
+          <TaskDetail
+            taskData={td}
+            onNav={handleNav}
+            workspace={defaultWorkspace}
+            permissions={permissions}
+            onTaskChanged={() => fetchTask(defaultWorkspace, activeTaskKey)}
+          />
         </>;
       }
       if (view === "run") {
