@@ -659,12 +659,20 @@ body {
         runs_list: (apiTask.runs || []).map(r => ({
           rawId: r.run_id || null,
           id: r.run_id ? r.run_id.slice(0, 18) + "…" : "—",
-          source: r.provider_model || "unknown",
+          // RunSummary uses 'source' (e.g. "claude-session", "codex-session", "manual")
+          // — the import path the run came from. Earlier code read provider_model
+          // here which doesn't exist on RunSummary, so this column was always "unknown".
+          source: r.source || "unknown",
           events: r.event_count || 0,
           cost: r.estimated_total || 0,
           started: r.first_activity_at ? r.first_activity_at.slice(0, 16).replace("T", " ") : "—",
-          duration: r.duration_ms ? Math.round(r.duration_ms / 1000) + "s" : "—",
-          status: "ok",
+          // Prefer span (started→ended wall time); fall back to event-bracket (first→last
+          // activity_at). RunSummary doesn't have a single duration_ms field — it has
+          // span_duration_ms and event_duration_ms separately.
+          duration: r.span_duration_ms ? Math.round(r.span_duration_ms / 1000) + "s"
+            : r.event_duration_ms ? Math.round(r.event_duration_ms / 1000) + "s"
+            : "—",
+          status: r.status || "unknown",
         })),
         rawRuns: apiTask.runs || [],
         rawEvents: apiTask.recent || [],
@@ -1320,7 +1328,7 @@ body {
                       <td className="mono" style={{fontSize: 11}}>{r.duration}</td>
                       <td className="tnum" style={{textAlign: "right"}}>{r.events}</td>
                       <td className="tnum" style={{textAlign: "right", fontWeight: 500}}>\${r.cost.toFixed(2)}</td>
-                      <td><span className="chip chip--pos" style={{fontSize: 10}}><span className="chip__dot"/>{r.status}</span></td>
+                      <td><span className={\`chip \${r.status === "closed" ? "chip--pos" : "chip--orange"}\`} style={{fontSize: 10}}><span className="chip__dot"/>{r.status}</span></td>
                     </tr>
                   ))}
                 </tbody>
