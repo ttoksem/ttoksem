@@ -498,6 +498,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     listRecentUsageEvents: async () => [],
     listRecentUsageEventsForTask: async () => [],
     listDashboardPricingModeBreakdown: async () => [],
+    listUnpricedProviderModelGroups: async () => [],
     listDashboardPricingModeBreakdownForTask: async () => [],
     listDashboardAccuracyModeBreakdown: async () => [],
     listDashboardAccuracyModeBreakdownForTask: async () => [],

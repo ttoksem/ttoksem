@@ -179,6 +179,13 @@ export interface DashboardBreakdownRow {
   estimated_cost_nanos: number;
 }
 
+export interface UnpricedProviderModelGroupRow {
+  provider: string;
+  model: string;
+  usage_kind: string;
+  event_count: number;
+}
+
 export interface DashboardRecentUsageRow {
   id: string;
   occurred_at: string;
@@ -333,6 +340,10 @@ export interface LedgerStore {
     limit: number,
   ): Promise<DashboardRecentUsageRow[]>;
   listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]>;
+  listUnpricedProviderModelGroups(
+    workspaceId: string,
+    limit: number,
+  ): Promise<UnpricedProviderModelGroupRow[]>;
   listDashboardPricingModeBreakdownForTask(
     workspaceId: string,
     taskId: string,

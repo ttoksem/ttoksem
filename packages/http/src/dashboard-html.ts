@@ -562,6 +562,120 @@ body {
       </header>
     );
 
+    // Action-needed banner. Renders chips for the top of the workspace's
+    // attention list (assignment inbox, pricing gap, task drift). Pricing
+    // gap carries an inline breakdown of the unpriced provider/model
+    // groups + the exact remediation command, so the user doesn't have to
+    // guess what to do.
+    const ActionNeededBanner = ({ items, onNav }) => {
+      const pricing = items.find((it) => it.code === "pricing_gap");
+      const groups = pricing?.details?.unpriced_groups || [];
+      const remediation = pricing?.details?.remediation;
+      const [showPricing, setShowPricing] = React.useState(groups.length > 0);
+
+      const navTarget = (it) => {
+        if (it.code === "assignment_inbox") return { view: "inbox" };
+        if (it.code === "pricing_gap") return { view: "pricing" };
+        if (it.taskKey === "unassigned") return { view: "inbox" };
+        if (it.taskKey) return { view: "task", taskKey: it.taskKey };
+        return null;
+      };
+
+      return (
+        <div className="card" style={{padding: 20, background: "color-mix(in oklab, var(--warn) 6%, var(--surface-lifted))", borderColor: "color-mix(in oklab, var(--warn) 25%, transparent)"}}>
+          <div style={{display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "center"}}>
+            <div style={{display: "flex", alignItems: "center", gap: 10}}>
+              <span style={{width: 36, height: 36, borderRadius: "50%", background: "var(--warn)", display: "grid", placeItems: "center", color: "#fff", fontWeight: 700, fontSize: 16}}>!</span>
+              <div>
+                <div className="eyebrow" style={{color: "var(--warn)"}}>Action needed · {items.length}</div>
+                <div style={{fontSize: 14, fontWeight: 500, marginTop: 2}}>{items.length} issue{items.length !== 1 ? "s" : ""} need attention</div>
+              </div>
+            </div>
+            <div className="flex gap-2" style={{flexWrap: "wrap", justifyContent: "flex-end"}}>
+              {items.map((a, i) => {
+                const target = navTarget(a);
+                const clickable = target != null;
+                const dotColor = a.sev === "bad" ? "#c0392b" : "var(--warn)";
+                const isPricing = a.code === "pricing_gap";
+                return (
+                  <button
+                    key={i}
+                    disabled={!clickable && !isPricing}
+                    onClick={(e) => {
+                      if (isPricing && groups.length > 0) {
+                        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                          if (clickable) onNav && onNav(target.view, target.taskKey || null);
+                        } else {
+                          setShowPricing((v) => !v);
+                        }
+                      } else if (clickable) {
+                        onNav && onNav(target.view, target.taskKey || null);
+                      }
+                    }}
+                    className="chip"
+                    style={{
+                      background: "var(--surface-white)",
+                      padding: "6px 12px",
+                      fontSize: 12,
+                      gap: 8,
+                      border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
+                      cursor: (clickable || (isPricing && groups.length > 0)) ? "pointer" : "default",
+                      fontFamily: "inherit",
+                      transition: "border-color 120ms",
+                    }}
+                    onMouseOver={(e) => (clickable || (isPricing && groups.length > 0)) && (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--signal-orange) 35%, transparent)")}
+                    onMouseOut={(e) => (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--text-ink) 8%, transparent)")}
+                    title={isPricing ? "Click to expand · shift-click to open /pricing" : a.hint}
+                  >
+                    <span className="chip__dot" style={{background: dotColor}}/>
+                    <span style={{fontWeight: 500}}>{a.kind} · {a.metric}</span>
+                    <span className="muted" style={{maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{a.hint}</span>
+                    {isPricing && groups.length > 0
+                      ? <span style={{color: "var(--text-slate)", fontSize: 11}}>{showPricing ? "▾" : "▸"}</span>
+                      : (clickable && <span style={{color: "var(--text-slate)", fontSize: 11}}>→</span>)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {pricing && showPricing && groups.length > 0 && (
+            <div style={{marginTop: 14, paddingTop: 14, borderTop: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)"}}>
+              <div style={{display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8}}>
+                <div className="eyebrow" style={{color: "var(--text-slate)"}}>Provider · Model · Usage kind</div>
+                <div className="muted" style={{fontSize: 11}}>top {groups.length} unpriced group{groups.length === 1 ? "" : "s"}</div>
+              </div>
+              <table className="tnum" style={{width: "100%", borderCollapse: "collapse", fontSize: 12}}>
+                <tbody>
+                  {groups.map((g, i) => (
+                    <tr key={i} style={{borderBottom: "1px solid color-mix(in oklab, var(--text-ink) 5%, transparent)"}}>
+                      <td className="mono" style={{padding: "6px 0", color: "var(--text-slate)"}}>{g.provider}</td>
+                      <td className="mono" style={{padding: "6px 8px"}}>{g.model}</td>
+                      <td className="mono" style={{padding: "6px 8px", color: "var(--text-slate)"}}>{g.usage_kind}</td>
+                      <td style={{padding: "6px 0", textAlign: "right", fontWeight: 500}}>{g.event_count.toLocaleString()} ev</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {remediation && (
+                <div style={{marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap"}}>
+                  <span className="muted" style={{fontSize: 12}}>Load default rules:</span>
+                  <code className="mono" style={{padding: "4px 8px", background: "var(--surface-white)", border: "1px solid color-mix(in oklab, var(--text-ink) 10%, transparent)", borderRadius: 4, fontSize: 12}}>{remediation}</code>
+                  <button
+                    onClick={() => onNav && onNav("pricing", null)}
+                    className="chip"
+                    style={{padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", background: "var(--surface-white)", border: "1px solid color-mix(in oklab, var(--text-ink) 10%, transparent)"}}
+                  >
+                    Open /pricing →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // ═══════════════════════════════════════════════
     // DATA MAPPING
     // ═══════════════════════════════════════════════
@@ -605,12 +719,21 @@ body {
       }
 
       const anomalies = api.attention.map(a => ({
+        code: a.code,
         kind: a.title,
         count: parseInt(a.metric) || 1,
         metric: a.metric,
         hint: a.body,
         taskKey: a.task_key || null,
-        sev: a.severity === "bad" ? "warn" : a.severity,
+        sev: a.severity,
+        details: a.details || null,
+      }));
+      const insights = (api.insights || []).map(i => ({
+        code: i.code,
+        kind: i.title,
+        metric: i.metric,
+        hint: i.body,
+        taskKey: i.task_key || null,
       }));
 
       return {
@@ -660,6 +783,7 @@ body {
           })),
         inbox: [...inboxMap.values()].slice(0, 3),
         anomalies,
+        insights,
       };
     }
 
@@ -922,58 +1046,46 @@ body {
               </div>
             </section>
 
-            {/* Anomaly banner */}
+            {/* Action-needed banner: only actionable items (warn/bad). */}
             {d.anomalies.length > 0 && (
-              <section id="anomalies" style={{marginBottom: 24}}>
-                <div className="card" style={{padding: 20, display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "center", background: "color-mix(in oklab, var(--warn) 6%, var(--surface-lifted))", borderColor: "color-mix(in oklab, var(--warn) 25%, transparent)"}}>
-                  <div style={{display: "flex", alignItems: "center", gap: 10}}>
-                    <span style={{width: 36, height: 36, borderRadius: "50%", background: "var(--warn)", display: "grid", placeItems: "center", color: "#fff", fontWeight: 700, fontSize: 16}}>!</span>
-                    <div>
-                      <div className="eyebrow" style={{color: "var(--warn)"}}>Action needed · {d.anomalies.length}</div>
-                      <div style={{fontSize: 14, fontWeight: 500, marginTop: 2}}>{d.anomalies.length} issue{d.anomalies.length !== 1 ? "s" : ""} detected this period</div>
-                    </div>
-                  </div>
-                  <div className="flex gap-2" style={{flexWrap: "wrap", justifyContent: "flex-end"}}>
-                    {d.anomalies.map((a, i) => {
-                      // Resolve where this attention item should navigate. The
-                      // title carries the intent ('Assignment inbox' → inbox,
-                      // 'Pricing gap' → pricing) — task_key alone is enough
-                      // for the rest. The synthetic 'unassigned' task is a
-                      // bucket, not a navigable task, so route it to /inbox.
-                      let target = null; // {view, taskKey?}
-                      if (a.kind === "Assignment inbox") target = { view: "inbox" };
-                      else if (a.kind === "Pricing gap") target = { view: "pricing" };
-                      else if (a.taskKey === "unassigned") target = { view: "inbox" };
-                      else if (a.taskKey) target = { view: "task", taskKey: a.taskKey };
-                      const clickable = target != null;
-                      return (
-                        <button
-                          key={i}
-                          disabled={!clickable}
-                          onClick={() => clickable && onNav && onNav(target.view, target.taskKey || null)}
-                          className="chip"
-                          style={{
-                            background: "var(--surface-white)",
-                            padding: "6px 12px",
-                            fontSize: 12,
-                            gap: 8,
-                            border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
-                            cursor: clickable ? "pointer" : "default",
-                            fontFamily: "inherit",
-                            transition: "transform 80ms, border-color 120ms",
-                          }}
-                          onMouseOver={(e) => clickable && (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--signal-orange) 35%, transparent)")}
-                          onMouseOut={(e) => (e.currentTarget.style.borderColor = "color-mix(in oklab, var(--text-ink) 8%, transparent)")}
-                          title={a.hint}
-                        >
-                          <span className="chip__dot" style={{background: a.sev === "warn" ? "var(--warn)" : a.sev === "bad" ? "#c0392b" : "var(--info)"}}/>
-                          <span style={{fontWeight: 500}}>{a.kind} · {a.metric || a.count}</span>
-                          <span className="muted" style={{maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{a.hint}</span>
-                          {clickable && <span style={{color: "var(--text-slate)", fontSize: 11}}>→</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <section id="anomalies" style={{marginBottom: 16}}>
+                <ActionNeededBanner items={d.anomalies} onNav={onNav}/>
+              </section>
+            )}
+
+            {/* Insights row: informational, no action required. */}
+            {(d.insights || []).length > 0 && (
+              <section id="insights" style={{marginBottom: 24}}>
+                <div style={{display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-slate)"}}>
+                  <span className="eyebrow">Insights</span>
+                  {d.insights.map((it, i) => {
+                    const target = it.taskKey && it.taskKey !== "unassigned"
+                      ? { view: "task", taskKey: it.taskKey }
+                      : null;
+                    const clickable = target != null;
+                    return (
+                      <button
+                        key={i}
+                        disabled={!clickable}
+                        onClick={() => clickable && onNav && onNav(target.view, target.taskKey || null)}
+                        className="chip"
+                        style={{
+                          background: "var(--surface-lifted)",
+                          padding: "4px 10px",
+                          fontSize: 12,
+                          gap: 6,
+                          border: "1px solid color-mix(in oklab, var(--text-ink) 6%, transparent)",
+                          cursor: clickable ? "pointer" : "default",
+                          fontFamily: "inherit",
+                        }}
+                        title={it.hint}
+                      >
+                        <span style={{color: "var(--text-slate)"}}>{it.kind}</span>
+                        <span style={{fontWeight: 500}}>{it.metric}</span>
+                        {clickable && <span style={{color: "var(--text-slate)", fontSize: 11}}>→</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
             )}

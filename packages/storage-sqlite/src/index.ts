@@ -31,6 +31,7 @@ import type {
   LedgerReportRow,
   LedgerStore,
   PricingRuleLookupInput,
+  UnpricedProviderModelGroupRow,
   UpsertPricingSourceSnapshotInput,
   UpsertPricingRuleInput,
   UsageAssignmentStatus,
@@ -1258,6 +1259,22 @@ export class SqliteLedgerStore implements LedgerStore {
          ORDER BY event_count DESC`,
       )
       .all(workspaceId) as DashboardBreakdownRow[];
+  }
+
+  async listUnpricedProviderModelGroups(
+    workspaceId: string,
+    limit: number,
+  ): Promise<UnpricedProviderModelGroupRow[]> {
+    return this.db
+      .prepare(
+        `SELECT provider, model, usage_kind, COUNT(*) AS event_count
+         FROM usage_events
+         WHERE workspace_id = ? AND pricing_mode = 'unpriced'
+         GROUP BY provider, model, usage_kind
+         ORDER BY event_count DESC
+         LIMIT ?`,
+      )
+      .all(workspaceId, limit) as UnpricedProviderModelGroupRow[];
   }
 
   async listDashboardPricingModeBreakdownForTask(

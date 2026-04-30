@@ -18,6 +18,7 @@ import type {
   DashboardTaskInsightRow,
   LedgerReportRow,
   LedgerStore,
+  UnpricedProviderModelGroupRow,
   UsagePricingUpdateInput,
 } from "@ttoksem/storage";
 import { summarizeClaudeAssistantContent } from "@ttoksem/providers";
@@ -102,7 +103,24 @@ export interface DashboardData {
     run_count: number;
   };
   attention: Array<{
-    severity: "info" | "warn" | "bad";
+    code: "assignment_inbox" | "pricing_gap" | "task_drift";
+    severity: "warn" | "bad";
+    title: string;
+    body: string;
+    metric: string;
+    task_key: string | null;
+    details?: {
+      unpriced_groups?: Array<{
+        provider: string;
+        model: string;
+        usage_kind: string;
+        event_count: number;
+      }>;
+      remediation?: string;
+    };
+  }>;
+  insights: Array<{
+    code: "top_cost_driver" | "no_gaps";
     title: string;
     body: string;
     metric: string;
@@ -866,21 +884,31 @@ export class LedgerService {
     timeZoneOffsetMinutes?: number;
   }): Promise<DashboardData> {
     const workspace = await this.resolveWorkspace(input.workspace);
-    const [summary, tasks, taskInsightRows, recent, pricingBreakdown, accuracyBreakdown, daily] =
-      await Promise.all([
-        this.store.getDashboardSummary(workspace.id),
-        this.store.listDashboardTaskCosts(workspace.id, input.taskLimit ?? 20),
-        this.store.listDashboardTaskInsights(workspace.id, input.taskLimit ?? 20),
-        this.store.listRecentUsageEvents(workspace.id, input.recentLimit ?? 30),
-        this.store.listDashboardPricingModeBreakdown(workspace.id),
-        this.store.listDashboardAccuracyModeBreakdown(workspace.id),
-        this.store.listDashboardDailyCosts(
-          workspace.id,
-          input.dayLimit ?? 14,
-          input.timeZoneOffsetMinutes,
-        ),
-      ]);
+    const [
+      summary,
+      tasks,
+      taskInsightRows,
+      recent,
+      pricingBreakdown,
+      accuracyBreakdown,
+      daily,
+      unpricedGroups,
+    ] = await Promise.all([
+      this.store.getDashboardSummary(workspace.id),
+      this.store.listDashboardTaskCosts(workspace.id, input.taskLimit ?? 20),
+      this.store.listDashboardTaskInsights(workspace.id, input.taskLimit ?? 20),
+      this.store.listRecentUsageEvents(workspace.id, input.recentLimit ?? 30),
+      this.store.listDashboardPricingModeBreakdown(workspace.id),
+      this.store.listDashboardAccuracyModeBreakdown(workspace.id),
+      this.store.listDashboardDailyCosts(
+        workspace.id,
+        input.dayLimit ?? 14,
+        input.timeZoneOffsetMinutes,
+      ),
+      this.store.listUnpricedProviderModelGroups(workspace.id, 5),
+    ]);
     const taskInsights = buildTaskInsights(taskInsightRows);
+    const { attention, insights } = buildAttention(summary, taskInsights, unpricedGroups);
 
     return {
       workspace: {
@@ -898,7 +926,8 @@ export class LedgerService {
         task_count: summary.task_count ?? 0,
         run_count: summary.run_count ?? 0,
       },
-      attention: buildAttention(summary, taskInsights),
+      attention,
+      insights,
       task_insights: taskInsights,
       tasks: tasks.map((task) => ({
         task_key: task.task_key ?? "unassigned",
@@ -1601,10 +1630,14 @@ function taskInsight(
 function buildAttention(
   summary: DashboardSummaryRow,
   taskInsights: DashboardData["task_insights"],
-): DashboardData["attention"] {
-  const items: DashboardData["attention"] = [];
+  unpricedGroups: UnpricedProviderModelGroupRow[],
+): { attention: DashboardData["attention"]; insights: DashboardData["insights"] } {
+  const attention: DashboardData["attention"] = [];
+  const insights: DashboardData["insights"] = [];
+
   if (summary.unassigned_count > 0) {
-    items.push({
+    attention.push({
+      code: "assignment_inbox",
       severity: "warn",
       title: "Assignment inbox",
       body: "Unassigned usage is blocking task-level insight.",
@@ -1612,19 +1645,38 @@ function buildAttention(
       task_key: null,
     });
   }
+
   if (summary.unpriced_count > 0) {
-    items.push({
+    const distinct = unpricedGroups.length;
+    const top = unpricedGroups.slice(0, 3);
+    const headline =
+      top.length > 0
+        ? top.map((g) => `${g.provider}/${g.model}`).join(", ") +
+          (distinct > top.length ? ` +${distinct - top.length} more` : "")
+        : "No provider/model breakdown available";
+    attention.push({
+      code: "pricing_gap",
       severity: "bad",
       title: "Pricing gap",
-      body: "Cost totals are incomplete until these events are priced.",
+      body: `${distinct} model${distinct === 1 ? "" : "s"} without rules: ${headline}`,
       metric: `${summary.unpriced_count} event${summary.unpriced_count === 1 ? "" : "s"}`,
       task_key: null,
+      details: {
+        unpriced_groups: unpricedGroups.map((g) => ({
+          provider: g.provider,
+          model: g.model,
+          usage_kind: g.usage_kind,
+          event_count: g.event_count,
+        })),
+        remediation: "pnpm cli pricing import-litellm",
+      },
     });
   }
 
   const highTurnTask = taskInsights.find((task) => task.event_count >= 6);
   if (highTurnTask) {
-    items.push({
+    attention.push({
+      code: "task_drift",
       severity: "warn",
       title: "Task drift check",
       body: `${taskDisplayName(highTurnTask)} has a high turn count.`,
@@ -1635,8 +1687,8 @@ function buildAttention(
 
   const topCostTask = taskInsights.find((task) => task.estimated_total > 0);
   if (topCostTask) {
-    items.push({
-      severity: "info",
+    insights.push({
+      code: "top_cost_driver",
       title: "Top cost driver",
       body: `${taskDisplayName(topCostTask)} is the largest visible spend source.`,
       metric: `$${topCostTask.estimated_total.toFixed(6)}`,
@@ -1644,16 +1696,17 @@ function buildAttention(
     });
   }
 
-  if (items.length === 0) {
-    items.push({
-      severity: "info",
+  if (attention.length === 0 && insights.length === 0) {
+    insights.push({
+      code: "no_gaps",
       title: "No immediate gaps",
       body: "Assignment and pricing signals are clear for the current data.",
       metric: `${summary.event_count} events`,
       task_key: null,
     });
   }
-  return items.slice(0, 4);
+
+  return { attention: attention.slice(0, 4), insights: insights.slice(0, 3) };
 }
 
 function taskDisplayName(task: { task_key: string; task_name: string }): string {

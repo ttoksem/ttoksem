@@ -30,6 +30,7 @@ import type {
   LedgerReportRow,
   LedgerStore,
   PricingRuleLookupInput,
+  UnpricedProviderModelGroupRow,
   UpsertPricingRuleInput,
   UpsertPricingSourceSnapshotInput,
   UsageAssignmentStatus,
@@ -1033,6 +1034,21 @@ export class D1LedgerStore implements LedgerStore {
 
   async listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]> {
     return this.breakdown("COALESCE(pricing_mode, 'unknown')", "workspace_id = ?", [workspaceId]);
+  }
+
+  async listUnpricedProviderModelGroups(
+    workspaceId: string,
+    limit: number,
+  ): Promise<UnpricedProviderModelGroupRow[]> {
+    return this.all<UnpricedProviderModelGroupRow>(
+      `SELECT provider, model, usage_kind, COUNT(*) AS event_count
+       FROM usage_events
+       WHERE workspace_id = ? AND pricing_mode = 'unpriced'
+       GROUP BY provider, model, usage_kind
+       ORDER BY event_count DESC
+       LIMIT ?`,
+      [workspaceId, limit],
+    );
   }
 
   async listDashboardPricingModeBreakdownForTask(

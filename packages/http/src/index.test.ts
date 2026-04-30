@@ -252,6 +252,7 @@ function dashboardData(): DashboardData {
       run_count: 0,
     },
     attention: [],
+    insights: [],
     task_insights: [],
     tasks: [],
     recent: [],
