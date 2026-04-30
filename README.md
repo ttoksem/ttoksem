@@ -1,6 +1,11 @@
 # ttoksem
 
-Implementation repo for the local-first AI task costbook designed in `../ai-usage-ledger-spec`.
+A local-first cost ledger for AI usage. Records token spend per
+workspace, task, run, and event from Claude Code, Codex, and OpenAI
+SDK responses; prices it against versioned rule snapshots; and
+surfaces it through a CLI and a local Hono dashboard.
+
+The product records AI usage and cost. It does not execute LLM calls.
 
 Current scope:
 
@@ -12,8 +17,6 @@ Current scope:
 - CLI entrypoint for workspace, task, usage, report, dashboard, and doctor workflows
 - Hono HTTP package and local server entrypoint for the dashboard and write API
 - Database access-key guard for local dashboard/API data
-
-The product records AI usage and cost. It does not execute LLM calls.
 
 ## MVP Checkpoint
 

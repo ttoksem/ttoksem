@@ -148,4 +148,4 @@ The cost is a slightly more complex repo for early development:
 - build order matters
 - imports use internal package names such as `@ttoksem/core`
 
-This is a deliberate tradeoff from the design source. If the package boundaries start slowing down normal feature work more than they help, the same folder structure can be folded back into a single package without changing the domain model.
+This is a deliberate tradeoff. If the package boundaries start slowing down normal feature work more than they help, the same folder structure can be folded back into a single package without changing the domain model.

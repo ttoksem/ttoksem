@@ -46,7 +46,7 @@ readme-change
 
 ## Example Conversation
 
-The user starts by asking to implement a new repo from the design source.
+The user starts by asking to bootstrap a new implementation repo.
 
 ```text
 workspace: ttoksem
