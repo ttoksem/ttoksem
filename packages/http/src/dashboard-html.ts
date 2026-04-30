@@ -658,7 +658,7 @@ body {
         // No artificial slice — pagination in the UI handles long lists.
         runs_list: (apiTask.runs || []).map(r => ({
           rawId: r.run_id || null,
-          id: r.run_id ? r.run_id.slice(0, 18) + "…" : "—",
+          id: shortenId(r.run_id, 18, 12),
           // RunSummary uses 'source' (e.g. "claude-session", "codex-session", "manual")
           // — the import path the run came from. Earlier code read provider_model
           // here which doesn't exist on RunSummary, so this column was always "unknown".
@@ -1098,6 +1098,18 @@ body {
 
     // usePaginated: returns { page, setPage, slice, pageCount, total }
     // Auto-resets page to 1 when items array reference changes.
+    // Show "<head>…<tail>" so run ids are distinguishable even when the
+    // session-prefix is identical. Plain slice(0, 18) made every run in the
+    // same Claude session render as the same string. Caller passes the full
+    // id to the tooltip (title attr) for inspection.
+    function shortenId(id, headLen, tailLen) {
+      if (!id) return "—";
+      const head = headLen != null ? headLen : 18;
+      const tail = tailLen != null ? tailLen : 12;
+      if (id.length <= head + tail + 1) return id;
+      return id.slice(0, head) + "…" + id.slice(-tail);
+    }
+
     function usePaginated(items, pageSize) {
       const [page, setPage] = React.useState(1);
       const list = items || [];
@@ -1322,7 +1334,7 @@ body {
                 <tbody>
                   {runsPage.slice.map((r, i) => (
                     <tr key={r.rawId || \`row-\${i}\`} style={{cursor: r.rawId ? "pointer" : "default"}} onClick={() => r.rawId && onNav("run", null, r.rawId)}>
-                      <td className="mono" style={{fontSize: 12}}>{r.id}</td>
+                      <td className="mono" style={{fontSize: 12}} title={r.rawId || ""}>{r.id}</td>
                       <td><span className="chip" style={{fontSize: 10}}>{r.source}</span></td>
                       <td className="mono" style={{fontSize: 11, color: "var(--text-slate)"}}>{r.started}</td>
                       <td className="mono" style={{fontSize: 11}}>{r.duration}</td>
@@ -1385,7 +1397,7 @@ body {
           <DetailHeader
             ghost="run trace"
             eyebrow={\`run · \${run?.source || "unknown"}\`}
-            title={runId ? runId.slice(0, 24) + (runId.length > 24 ? "…" : "") : "run trace"}
+            title={runId ? <span title={runId} style={{cursor: "help"}}>{shortenId(runId, 18, 12)}</span> : "run trace"}
             sub={run ? \`\${fmt(run.started_at)} → \${fmt(run.ended_at)} · \${run.event_count} events · \${dur}\` : "Select a run from the task view"}
             onBack={() => onNav("task")}
             actions={<>
