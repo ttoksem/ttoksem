@@ -1285,154 +1285,110 @@ body {
     );
 
     /**
-     * GitHub-style calendar heatmap with dots instead of squares. Weeks run
-     * left-to-right (oldest → newest); each column is one week with seven
-     * dots stacked Sun→Sat. Each dot is a UTC day; orange intensity scales
-     * with that day's total run cost. Empty days get a faint gray dot so
-     * the grid stays visually intact during idle periods.
+     * Per-run timeline. Replaces a daily-aggregate bar chart that was useless
+     * for short-lived tasks (single tall bar) and only marginally useful for
+     * long ones. Shows when each run actually fired across the task's date
+     * range, sized by cost, clickable to drill into the run trace.
      *
-     * Click on a dot navigates to the (first) run of that day; tooltip shows
-     * date + run count + cost. The grid range is the task's run span padded
-     * to whole-week boundaries so the leftmost / rightmost columns always
-     * have all 7 cells.
+     * Layout: one row per UTC day in the task's span; each row is a 24-hour
+     * horizontal track with hour gridlines at 0/6/12/18/24. A run is rendered
+     * as an orange dot at its started_at hour. Dot diameter scales with cost
+     * relative to the most expensive run in the task; very small runs still
+     * get a 6px floor so they remain pickable.
      */
     const RunTimelineHeatmap = ({ runs, onSelect }) => {
       const valid = (runs || []).filter(r => r.started_at);
       if (valid.length === 0) return null;
 
+      // Build the day list: every UTC date between min(start) and max(start),
+      // ordered ascending. Sparse days (no runs) still get an empty row so the
+      // visual gap conveys idle time honestly.
+      const days = [];
+      const firstMs = Math.min(...valid.map(r => Date.parse(r.started_at)));
+      const lastMs = Math.max(...valid.map(r => Date.parse(r.started_at)));
+      const cap = 31; // never render more than ~a month of rows
       const dayMs = 86400000;
-      const dayBuckets = new Map(); // dayMs → { cost, events, runs[] }
+      for (let t = floorUtcDay(firstMs); t <= lastMs && days.length < cap; t += dayMs) {
+        days.push(t);
+      }
+
+      const maxCost = Math.max(...valid.map(r => r.estimated_total || 0), 0.0001);
+      const runsByDay = new Map();
       for (const r of valid) {
-        const d = floorUtcDay(Date.parse(r.started_at));
-        const b = dayBuckets.get(d) ?? { cost: 0, events: 0, runs: [] };
-        b.cost += r.estimated_total || 0;
-        b.events += r.event_count || 0;
-        b.runs.push(r);
-        dayBuckets.set(d, b);
+        const dayMsKey = floorUtcDay(Date.parse(r.started_at));
+        if (!runsByDay.has(dayMsKey)) runsByDay.set(dayMsKey, []);
+        runsByDay.get(dayMsKey).push(r);
       }
 
-      // Pad range to whole weeks (Sunday..Saturday) so the grid is rectangular.
-      const firstDay = floorUtcDay(Math.min(...valid.map(r => Date.parse(r.started_at))));
-      const lastDay = floorUtcDay(Math.max(...valid.map(r => Date.parse(r.started_at))));
-      const startDow = new Date(firstDay).getUTCDay();          // 0 = Sun
-      const endDow = new Date(lastDay).getUTCDay();
-      const gridStart = firstDay - startDow * dayMs;
-      const gridEnd = lastDay + (6 - endDow) * dayMs;
-
-      const weeks = [];
-      for (let weekStart = gridStart; weekStart <= gridEnd; weekStart += 7 * dayMs) {
-        const days = [];
-        for (let dow = 0; dow < 7; dow++) {
-          const day = weekStart + dow * dayMs;
-          days.push({
-            day,
-            inRange: day >= firstDay && day <= lastDay,
-            bucket: dayBuckets.get(day),
-          });
-        }
-        weeks.push(days);
-      }
-
-      const maxDayCost = Math.max(...[...dayBuckets.values()].map(b => b.cost), 0.0001);
-      const monthShort = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      // Show a month label above the first column of each new month.
-      const monthLabels = weeks.map((week, idx) => {
-        const m = new Date(week[0].day).getUTCMonth();
-        const prevM = idx === 0 ? -1 : new Date(weeks[idx - 1][0].day).getUTCMonth();
-        return m !== prevM ? monthShort[m] : "";
-      });
-
-      const DOT = 12;
-      const GAP = 4;
+      const ROW_HEIGHT = 38;
+      const DOT_MIN = 6;
+      const DOT_MAX = 22;
 
       return (
-        <div className="flex-col gap-2">
-          <div className="flex" style={{gap: 8}}>
-            {/* Day-of-week labels (Mon / Wed / Fri only — matches GitHub-style chart). */}
-            <div className="flex-col mono" style={{gap: GAP, fontSize: 10, color: "var(--text-slate)", paddingTop: 18, lineHeight: \`\${DOT}px\`}}>
-              {["", "Mon", "", "Wed", "", "Fri", ""].map((label, i) => (
-                <span key={i} style={{height: DOT, display: "flex", alignItems: "center"}}>{label}</span>
-              ))}
-            </div>
-            {/* Heatmap grid: month labels + week columns of 7 dots.
-                NB: no overflow clipping so absolute-positioned month labels
-                can extend past their column width. Very long tasks render
-                wider than the page; that's a deferred problem. */}
-            <div style={{minWidth: 0}}>
-              {/* Month labels positioned absolutely above the grid so they can
-                  overflow into adjacent columns without being clipped by the
-                  fixed-width column slots. Each non-empty label sits at the
-                  left edge of its corresponding week column. */}
-              <div style={{position: "relative", height: 18, fontSize: 10, color: "var(--text-slate)", fontFamily: "var(--font-mono)"}}>
-                {monthLabels.map((m, i) => (
-                  m ? (
-                    <span key={i} style={{
-                      position: "absolute",
-                      left: i * (DOT + GAP),
-                      lineHeight: "18px",
-                      whiteSpace: "nowrap",
-                    }}>{m}</span>
-                  ) : null
-                ))}
-              </div>
-              <div className="flex" style={{gap: GAP}}>
-                {weeks.map((week, wi) => (
-                  <div key={wi} className="flex-col" style={{gap: GAP}}>
-                    {week.map(({ day, inRange, bucket }) => {
-                      const cost = bucket?.cost || 0;
-                      const intensity = cost / maxDayCost;
-                      const dateLabel = new Date(day).toISOString().slice(0, 10);
-                      const tooltip = bucket
-                        ? \`\${dateLabel}\\n\${bucket.runs.length} run\${bucket.runs.length === 1 ? "" : "s"} · \${bucket.events} events · $\${cost.toFixed(4)}\`
-                        : \`\${dateLabel}\\nno runs\`;
-                      return (
-                        <button
-                          key={day}
-                          title={tooltip}
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            const first = bucket?.runs?.[0];
-                            if (first?.run_id && onSelect) onSelect(first.run_id);
-                          }}
-                          style={{
-                            width: DOT,
-                            height: DOT,
-                            borderRadius: "50%",
-                            background: cost > 0
-                              ? "var(--signal-orange)"
-                              : "color-mix(in oklab, var(--text-ink) 6%, transparent)",
-                            opacity: cost > 0
-                              ? 0.35 + 0.65 * intensity
-                              : (inRange ? 0.45 : 0.18),
-                            border: "none",
-                            padding: 0,
-                            cursor: bucket ? "pointer" : "default",
-                            transition: "transform 80ms",
-                            flexShrink: 0,
-                          }}
-                          onMouseOver={(e) => bucket && (e.currentTarget.style.transform = "scale(1.25)")}
-                          onMouseOut={(e) => (e.currentTarget.style.transform = "scale(1)")}
-                          aria-label={tooltip}
-                        />
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          {/* Legend: dots from light to dark, mirroring intensity ramp. */}
-          <div className="flex items-center justify-end" style={{gap: 6, fontSize: 10, color: "var(--text-slate)", fontFamily: "var(--font-mono)"}}>
-            <span>less</span>
-            {[0.1, 0.35, 0.6, 0.85, 1.0].map((alpha, i) => (
-              <span key={i} style={{
-                width: DOT, height: DOT, borderRadius: "50%",
-                background: i === 0 ? "color-mix(in oklab, var(--text-ink) 6%, transparent)" : "var(--signal-orange)",
-                opacity: i === 0 ? 0.45 : alpha,
-              }}/>
+        <div className="flex-col" style={{gap: 2}}>
+          {/* Top axis ruler */}
+          <div className="flex" style={{paddingLeft: 92, fontSize: 10, color: "var(--text-slate)", fontFamily: "var(--font-mono)"}}>
+            {[0, 6, 12, 18, 24].map(h => (
+              <span key={h} style={{position: "relative", flex: h === 24 ? 0 : 1}}>{h.toString().padStart(2, "0")}:00</span>
             ))}
-            <span>more</span>
           </div>
+          {days.map(d => {
+            const dayRuns = runsByDay.get(d) || [];
+            const label = new Date(d).toISOString().slice(0, 10);
+            return (
+              <div key={d} className="flex items-center" style={{gap: 8}}>
+                <div className="mono" style={{width: 84, fontSize: 11, color: "var(--text-slate)", flexShrink: 0}}>{label}</div>
+                <div style={{
+                  position: "relative",
+                  flex: 1,
+                  height: ROW_HEIGHT,
+                  background: "color-mix(in oklab, var(--text-ink) 3%, transparent)",
+                  borderRadius: "var(--r-md)",
+                  overflow: "hidden",
+                }}>
+                  {/* hour gridlines */}
+                  {[6, 12, 18].map(h => (
+                    <div key={h} style={{
+                      position: "absolute", left: \`\${(h / 24) * 100}%\`, top: 0, bottom: 0,
+                      borderLeft: "1px dashed color-mix(in oklab, var(--text-ink) 10%, transparent)",
+                    }}/>
+                  ))}
+                  {/* run dots */}
+                  {dayRuns.map(r => {
+                    const start = Date.parse(r.started_at);
+                    const hourFrac = ((start - d) / dayMs) * 100;
+                    const cost = r.estimated_total || 0;
+                    const size = DOT_MIN + Math.sqrt(cost / maxCost) * (DOT_MAX - DOT_MIN);
+                    const events = r.event_count || 0;
+                    const dur = r.span_duration_ms ? \`\${Math.round(r.span_duration_ms / 1000)}s\` : "—";
+                    const tooltip = \`\${r.run_id || "(no id)"}\\ncost: $\${cost.toFixed(4)}\\nevents: \${events}\\nduration: \${dur}\\nstart: \${r.started_at}\`;
+                    return (
+                      <button
+                        key={r.run_id}
+                        title={tooltip}
+                        onClick={(ev) => { ev.stopPropagation(); onSelect && r.run_id && onSelect(r.run_id); }}
+                        style={{
+                          position: "absolute",
+                          left: \`\${Math.max(0, Math.min(100, hourFrac))}%\`,
+                          top: "50%",
+                          transform: "translate(-50%, -50%)",
+                          width: size,
+                          height: size,
+                          borderRadius: "50%",
+                          background: "var(--signal-orange)",
+                          opacity: 0.55 + 0.45 * (cost / maxCost),
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                        }}
+                        aria-label={\`Run at \${r.started_at}, cost $\${cost.toFixed(4)}\`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       );
     };
