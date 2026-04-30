@@ -677,14 +677,36 @@ body {
         })),
         rawRuns: apiTask.runs || [],
         rawEvents: apiTask.recent || [],
-        recent: (apiTask.recent || []).map(e => ({
-          id: e.id,
-          time: e.occurred_at ? e.occurred_at.slice(0, 16).replace("T", " ") : "—",
-          role: "user",
-          model: e.provider_model || "—",
-          text: e.prompt || "(no snapshot)",
-          tokens: e.total_tokens || 0,
-        })),
+        // Dedup by run_id so the prompt list shows one row per *prompt*
+        // (= one row per run), not one row per assistant chunk. Streaming
+        // responses generate N events that share the same prompt; the user
+        // wants to see distinct work, not repetition. Aggregate metrics
+        // (events, tokens, cost) across the dedup group too.
+        recent: (() => {
+          const byRun = new Map();
+          for (const e of (apiTask.recent || [])) {
+            const key = e.run_id || e.id;
+            const existing = byRun.get(key);
+            if (existing) {
+              existing.events += 1;
+              existing.tokens += e.total_tokens || 0;
+              existing.cost += e.cost || 0;
+              continue;
+            }
+            byRun.set(key, {
+              id: e.id,
+              runId: e.run_id || null,
+              time: e.occurred_at ? e.occurred_at.slice(0, 16).replace("T", " ") : "—",
+              role: "user",
+              model: e.provider_model || "—",
+              text: e.prompt || "(no snapshot)",
+              tokens: e.total_tokens || 0,
+              cost: e.cost || 0,
+              events: 1,
+            });
+          }
+          return [...byRun.values()];
+        })(),
       };
     }
 
@@ -1352,23 +1374,37 @@ body {
 
           {t.recent && t.recent.length > 0 && (
             <section className="card" style={{padding: 24, marginBottom: 16}}>
-              <div className="eyebrow" style={{marginBottom: 6}}>Prompt samples</div>
-              <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Recent snapshots</h4>
+              <div className="eyebrow" style={{marginBottom: 6}}>Prompts</div>
+              <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Recent runs by prompt · {t.recent.length}</h4>
               <div className="flex-col gap-3">
                 {recentPage.slice.map(p => (
-                  <div key={p.id} style={{padding: 14, borderLeft: \`3px solid \${p.role === "user" ? "var(--signal-orange)" : "var(--text-ink)"}\`, background: "var(--surface-canvas)", borderRadius: "0 var(--r-lg) var(--r-lg) 0"}}>
-                    <div className="flex justify-between items-center mb-2" style={{fontSize: 11}}>
-                      <span className="flex gap-2 items-center">
-                        <span className="chip" style={{fontSize: 10, padding: "2px 8px"}}>{p.role}</span>
+                  <div
+                    key={p.id}
+                    onClick={() => p.runId && onNav("run", null, p.runId)}
+                    style={{
+                      padding: 14,
+                      borderLeft: \`3px solid var(--signal-orange)\`,
+                      background: "var(--surface-canvas)",
+                      borderRadius: "0 var(--r-lg) var(--r-lg) 0",
+                      cursor: p.runId ? "pointer" : "default",
+                      transition: "background 120ms",
+                    }}
+                  >
+                    <div className="flex justify-between items-center mb-2" style={{fontSize: 11, flexWrap: "wrap", gap: 8}}>
+                      <span className="flex gap-2 items-center" style={{flexWrap: "wrap"}}>
+                        <span className="chip" style={{fontSize: 10, padding: "2px 8px"}}>prompt</span>
+                        {p.runId && (
+                          <span className="mono muted" style={{fontSize: 10, cursor: "help"}} title={p.runId}>{shortenId(p.runId, 14, 10)}</span>
+                        )}
                         <span className="mono muted">{p.model}</span>
                       </span>
-                      <span className="tnum muted">{p.time} · {p.tokens} tok</span>
+                      <span className="tnum muted">{p.time} · {p.events} event{p.events === 1 ? "" : "s"} · {p.tokens.toLocaleString()} tok · \${p.cost.toFixed(4)}</span>
                     </div>
                     <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)"}}>{p.text}</div>
                   </div>
                 ))}
               </div>
-              <Paginator {...recentPage} onChange={recentPage.setPage} label="snapshots"/>
+              <Paginator {...recentPage} onChange={recentPage.setPage} label="prompts"/>
             </section>
           )}
 
