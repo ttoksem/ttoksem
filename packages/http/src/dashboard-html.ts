@@ -1756,21 +1756,66 @@ body {
           {isLoading && <LoadingPanel label="Loading run trace…"/>}
           {!isLoading && events.length > 0 && (
             <>
-              <section className="card" style={{padding: 28, marginBottom: 16}}>
-                <div className="flex justify-between items-end mb-4">
-                  <div>
-                    <div className="eyebrow" style={{marginBottom: 6}}>Cost trace</div>
-                    <h4 className="t-h4" style={{margin: 0}}>Cumulative cost · {events.length} events</h4>
-                  </div>
-                  <span className="chip"><span className="chip__dot" style={{background: "var(--signal-orange)"}}/>cumulative \${totalCost.toFixed(4)}</span>
-                </div>
-                <div style={{position: "relative", height: 160}}>
-                  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{position: "absolute", inset: 0}}>
-                    <path d={\`M 0 100 \${cumulative.map((c, i) => \`L \${(i / Math.max(cumulative.length - 1, 1)) * 100} \${100 - (totalCost > 0 ? (c / totalCost) * 95 : 0)}\`).join(" ")} L 100 100 Z\`} fill="color-mix(in oklab, var(--signal-orange) 12%, transparent)"/>
-                    <path d={\`M 0 100 \${cumulative.map((c, i) => \`L \${(i / Math.max(cumulative.length - 1, 1)) * 100} \${100 - (totalCost > 0 ? (c / totalCost) * 95 : 0)}\`).join(" ")}\`} stroke="var(--signal-orange)" strokeWidth="0.6" fill="none" vectorEffect="non-scaling-stroke"/>
-                  </svg>
-                </div>
-              </section>
+              {/* Per-event cost distribution. The previous cumulative line was
+                  always monotonically increasing — the only useful data point
+                  was the endpoint, which is already in the KPI strip. This
+                  view shows where in the run the expensive spikes happened:
+                  each event is a vertical bar positioned at its occurred_at
+                  on the run's time axis, height proportional to event cost.
+                  Events bunched into a streaming burst overlap, but the
+                  silhouette of the burst is still informative. */}
+              {(() => {
+                const eventCosts = events.map(e => e.cost || 0);
+                const maxEventCost = Math.max(...eventCosts, 0.0001);
+                // events come back newest-first from the API, so use min/max
+                // explicitly — naive [0]/[last] would flip the time axis.
+                const eventMsList = events.map(e => Date.parse(e.occurred_at));
+                const startMs = Math.min(...eventMsList);
+                const endMs = Math.max(...eventMsList);
+                const span = Math.max(endMs - startMs, 1);
+                const startLabel = new Date(startMs).toISOString().slice(11, 19);
+                const endLabel = new Date(endMs).toISOString().slice(11, 19);
+                return (
+                  <section className="card" style={{padding: 28, marginBottom: 16}}>
+                    <div className="flex justify-between items-end mb-4">
+                      <div>
+                        <div className="eyebrow" style={{marginBottom: 6}}>Cost distribution</div>
+                        <h4 className="t-h4" style={{margin: 0}}>Per event · max \${maxEventCost.toFixed(4)}</h4>
+                      </div>
+                      <span className="chip"><span className="chip__dot" style={{background: "var(--signal-orange)"}}/>total \${totalCost.toFixed(4)}</span>
+                    </div>
+                    <div style={{position: "relative", height: 120, paddingTop: 4, paddingBottom: 18, borderBottom: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)"}}>
+                      {events.map((e, i) => {
+                        const cost = e.cost || 0;
+                        const x = span > 1 ? ((Date.parse(e.occurred_at) - startMs) / span) * 100 : 50;
+                        const h = Math.max(2, (cost / maxEventCost) * 96);
+                        const time = e.occurred_at.slice(11, 19);
+                        return (
+                          <div
+                            key={e.id}
+                            title={\`#\${i + 1} \${time} · $\${cost.toFixed(4)}\`}
+                            style={{
+                              position: "absolute",
+                              left: \`\${x}%\`,
+                              bottom: 0,
+                              transform: "translateX(-50%)",
+                              width: 5,
+                              height: \`\${h}%\`,
+                              background: "var(--signal-orange)",
+                              opacity: 0.55 + 0.45 * (cost / maxEventCost),
+                              borderRadius: "2px 2px 0 0",
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between mono muted" style={{fontSize: 10, marginTop: 6}}>
+                      <span>{startLabel}</span>
+                      <span>{endLabel}</span>
+                    </div>
+                  </section>
+                );
+              })()}
               {/* Unified per-turn timeline. Joins each usage event with its
                   matching action card so the user sees cost AND what the
                   assistant did in one row, not as two parallel sections. */}
