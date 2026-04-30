@@ -1534,6 +1534,158 @@ body {
     }
 
     /**
+     * Per-event cost distribution chart. Each event is rendered as a vertical
+     * bar at its time position; height encodes its cost relative to the
+     * largest event in the run. Hovering surfaces a floating tooltip with
+     * the index/time/cost/tokens/message_id; clicking scrolls the matching
+     * timeline card into view so the user can see what that event actually did.
+     */
+    const CostDistributionChart = ({ events, totalCost }) => {
+      const [hoverIdx, setHoverIdx] = React.useState(null);
+      if (!events.length) return null;
+
+      const eventCosts = events.map(e => e.cost || 0);
+      const maxEventCost = Math.max(...eventCosts, 0.0001);
+      const eventMs = events.map(e => Date.parse(e.occurred_at));
+      const startMs = Math.min(...eventMs);
+      const endMs = Math.max(...eventMs);
+      const span = Math.max(endMs - startMs, 1);
+      const startLabel = new Date(startMs).toISOString().slice(11, 19);
+      const endLabel = new Date(endMs).toISOString().slice(11, 19);
+
+      // Pre-compute bar geometries so the tooltip element can position itself
+      // without re-deriving the math.
+      const bars = events.map((e, i) => {
+        const cost = e.cost || 0;
+        const x = span > 1 ? ((eventMs[i] - startMs) / span) * 100 : 50;
+        const h = Math.max(2, (cost / maxEventCost) * 100);
+        return { event: e, idx: i, cost, x, h };
+      });
+
+      const hovered = hoverIdx != null ? bars[hoverIdx] : null;
+      const scrollToCard = (eventId) => {
+        // Defer so any same-tick state update settles before scrolling.
+        setTimeout(() => {
+          const el = document.getElementById(\`event-\${eventId}\`);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 0);
+      };
+
+      const CHART_HEIGHT = 140;
+
+      return (
+        <section className="card" style={{padding: 28, marginBottom: 16}}>
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <div className="eyebrow" style={{marginBottom: 6}}>Cost distribution</div>
+              <h4 className="t-h4" style={{margin: 0}}>Per event · max \${maxEventCost.toFixed(4)}</h4>
+            </div>
+            <span className="chip"><span className="chip__dot" style={{background: "var(--signal-orange)"}}/>total \${totalCost.toFixed(4)}</span>
+          </div>
+          <div
+            style={{
+              position: "relative",
+              height: CHART_HEIGHT,
+              paddingTop: 4,
+              borderBottom: "1px solid color-mix(in oklab, var(--text-ink) 10%, transparent)",
+            }}
+            onMouseLeave={() => setHoverIdx(null)}
+          >
+            {/* baseline grid */}
+            {[0.25, 0.5, 0.75].map(level => (
+              <div key={level} style={{
+                position: "absolute",
+                left: 0, right: 0,
+                bottom: \`\${level * 100}%\`,
+                borderTop: "1px dashed color-mix(in oklab, var(--text-ink) 8%, transparent)",
+                pointerEvents: "none",
+              }}/>
+            ))}
+            {/* hover crosshair */}
+            {hovered && (
+              <div style={{
+                position: "absolute",
+                left: \`\${hovered.x}%\`,
+                top: 0, bottom: 0,
+                width: 1,
+                background: "color-mix(in oklab, var(--signal-orange) 35%, transparent)",
+                pointerEvents: "none",
+              }}/>
+            )}
+            {/* bars */}
+            {bars.map(({ event: e, idx, cost, x, h }) => {
+              const isHover = hoverIdx === idx;
+              return (
+                <button
+                  key={e.id}
+                  onMouseEnter={() => setHoverIdx(idx)}
+                  onClick={() => scrollToCard(e.id)}
+                  style={{
+                    position: "absolute",
+                    left: \`\${x}%\`,
+                    bottom: 0,
+                    transform: \`translateX(-50%) scaleX(\${isHover ? 1.6 : 1})\`,
+                    transformOrigin: "center bottom",
+                    width: 6,
+                    height: \`\${h}%\`,
+                    background: "var(--signal-orange)",
+                    opacity: isHover ? 1 : 0.45 + 0.55 * (cost / maxEventCost),
+                    border: "none",
+                    padding: 0,
+                    borderRadius: "3px 3px 0 0",
+                    cursor: "pointer",
+                    transition: "opacity 80ms, transform 80ms",
+                  }}
+                  aria-label={\`Event \${idx + 1} at \${e.occurred_at.slice(11, 19)}, cost $\${cost.toFixed(4)}\`}
+                />
+              );
+            })}
+            {/* floating tooltip */}
+            {hovered && (() => {
+              const tooltipLeft = hovered.x;
+              // Anchor tooltip on the side opposite to the chart edge it's near
+              // so it doesn't get clipped at the boundaries.
+              const align = tooltipLeft > 70 ? "right" : tooltipLeft < 30 ? "left" : "center";
+              const e = hovered.event;
+              const c = hovered.cost;
+              return (
+                <div style={{
+                  position: "absolute",
+                  left: align === "left" ? \`\${tooltipLeft}%\` : align === "right" ? "auto" : \`\${tooltipLeft}%\`,
+                  right: align === "right" ? \`\${100 - tooltipLeft}%\` : "auto",
+                  bottom: \`calc(\${hovered.h}% + 10px)\`,
+                  transform: align === "center" ? "translateX(-50%)" : "translateX(0)",
+                  background: "var(--surface-ink)",
+                  color: "var(--text-cream)",
+                  padding: "8px 12px",
+                  borderRadius: "var(--r-md)",
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  fontFamily: "var(--font-mono)",
+                  whiteSpace: "nowrap",
+                  pointerEvents: "none",
+                  boxShadow: "var(--shadow-1)",
+                  zIndex: 10,
+                }}>
+                  <div style={{fontSize: 10, opacity: 0.6, marginBottom: 2}}>#{hovered.idx + 1} · {e.occurred_at.slice(11, 19)}</div>
+                  <div style={{fontSize: 13, fontWeight: 600}}>\${c.toFixed(4)}</div>
+                  <div style={{fontSize: 10, opacity: 0.7, marginTop: 2}}>
+                    {(e.tokens ?? e.total_tokens ?? 0).toLocaleString()} tok · {e.usage_kind || "—"}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <div className="flex justify-between mono muted" style={{fontSize: 10, marginTop: 8}}>
+            <span>{startLabel}</span>
+            <span style={{opacity: 0.5}}>click bar → jump to event card</span>
+            <span>{endLabel}</span>
+          </div>
+        </section>
+      );
+    };
+
+    /**
      * Per-turn timeline. Each card renders one usage event together with the
      * assistant action that produced it. Events and actions are joined by
      * event id (one assistant message → one usage event → one action card).
@@ -1578,6 +1730,7 @@ body {
                 return (
                   <div
                     key={e.id}
+                    id={\`event-\${e.id}\`}
                     onClick={() => toggleExpanded(e.id)}
                     style={{
                       padding: 14,
@@ -1756,66 +1909,7 @@ body {
           {isLoading && <LoadingPanel label="Loading run trace…"/>}
           {!isLoading && events.length > 0 && (
             <>
-              {/* Per-event cost distribution. The previous cumulative line was
-                  always monotonically increasing — the only useful data point
-                  was the endpoint, which is already in the KPI strip. This
-                  view shows where in the run the expensive spikes happened:
-                  each event is a vertical bar positioned at its occurred_at
-                  on the run's time axis, height proportional to event cost.
-                  Events bunched into a streaming burst overlap, but the
-                  silhouette of the burst is still informative. */}
-              {(() => {
-                const eventCosts = events.map(e => e.cost || 0);
-                const maxEventCost = Math.max(...eventCosts, 0.0001);
-                // events come back newest-first from the API, so use min/max
-                // explicitly — naive [0]/[last] would flip the time axis.
-                const eventMsList = events.map(e => Date.parse(e.occurred_at));
-                const startMs = Math.min(...eventMsList);
-                const endMs = Math.max(...eventMsList);
-                const span = Math.max(endMs - startMs, 1);
-                const startLabel = new Date(startMs).toISOString().slice(11, 19);
-                const endLabel = new Date(endMs).toISOString().slice(11, 19);
-                return (
-                  <section className="card" style={{padding: 28, marginBottom: 16}}>
-                    <div className="flex justify-between items-end mb-4">
-                      <div>
-                        <div className="eyebrow" style={{marginBottom: 6}}>Cost distribution</div>
-                        <h4 className="t-h4" style={{margin: 0}}>Per event · max \${maxEventCost.toFixed(4)}</h4>
-                      </div>
-                      <span className="chip"><span className="chip__dot" style={{background: "var(--signal-orange)"}}/>total \${totalCost.toFixed(4)}</span>
-                    </div>
-                    <div style={{position: "relative", height: 120, paddingTop: 4, paddingBottom: 18, borderBottom: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)"}}>
-                      {events.map((e, i) => {
-                        const cost = e.cost || 0;
-                        const x = span > 1 ? ((Date.parse(e.occurred_at) - startMs) / span) * 100 : 50;
-                        const h = Math.max(2, (cost / maxEventCost) * 96);
-                        const time = e.occurred_at.slice(11, 19);
-                        return (
-                          <div
-                            key={e.id}
-                            title={\`#\${i + 1} \${time} · $\${cost.toFixed(4)}\`}
-                            style={{
-                              position: "absolute",
-                              left: \`\${x}%\`,
-                              bottom: 0,
-                              transform: "translateX(-50%)",
-                              width: 5,
-                              height: \`\${h}%\`,
-                              background: "var(--signal-orange)",
-                              opacity: 0.55 + 0.45 * (cost / maxEventCost),
-                              borderRadius: "2px 2px 0 0",
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="flex justify-between mono muted" style={{fontSize: 10, marginTop: 6}}>
-                      <span>{startLabel}</span>
-                      <span>{endLabel}</span>
-                    </div>
-                  </section>
-                );
-              })()}
+              <CostDistributionChart events={events} totalCost={totalCost}/>
               {/* Unified per-turn timeline. Joins each usage event with its
                   matching action card so the user sees cost AND what the
                   assistant did in one row, not as two parallel sections. */}
