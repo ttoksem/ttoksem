@@ -2185,7 +2185,188 @@ body {
     };
 
     // Inbox Detail — real data from GET /api/inbox/groups
-    const InboxDetail = ({ onNav, workspace, inboxData, taskKeys = [], onGroupResolved, permissions }) => {
+    // Combobox for picking a task to assign an inbox group to. Replaces the
+    // original <input list="datalist"> approach which had two pain points:
+    // (1) datalist order is whatever the server sends and the browser shows
+    //     no name/status — just the key — so users couldn't scan the list,
+    // (2) there was no obvious way to create a new task from the screen,
+    //     even though the server already creates one on assign.
+    // The combobox sorts active tasks by recency first, shows name + status
+    // chips, and offers an explicit "+ Create '<query>'" option whenever
+    // the typed value doesn't match any existing key.
+    const TaskCombobox = ({ tasks, value, onChange, onSubmit, disabled, placeholder }) => {
+      const [open, setOpen] = React.useState(false);
+      const [highlight, setHighlight] = React.useState(0);
+      const inputRef = React.useRef(null);
+
+      const sorted = React.useMemo(() => {
+        const list = (tasks || []).slice();
+        // Active first (most recent updated_at), then open, then closed
+        // (most recently closed first so the picker doesn't drown in stale
+        // entries from years past).
+        const order = { active: 0, open: 1, closed: 2, archived: 3 };
+        list.sort((a, b) => {
+          const sa = order[a.status] ?? 99;
+          const sb = order[b.status] ?? 99;
+          if (sa !== sb) return sa - sb;
+          const ta = a.status === "closed" ? (a.closed_at || a.updated_at) : a.updated_at;
+          const tb = b.status === "closed" ? (b.closed_at || b.updated_at) : b.updated_at;
+          return (tb || "").localeCompare(ta || "");
+        });
+        return list;
+      }, [tasks]);
+
+      const query = (value || "").toLowerCase().trim();
+      const filtered = React.useMemo(() => {
+        if (!query) return sorted.slice(0, 30);
+        return sorted.filter(t =>
+          t.key.toLowerCase().includes(query) ||
+          (t.name || "").toLowerCase().includes(query)
+        ).slice(0, 30);
+      }, [sorted, query]);
+
+      const exactMatch = (value || "").trim() && sorted.some(t => t.key === (value || "").trim());
+      const showCreate = (value || "").trim() && !exactMatch;
+      const optionCount = filtered.length + (showCreate ? 1 : 0);
+
+      function selectOption(idx) {
+        if (showCreate && idx === filtered.length) {
+          // "Create" row — keep typed key, close, focus next field.
+          setOpen(false);
+          onSubmit && onSubmit((value || "").trim());
+          return;
+        }
+        const t = filtered[idx];
+        if (!t) return;
+        onChange(t.key);
+        setOpen(false);
+      }
+
+      function onKeyDown(e) {
+        if (!open && (e.key === "ArrowDown" || e.key === "Enter")) {
+          setOpen(true);
+          return;
+        }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setHighlight(h => Math.min(h + 1, optionCount - 1));
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setHighlight(h => Math.max(h - 1, 0));
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (open && optionCount > 0) selectOption(highlight);
+          else if ((value || "").trim()) onSubmit && onSubmit((value || "").trim());
+        } else if (e.key === "Escape") {
+          setOpen(false);
+        }
+      }
+
+      return (
+        <div style={{position: "relative"}}>
+          <input
+            ref={inputRef}
+            value={value || ""}
+            onChange={(e) => { onChange(e.target.value); setOpen(true); setHighlight(0); }}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 150)}
+            onKeyDown={onKeyDown}
+            disabled={disabled}
+            placeholder={placeholder || "Assign to task…"}
+            autoComplete="off"
+            style={{
+              padding: "5px 10px",
+              fontSize: 12,
+              fontFamily: "var(--font-mono)",
+              border: "1px solid color-mix(in oklab, var(--text-ink) 12%, transparent)",
+              borderRadius: "var(--r-md)",
+              background: "var(--surface-white)",
+              color: "var(--text-ink)",
+              outline: "none",
+              width: 260,
+              opacity: disabled ? 0.5 : 1,
+            }}
+          />
+          {open && optionCount > 0 && (
+            <div
+              role="listbox"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 4px)",
+                right: 0,
+                minWidth: 320,
+                maxHeight: 320,
+                overflowY: "auto",
+                background: "var(--surface-white)",
+                border: "1px solid color-mix(in oklab, var(--text-ink) 15%, transparent)",
+                borderRadius: "var(--r-md)",
+                boxShadow: "0 8px 24px color-mix(in oklab, var(--text-ink) 12%, transparent)",
+                zIndex: 100,
+                fontSize: 12,
+              }}
+            >
+              {filtered.map((t, i) => {
+                const statusColor = t.status === "active" ? "var(--pos)"
+                  : t.status === "closed" ? "var(--text-slate)"
+                  : "var(--warn)";
+                const isHi = i === highlight;
+                return (
+                  <div
+                    key={t.key}
+                    role="option"
+                    aria-selected={isHi}
+                    onMouseDown={(e) => { e.preventDefault(); selectOption(i); }}
+                    onMouseEnter={() => setHighlight(i)}
+                    style={{
+                      padding: "8px 12px",
+                      borderBottom: "1px solid color-mix(in oklab, var(--text-ink) 5%, transparent)",
+                      background: isHi ? "color-mix(in oklab, var(--signal-orange) 10%, transparent)" : "transparent",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{width: 6, height: 6, borderRadius: "50%", background: statusColor, flexShrink: 0}}/>
+                    <div style={{flex: 1, minWidth: 0}}>
+                      <div style={{fontWeight: 500, color: "var(--text-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                        {t.name || t.key}
+                      </div>
+                      <div className="mono" style={{fontSize: 10, color: "var(--text-slate)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>
+                        {t.key}
+                      </div>
+                    </div>
+                    <span style={{fontSize: 10, color: statusColor, textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0}}>{t.status}</span>
+                  </div>
+                );
+              })}
+              {showCreate && (
+                <div
+                  role="option"
+                  aria-selected={highlight === filtered.length}
+                  onMouseDown={(e) => { e.preventDefault(); selectOption(filtered.length); }}
+                  onMouseEnter={() => setHighlight(filtered.length)}
+                  style={{
+                    padding: "8px 12px",
+                    background: highlight === filtered.length ? "color-mix(in oklab, var(--signal-orange) 12%, transparent)" : "color-mix(in oklab, var(--signal-orange) 5%, transparent)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    borderTop: filtered.length > 0 ? "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)" : undefined,
+                  }}
+                >
+                  <span style={{color: "var(--signal-orange)", fontWeight: 600}}>+</span>
+                  <span>Create new task <span className="mono" style={{fontWeight: 500}}>{(value || "").trim()}</span> & assign</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const InboxDetail = ({ onNav, workspace, inboxData, tasks, onGroupResolved, permissions }) => {
       // canWrite: true once we know the session has api:write (or auth is off
       // entirely with the '*' wildcard). null/undefined = still loading; an
       // empty array = explicitly no write scope.
@@ -2293,9 +2474,6 @@ body {
             <section className="card" style={{padding: 24, marginBottom: 16}}>
               <div className="eyebrow" style={{marginBottom: 6}}>Groups</div>
               <h4 className="t-h4" style={{margin: 0, marginBottom: 16}}>Unassigned inbox groups</h4>
-              <datalist id="inbox-task-keys">
-                {taskKeys.map(k => <option key={k} value={k}/>)}
-              </datalist>
               <div className="flex-col gap-3">
                 {groupsPage.slice.map(g => {
                   const isPending = pendingId === g.group_id;
@@ -2346,44 +2524,29 @@ body {
                         <span>{(g.first_occurred_at || "").slice(0, 10) || "—"}</span>
                         {g.source_context?.git_branch && <><span>·</span><span className="mono">{g.source_context.git_branch}</span></>}
                       </div>
-                      {/* Manual assign: free-text input with autocomplete from
-                          existing task keys. User can also type a key that
-                          doesn't exist yet — server creates the task on assign. */}
-                      <form
-                        onSubmit={(e) => { e.preventDefault(); assignGroup(g); }}
-                        className="flex gap-2 items-center"
-                        style={{flexShrink: 0}}
-                      >
-                        <input
-                          list="inbox-task-keys"
+                      {/* Manual assign: combobox with searchable task list +
+                          inline create-on-submit when the typed key doesn't
+                          match anything (server auto-creates on assign). */}
+                      <div className="flex gap-2 items-center" style={{flexShrink: 0}}>
+                        <TaskCombobox
+                          tasks={tasks}
                           value={draftKey}
-                          onChange={(e) => setAssignDraft(prev => ({ ...prev, [g.group_id]: e.target.value }))}
-                          placeholder={canWrite ? "Assign to task…" : "Read-only token"}
+                          onChange={(v) => setAssignDraft(prev => ({ ...prev, [g.group_id]: v }))}
+                          onSubmit={() => assignGroup(g)}
                           disabled={isPending || !canWrite || permsLoading}
-                          title={!canWrite && !permsLoading ? writeBlockedHint : undefined}
-                          style={{
-                            padding: "5px 10px",
-                            fontSize: 12,
-                            fontFamily: "var(--font-mono)",
-                            border: "1px solid color-mix(in oklab, var(--text-ink) 12%, transparent)",
-                            borderRadius: "var(--r-md)",
-                            background: "var(--surface-white)",
-                            color: "var(--text-ink)",
-                            outline: "none",
-                            width: 220,
-                            opacity: !canWrite && !permsLoading ? 0.5 : 1,
-                          }}
+                          placeholder={canWrite ? (tasks === null ? "Loading tasks…" : "Search or create task…") : "Read-only token"}
                         />
                         <button
                           className="btn btn--secondary btn--sm"
-                          type="submit"
+                          type="button"
+                          onClick={() => assignGroup(g)}
                           disabled={isPending || !draftKey.trim() || !canWrite || permsLoading}
                           title={!canWrite && !permsLoading ? writeBlockedHint : undefined}
                           style={{fontSize: 11, padding: "4px 12px", opacity: !canWrite && !permsLoading ? 0.45 : 1, cursor: !canWrite && !permsLoading ? "help" : undefined}}
                         >
                           {isPending ? "Assigning…" : "Assign"}
                         </button>
-                      </form>
+                      </div>
                     </div>
                     {errMsg && (
                       <div style={{marginTop: 8, padding: "6px 10px", background: "color-mix(in oklab, var(--neg) 10%, transparent)", color: "var(--neg)", borderRadius: "var(--r-sm)", fontSize: 11}}>
@@ -2539,6 +2702,10 @@ body {
       const [taskLoading, setTaskLoading] = React.useState(false);
       const [taskError, setTaskError] = React.useState(null);
       const [inboxData, setInboxData] = React.useState(null);
+      // All workspace tasks (key + name + status + dates), loaded for the
+      // inbox combobox so users can see/search every task — not just the
+      // top-20 by cost that dashboard payload happens to carry.
+      const [allTasks, setAllTasks] = React.useState(null);
       const [pricingData, setPricingData] = React.useState(null);
       // Actions are fetched per-runId — keyed map so we don't refetch when
       // bouncing between sibling runs in the same task.
@@ -2621,6 +2788,20 @@ body {
         }
       }
 
+      async function fetchAllTasks(workspaceKey) {
+        try {
+          const res = await fetch(\`/api/tasks?workspace=\${encodeURIComponent(workspaceKey)}\`, {
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+          const json = await res.json();
+          setAllTasks(json.tasks || []);
+        } catch (e) {
+          console.error("Tasks load error:", e);
+          setAllTasks([]);
+        }
+      }
+
       async function fetchPricing(workspaceKey) {
         try {
           const [snapRes, rulesRes] = await Promise.all([
@@ -2686,7 +2867,10 @@ body {
         if (initialTaskKey) {
           fetchTask(defaultWorkspace, initialTaskKey);
         }
-        if (initialView === "inbox") fetchInbox(defaultWorkspace);
+        if (initialView === "inbox") {
+          fetchInbox(defaultWorkspace);
+          fetchAllTasks(defaultWorkspace);
+        }
         if (initialView === "pricing") fetchPricing(defaultWorkspace);
         if (initialView === "run" && initialRunId) fetchRunByDeepLink(initialRunId);
       }, []);
@@ -2710,13 +2894,16 @@ body {
             if (!known) fetchRunByDeepLink(next.runId);
             else fetchRunActions(defaultWorkspace, next.runId);
           }
-          if (next.view === "inbox" && !inboxData) fetchInbox(defaultWorkspace);
+          if (next.view === "inbox") {
+            if (!inboxData) fetchInbox(defaultWorkspace);
+            if (!allTasks) fetchAllTasks(defaultWorkspace);
+          }
           if (next.view === "pricing" && !pricingData) fetchPricing(defaultWorkspace);
           setView(next.view);
         }
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-      }, [inboxData, pricingData, taskData]);
+      }, [inboxData, pricingData, taskData, allTasks]);
 
       function handleNav(newView, taskKey, runIdParam) {
         if (newView === "task" && taskKey) {
@@ -2728,8 +2915,9 @@ body {
           setActiveRunId(runIdParam);
           fetchRunActions(defaultWorkspace, runIdParam);
         }
-        if (newView === "inbox" && !inboxData) {
-          fetchInbox(defaultWorkspace);
+        if (newView === "inbox") {
+          if (!inboxData) fetchInbox(defaultWorkspace);
+          if (!allTasks) fetchAllTasks(defaultWorkspace);
         }
         if (newView === "pricing" && !pricingData) {
           fetchPricing(defaultWorkspace);
@@ -2808,7 +2996,7 @@ body {
             onNav={handleNav}
             workspace={defaultWorkspace}
             inboxData={inboxData}
-            taskKeys={(dashData?.tasks || []).map(t => t.id).filter(k => k && k !== "unassigned")}
+            tasks={allTasks}
             onGroupResolved={(groupId) => setInboxData(prev => Array.isArray(prev) ? prev.filter(g => g.group_id !== groupId) : prev)}
             permissions={permissions}
           />

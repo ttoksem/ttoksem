@@ -145,6 +145,15 @@ const routeTaskActive = createRoute({
   },
 });
 
+const routeListTasks = createRoute({
+  method: "get", path: "/api/tasks", tags: ["Tasks"],
+  summary: "List all tasks in the workspace", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ tasks: z.array(TaskRecordSchema) }) } }, description: "Workspace tasks" },
+  },
+});
+
 const routeTaskStats = createRoute({
   method: "get", path: "/api/tasks/{taskKey}/stats", tags: ["Tasks"],
   summary: "Get run count, event count, and cost for a task", security: BEARER_AUTH,
@@ -450,6 +459,14 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       .filter((t) => t.status === "active")
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
     return c.json({ key: active?.key ?? null }, 200);
+  });
+
+  app.openapi(routeListTasks, async (c) => {
+    const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const tasks = await options.service.listTasks({ workspace: workspaceResolver(workspaceKey) });
+    return c.json({ tasks }, 200);
   });
 
   app.openapi(routeTaskStats, async (c) => {
