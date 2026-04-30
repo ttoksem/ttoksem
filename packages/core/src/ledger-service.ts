@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   AiUsageObservedSchema,
   type AccessKeyRecord,
@@ -19,6 +20,7 @@ import type {
   LedgerStore,
   UsagePricingUpdateInput,
 } from "@ttoksem/storage";
+import { summarizeClaudeAssistantContent } from "@ttoksem/providers";
 import { decimalToNanos, nanosToDecimal } from "./money.js";
 
 export interface Clock {
@@ -245,6 +247,29 @@ export interface InboxAssignmentResult {
   skipped_count: number;
   assigned_event_ids: string[];
   skipped_event_ids: string[];
+}
+
+/** Single tool invocation summary surfaced to the dashboard run trace. */
+export interface RunActionToolCall {
+  name: string;
+  summary: string;
+}
+
+/**
+ * One assistant turn within a run, summarized for display. Each item maps to
+ * one usage event; `tool_calls` and `text_excerpt` are derived either from the
+ * stored payload (new imports) or by re-reading the originating session JSONL
+ * (older imports that pre-date payload enrichment).
+ */
+export interface RunAction {
+  event_id: string;
+  occurred_at: string;
+  message_id: string | null;
+  text_excerpt: string | null;
+  tool_calls: RunActionToolCall[];
+  has_thinking: boolean;
+  /** Where this summary came from — useful for diagnostics. */
+  source: "payload" | "jsonl" | "missing";
 }
 
 export class LedgerService {
@@ -666,6 +691,50 @@ export class LedgerService {
     const events = await this.listInboxEvents(workspace.id, Math.max((input.limit ?? 20) * 20, 100));
     const tasks = await this.store.listTasks(workspace.id);
     return buildInboxGroups(workspace.id, events, tasks).slice(0, input.limit ?? 20);
+  }
+
+  /**
+   * Reconstruct what the assistant did during a run.
+   *
+   * Two data paths:
+   *   1. Newer events: the importer stored `assistant_summary` directly inside
+   *      `source_context` — read it straight back out (zero I/O).
+   *   2. Older events: only `session.file` and `message_id` are stored. We
+   *      re-read the originating JSONL on demand and summarize.
+   *
+   * The JSONL fallback caches each file by path within a single call so a run
+   * with N events from one file only reads/parses it once.
+   */
+  async runActions(input: { workspace: WorkspaceResolver; runId: string }): Promise<RunAction[]> {
+    const workspace = await this.resolveWorkspace(input.workspace);
+    const events = await this.store.listUsageEventsByRun(workspace.id, input.runId);
+    if (events.length === 0) return [];
+    const fileSummaryCache = new Map<string, Map<string, RunActionSummary>>();
+    const result: RunAction[] = [];
+    for (const event of events) {
+      const sourceContext = readSourceContext(event.payload_json);
+      const messageId = stringOrNull(sourceContext?.message_id);
+      // Fast path: importer already stored the summary on this event.
+      const inlineSummary = readInlineAssistantSummary(sourceContext);
+      if (inlineSummary) {
+        result.push(buildRunAction(event, messageId, inlineSummary, "payload"));
+        continue;
+      }
+      // Fallback: re-read the JSONL the event came from.
+      const sessionFile = stringOrNull(readSessionFile(sourceContext));
+      if (!sessionFile || !messageId) {
+        result.push(buildRunAction(event, messageId, emptySummary(), "missing"));
+        continue;
+      }
+      let messageMap = fileSummaryCache.get(sessionFile);
+      if (!messageMap) {
+        messageMap = readClaudeSessionSummaries(sessionFile);
+        fileSummaryCache.set(sessionFile, messageMap);
+      }
+      const summary = messageMap.get(messageId);
+      result.push(buildRunAction(event, messageId, summary ?? emptySummary(), summary ? "jsonl" : "missing"));
+    }
+    return result;
   }
 
   async showInboxGroup(input: {
@@ -1709,4 +1778,105 @@ function addMsToIso(value: string, durationMs: number): string | null {
 function defaultIdFactory(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
   return `${prefix}_${random.replaceAll("-", "").slice(0, 24)}`;
+}
+
+// ── Run actions (assistant summary reconstruction) ─────────────────────────
+
+interface RunActionSummary {
+  text_excerpt: string | null;
+  tool_calls: RunActionToolCall[];
+  has_thinking: boolean;
+}
+
+function emptySummary(): RunActionSummary {
+  return { text_excerpt: null, tool_calls: [], has_thinking: false };
+}
+
+function buildRunAction(
+  event: UsageEventRecord,
+  messageId: string | null,
+  summary: RunActionSummary,
+  source: RunAction["source"],
+): RunAction {
+  return {
+    event_id: event.id,
+    occurred_at: event.occurred_at,
+    message_id: messageId,
+    text_excerpt: summary.text_excerpt,
+    tool_calls: summary.tool_calls,
+    has_thinking: summary.has_thinking,
+    source,
+  };
+}
+
+function readSourceContext(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const inner = isRecord(payload.payload) ? payload.payload : null;
+  return inner && isRecord(inner.source_context) ? inner.source_context : null;
+}
+
+function readInlineAssistantSummary(
+  sourceContext: Record<string, unknown> | null,
+): RunActionSummary | null {
+  if (!sourceContext) return null;
+  const raw = sourceContext.assistant_summary;
+  if (!isRecord(raw)) return null;
+  const tools = Array.isArray(raw.tool_calls) ? raw.tool_calls : [];
+  const tool_calls: RunActionToolCall[] = [];
+  for (const tc of tools) {
+    if (!isRecord(tc)) continue;
+    const name = stringField(tc.name) ?? "tool";
+    const summary = stringField(tc.summary) ?? "";
+    tool_calls.push({ name, summary });
+  }
+  return {
+    text_excerpt: stringField(raw.text_excerpt),
+    tool_calls,
+    has_thinking: Boolean(raw.has_thinking),
+  };
+}
+
+function readSessionFile(sourceContext: Record<string, unknown> | null): string | null {
+  if (!sourceContext) return null;
+  const session = isRecord(sourceContext.session) ? sourceContext.session : null;
+  return stringField(session?.file);
+}
+
+/**
+ * Read a Claude session JSONL once and build a `message_id → summary` map so
+ * subsequent lookups for the same file are O(1). Errors (missing file, malformed
+ * line) are tolerated — the caller falls back to an empty summary.
+ */
+function readClaudeSessionSummaries(filePath: string): Map<string, RunActionSummary> {
+  const out = new Map<string, RunActionSummary>();
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return out;
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let item: unknown;
+    try {
+      item = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(item)) continue;
+    if (item.type !== "assistant") continue;
+    const message = isRecord(item.message) ? item.message : null;
+    const messageId = stringField(message?.id);
+    if (!messageId) continue;
+    const summary = summarizeClaudeAssistantContent(message?.content);
+    out.set(messageId, {
+      text_excerpt: summary.text_excerpt,
+      tool_calls: summary.tool_calls.map((tc) => ({ name: tc.name, summary: tc.summary })),
+      has_thinking: summary.has_thinking,
+    });
+  }
+  return out;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

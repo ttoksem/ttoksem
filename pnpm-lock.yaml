@@ -98,6 +98,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@ttoksem/providers':
+        specifier: workspace:*
+        version: link:../providers
       '@ttoksem/schema':
         specifier: workspace:*
         version: link:../schema

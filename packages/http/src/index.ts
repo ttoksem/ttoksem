@@ -291,6 +291,18 @@ const routeListInboxGroups = createRoute({
   },
 });
 
+const routeRunActions = createRoute({
+  method: "get", path: "/api/runs/{runId}/actions", tags: ["Runs"],
+  summary: "List assistant actions reconstructed for a run", security: BEARER_AUTH,
+  request: {
+    params: z.object({ runId: z.string() }),
+    query: WorkspaceQuery,
+  },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ actions: z.array(z.unknown()) }) } }, description: "Run actions" },
+  },
+});
+
 const routeListPricingSnapshots = createRoute({
   method: "get", path: "/api/pricing/snapshots", tags: ["Pricing"],
   summary: "List pricing source snapshots", security: BEARER_AUTH,
@@ -538,6 +550,20 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       limit: limit ? parseLimit(limit, 50) : 50,
     });
     return c.json({ groups }, 200);
+  });
+
+  // ── Run actions ────────────────────────────────────────────────────────────
+
+  app.openapi(routeRunActions, async (c) => {
+    const { workspace: wk } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const actions = await options.service.runActions({
+      workspace: workspaceResolver(workspaceKey),
+      runId: c.req.valid("param").runId,
+    });
+    return c.json({ actions }, 200);
   });
 
   // ── Pricing ────────────────────────────────────────────────────────────────

@@ -240,6 +240,117 @@ function anthropicUsageFromResponse(response: Record<string, unknown>): Anthropi
   };
 }
 
+// ── Claude session content summarizer ──────────────────────────────────────
+// Each assistant message in a Claude Code session JSONL has a `content` array
+// of blocks: text / tool_use / thinking. Importing only the token usage drops
+// all of that — leaving downstream consumers (dashboard, reports) with no
+// answer to "what did Claude actually do during this run?".
+//
+// This helper extracts a compact, display-ready summary that's safe to embed
+// in payload.source_context.assistant_summary. Same shape is reused by the
+// live JSONL fallback in the dashboard's runActions endpoint.
+
+export interface ClaudeAssistantToolCall {
+  /** Tool name as emitted by the model (Bash, Read, Edit, Task, …). */
+  name: string;
+  /** Single-line human-readable summary of the most informative input field. */
+  summary: string;
+}
+
+export interface ClaudeAssistantSummary {
+  /** First non-empty text block, truncated to keep payloads small. */
+  text_excerpt: string | null;
+  /** Tool invocations in the order they appeared in the assistant message. */
+  tool_calls: ClaudeAssistantToolCall[];
+  /** True when an interleaved thinking block was present. */
+  has_thinking: boolean;
+}
+
+const EMPTY_SUMMARY: ClaudeAssistantSummary = Object.freeze({
+  text_excerpt: null,
+  tool_calls: [],
+  has_thinking: false,
+});
+
+export function summarizeClaudeAssistantContent(content: unknown): ClaudeAssistantSummary {
+  if (!Array.isArray(content)) return EMPTY_SUMMARY;
+  let text_excerpt: string | null = null;
+  let has_thinking = false;
+  const tool_calls: ClaudeAssistantToolCall[] = [];
+  for (const raw of content) {
+    if (!raw || typeof raw !== "object") continue;
+    const block = raw as Record<string, unknown>;
+    const type = typeof block.type === "string" ? block.type : "";
+    if (type === "text") {
+      const t = stringField(block.text);
+      if (t && !text_excerpt) text_excerpt = compact(t, 240);
+    } else if (type === "tool_use") {
+      const name = stringField(block.name) ?? "tool";
+      tool_calls.push({ name, summary: summarizeToolUseInput(name, block.input) });
+    } else if (type === "thinking") {
+      has_thinking = true;
+    }
+  }
+  return { text_excerpt, tool_calls, has_thinking };
+}
+
+function summarizeToolUseInput(name: string, input: unknown): string {
+  const i = recordField(input);
+  if (!i) return "";
+  switch (name) {
+    case "Bash":
+      return compact(i.command, 160);
+    case "Read":
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return compact(i.file_path, 160);
+    case "Grep": {
+      const pattern = compact(i.pattern, 80);
+      const path = stringField(i.path);
+      return path ? `${pattern} in ${compact(path, 80)}` : pattern;
+    }
+    case "Glob":
+      return compact(i.pattern, 160);
+    case "WebFetch":
+      return compact(i.url, 160);
+    case "WebSearch":
+      return compact(i.query, 160);
+    case "Task": {
+      const sub = stringField(i.subagent_type);
+      const desc = stringField(i.description);
+      if (sub && desc) return compact(`${sub} — ${desc}`, 160);
+      return compact(desc ?? sub, 160);
+    }
+    case "TodoWrite": {
+      const todos = Array.isArray(i.todos) ? i.todos : [];
+      return `${todos.length} todo${todos.length === 1 ? "" : "s"}`;
+    }
+    case "ToolSearch":
+      return compact(i.query, 160);
+    case "Skill":
+      return compact(i.skill, 160);
+    case "ScheduleWakeup":
+      return compact(i.reason, 160);
+    default: {
+      // Generic fallback: show the first scalar value (string/number) so we still
+      // surface *something* when a new tool shows up that we don't know.
+      for (const [, v] of Object.entries(i)) {
+        if (typeof v === "string" || typeof v === "number") return compact(v, 160);
+      }
+      return "";
+    }
+  }
+}
+
+function compact(value: unknown, max: number): string {
+  if (value == null) return "";
+  const s = String(value).replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max) + "…";
+}
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function messageId(prefix: string, operation: string, value: string): string {

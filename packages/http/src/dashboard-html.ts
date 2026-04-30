@@ -1377,7 +1377,93 @@ body {
     };
 
     // Run Detail — real data from taskData.rawRuns + rawEvents filtered by runId
-    const RunDetail = ({ onNav, workspace, runId, taskData }) => {
+    // Color a tool name chip by category. The actual color set is shared with
+    // the rest of the design tokens — orange for the most common edit/run set,
+    // ink for read/inspect, slate fallback for tools we don't classify.
+    function toolKindColor(name) {
+      const orange = new Set(["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "Task", "TodoWrite"]);
+      const blue = new Set(["Read", "Glob", "Grep", "WebFetch", "WebSearch", "ToolSearch", "Skill"]);
+      if (orange.has(name)) return { background: "color-mix(in oklab, var(--signal-orange-light) 18%, transparent)", color: "var(--signal-orange)" };
+      if (blue.has(name)) return { background: "color-mix(in oklab, var(--text-ink) 6%, transparent)", color: "var(--text-ink)" };
+      return { background: "color-mix(in oklab, var(--text-slate) 12%, transparent)", color: "var(--text-slate)" };
+    }
+
+    const RunActionsSection = ({ actions }) => {
+      const isLoading = actions === "loading" || actions === undefined;
+      const list = Array.isArray(actions) ? actions : [];
+      const totalCalls = list.reduce((sum, a) => sum + (a.tool_calls?.length || 0), 0);
+      const fmt = s => s ? s.slice(11, 19) : "—";
+      return (
+        <section className="card" style={{padding: 24, marginBottom: 16}}>
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <div className="eyebrow" style={{marginBottom: 6}}>Actions</div>
+              <h4 className="t-h4" style={{margin: 0}}>What the assistant did{!isLoading && \` · \${totalCalls} tool call\${totalCalls === 1 ? "" : "s"}\`}</h4>
+            </div>
+          </div>
+          {isLoading && <LoadingPanel label="Reconstructing actions…"/>}
+          {!isLoading && list.length === 0 && (
+            <div style={{padding: "32px 0", textAlign: "center", color: "var(--text-slate)", fontSize: 13}}>
+              No actions recorded for this run.
+            </div>
+          )}
+          {!isLoading && list.length > 0 && (
+            <div className="flex-col gap-3">
+              {list.map((a, idx) => {
+                const empty = !a.text_excerpt && (a.tool_calls?.length || 0) === 0 && !a.has_thinking;
+                return (
+                  <div
+                    key={a.event_id}
+                    style={{
+                      padding: 14,
+                      border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)",
+                      borderRadius: "var(--r-lg)",
+                      background: "var(--surface-canvas)",
+                    }}
+                  >
+                    <div className="flex justify-between items-center mb-2" style={{fontSize: 11}}>
+                      <span className="flex gap-2 items-center">
+                        <span className="mono muted">#{idx + 1}</span>
+                        <span className="mono muted">{fmt(a.occurred_at)}</span>
+                        {a.has_thinking && <span className="chip" style={{fontSize: 10}}>thinking</span>}
+                        {a.source === "missing" && <span className="chip chip--warn" style={{fontSize: 10}}>session file missing</span>}
+                      </span>
+                      <span className="mono muted" style={{fontSize: 10}} title={a.message_id || ""}>{a.message_id ? a.message_id.slice(0, 12) + "…" : "—"}</span>
+                    </div>
+                    {a.text_excerpt && (
+                      <div style={{fontSize: 13, lineHeight: 1.5, color: "var(--text-ink)", marginBottom: a.tool_calls?.length ? 10 : 0}}>{a.text_excerpt}</div>
+                    )}
+                    {a.tool_calls && a.tool_calls.length > 0 && (
+                      <div className="flex-col gap-2">
+                        {a.tool_calls.map((tc, i) => {
+                          const color = toolKindColor(tc.name);
+                          return (
+                            <div key={i} className="flex gap-3 items-start" style={{padding: "6px 10px", borderRadius: "var(--r-md)", background: "var(--surface-lifted)"}}>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: "var(--r-pill)",
+                                background: color.background, color: color.color, flexShrink: 0, fontFamily: "var(--font-mono)",
+                              }}>{tc.name}</span>
+                              <span className="mono" style={{fontSize: 12, color: "var(--text-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1}} title={tc.summary}>
+                                {tc.summary || <span className="muted">(no input)</span>}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {empty && (
+                      <div style={{fontSize: 12, color: "var(--text-slate)"}}>Empty turn (no text or tool calls captured).</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      );
+    };
+
+    const RunDetail = ({ onNav, workspace, runId, taskData, actions }) => {
       // Run trace is rendered from the parent task's data. Three states:
       //   no runId         → user landed here without picking a run
       //   runId, no task   → task fetch still loading
@@ -1413,6 +1499,10 @@ body {
           {isLoading && <LoadingPanel label="Loading run trace…"/>}
           {!isLoading && events.length > 0 && (
             <>
+              {/* Actions reconstructed from the assistant content blocks (text +
+                  tool_use). Newer events read from the stored payload directly,
+                  older ones fall back to re-parsing the session JSONL. */}
+              <RunActionsSection actions={actions}/>
               <section className="card" style={{padding: 28, marginBottom: 16}}>
                 <div className="flex justify-between items-end mb-4">
                   <div>
@@ -1708,6 +1798,9 @@ body {
       const [taskError, setTaskError] = React.useState(null);
       const [inboxData, setInboxData] = React.useState(null);
       const [pricingData, setPricingData] = React.useState(null);
+      // Actions are fetched per-runId — keyed map so we don't refetch when
+      // bouncing between sibling runs in the same task.
+      const [runActionsByRun, setRunActionsByRun] = React.useState({});
 
       React.useEffect(() => {
         document.documentElement.setAttribute("data-theme", theme);
@@ -1780,6 +1873,23 @@ body {
         }
       }
 
+      async function fetchRunActions(workspaceKey, runId) {
+        if (!runId) return;
+        // Mark in-flight with a sentinel so the UI can show a loading panel.
+        setRunActionsByRun(prev => prev[runId] !== undefined ? prev : { ...prev, [runId]: "loading" });
+        try {
+          const res = await fetch(\`/api/runs/\${encodeURIComponent(runId)}/actions?workspace=\${encodeURIComponent(workspaceKey)}\`, {
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+          const json = await res.json();
+          setRunActionsByRun(prev => ({ ...prev, [runId]: json.actions || [] }));
+        } catch (e) {
+          console.error("Run actions load error:", e);
+          setRunActionsByRun(prev => ({ ...prev, [runId]: [] }));
+        }
+      }
+
       React.useEffect(() => {
         fetchDashboard(defaultWorkspace);
       }, []);
@@ -1819,6 +1929,7 @@ body {
         }
         if (newView === "run" && runIdParam) {
           setActiveRunId(runIdParam);
+          fetchRunActions(defaultWorkspace, runIdParam);
         }
         if (newView === "inbox" && !inboxData) {
           fetchInbox(defaultWorkspace);
@@ -1886,7 +1997,7 @@ body {
       if (view === "run") {
         return <>
           {themeBtn}
-          <RunDetail onNav={handleNav} workspace={defaultWorkspace} runId={activeRunId} taskData={taskData}/>
+          <RunDetail onNav={handleNav} workspace={defaultWorkspace} runId={activeRunId} taskData={taskData} actions={runActionsByRun[activeRunId]}/>
         </>;
       }
       if (view === "inbox") {

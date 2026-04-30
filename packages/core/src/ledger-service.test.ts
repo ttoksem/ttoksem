@@ -464,6 +464,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     createUsageEvent: async (input) => usageEventRecord(input),
     getUsageEventByIdempotency: async () => null,
     listUsageEventsByAssignment: async () => [],
+    listUsageEventsByRun: async () => [],
     moveUsageEventToTask: async () => usageEventRecord(defaultUsageInput()),
     listUnpricedUsageEvents: async () => [],
     listUsageEventsForPricingMigration: async () => [],

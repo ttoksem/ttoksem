@@ -735,6 +735,17 @@ export class D1LedgerStore implements LedgerStore {
     return rows.map((row) => UsageEventRecordSchema.parse(fromDbJson(row)));
   }
 
+  async listUsageEventsByRun(workspaceId: string, runId: string): Promise<UsageEventRecord[]> {
+    const rows = await this.all(
+      `SELECT *
+       FROM usage_events
+       WHERE workspace_id = ? AND run_id = ?
+       ORDER BY occurred_at ASC`,
+      [workspaceId, runId],
+    );
+    return rows.map((row) => UsageEventRecordSchema.parse(fromDbJson(row)));
+  }
+
   async moveUsageEventToTask(
     workspaceId: string,
     usageEventId: string,

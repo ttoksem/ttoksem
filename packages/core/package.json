@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ttoksem/providers": "workspace:*",
     "@ttoksem/schema": "workspace:*",
     "@ttoksem/storage": "workspace:*"
   },

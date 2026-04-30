@@ -298,6 +298,12 @@ export interface LedgerStore {
     assignmentStatus: UsageAssignmentStatus,
     limit: number,
   ): Promise<UsageEventRecord[]>;
+  /**
+   * Fetch every event recorded under the given run, ordered by occurred_at asc
+   * so callers can stream them in execution order. Used by /api/runs/:runId/actions
+   * to derive the action timeline.
+   */
+  listUsageEventsByRun(workspaceId: string, runId: string): Promise<UsageEventRecord[]>;
   moveUsageEventToTask(
     workspaceId: string,
     usageEventId: string,

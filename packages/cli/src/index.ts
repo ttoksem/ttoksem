@@ -15,7 +15,12 @@ import {
   type AiUsageObserved,
   type UsageEventRecord,
 } from "@ttoksem/schema";
-import { openAiUsageObservedFromResponse, anthropicUsageObservedFromResponse } from "@ttoksem/providers";
+import {
+  openAiUsageObservedFromResponse,
+  anthropicUsageObservedFromResponse,
+  summarizeClaudeAssistantContent,
+  type ClaudeAssistantSummary,
+} from "@ttoksem/providers";
 import { serveDashboard } from "@ttoksem/server";
 import { SqliteLedgerStore } from "@ttoksem/storage-sqlite";
 import {
@@ -1841,6 +1846,11 @@ function parseClaudeSessionUsage(
     const messageId = stringField(message?.id);
     const requestId = stringField(item.requestId);
     const model = stringField(message?.model) ?? session.model ?? options.model;
+    // Summarize the assistant content blocks (text/tool_use/thinking) so the
+    // ledger captures *what was done*, not just how many tokens it cost.
+    // Stored in source_context.assistant_summary; the dashboard reads it
+    // directly without having to re-open the JSONL.
+    const assistantSummary = summarizeClaudeAssistantContent(message?.content);
     messages.push(
       buildClaudeSessionUsageMessage({
         session: { ...session, model },
@@ -1851,6 +1861,7 @@ function parseClaudeSessionUsage(
         eventUuid,
         messageId,
         requestId,
+        assistantSummary,
       }),
     );
   }
@@ -1866,6 +1877,7 @@ function buildClaudeSessionUsageMessage(input: {
   eventUuid: string;
   messageId: string | null;
   requestId: string | null;
+  assistantSummary: ClaudeAssistantSummary;
 }): AiUsageObserved {
   const idempotencyKey = `claude-session:${input.session.id}:${input.eventUuid}`;
   const runId = claudePromptRunId(input.session, input.promptGroup);
@@ -1930,6 +1942,7 @@ function buildClaudeSessionUsageMessage(input: {
         message_id: input.messageId,
         request_id: input.requestId,
         token_usage: input.usage.raw,
+        assistant_summary: input.assistantSummary,
       },
     },
   });

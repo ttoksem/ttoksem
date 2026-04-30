@@ -890,6 +890,18 @@ export class SqliteLedgerStore implements LedgerStore {
       .map((row) => UsageEventRecordSchema.parse(fromDbJson(row as DbRow)));
   }
 
+  async listUsageEventsByRun(workspaceId: string, runId: string): Promise<UsageEventRecord[]> {
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM usage_events
+         WHERE workspace_id = ? AND run_id = ?
+         ORDER BY occurred_at ASC`,
+      )
+      .all(workspaceId, runId)
+      .map((row) => UsageEventRecordSchema.parse(fromDbJson(row as DbRow)));
+  }
+
   async moveUsageEventToTask(
     workspaceId: string,
     usageEventId: string,
