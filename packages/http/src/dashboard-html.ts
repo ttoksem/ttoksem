@@ -585,7 +585,8 @@ body {
         const key = r.run_id || r.id;
         if (!inboxMap.has(key)) {
           inboxMap.set(key, {
-            id: key.slice(0, 16) + "…",
+            id: shortenId(key, 14, 8),
+            rawId: key,
             source: r.provider_model?.split("/")?.[0] || "unknown",
             cost: 0, events: 0,
             hint: r.prompt ? r.prompt.slice(0, 60) + "…" : r.provider_model,
@@ -1064,7 +1065,7 @@ body {
                 </div>
                 <div className="flex-col gap-2">
                   {d.inbox.map(g => (
-                    <div key={g.id} style={{padding: 14, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)"}}>
+                    <div key={g.rawId || g.id} style={{padding: 14, border: "1px solid color-mix(in oklab, var(--text-ink) 8%, transparent)", borderRadius: "var(--r-lg)", background: "var(--surface-canvas)"}}>
                       <div className="flex justify-between items-center mb-2">
                         <span className="chip" style={{fontSize: 10, padding: "2px 10px"}}>{g.source}</span>
                         <span className="tnum" style={{fontWeight: 500, fontSize: 14}}>\${g.cost.toFixed(2)}</span>
@@ -1436,7 +1437,7 @@ body {
                         {a?.has_thinking && <span className="chip" style={{fontSize: 10}}>thinking</span>}
                         {a?.source === "missing" && <span className="chip chip--warn" style={{fontSize: 10}}>session file missing</span>}
                         {a?.message_id && (
-                          <span className="mono muted" style={{fontSize: 10}} title={a.message_id}>{a.message_id.slice(0, 12)}…</span>
+                          <span className="mono muted" style={{fontSize: 10, cursor: "help"}} title={a.message_id}>{shortenId(a.message_id, 10, 8)}</span>
                         )}
                       </span>
                       <span className="flex gap-3 items-center tnum" style={{fontSize: 11, color: "var(--text-slate)"}}>
@@ -1697,7 +1698,7 @@ body {
                         {s.valid_from ? \` · valid from \${s.valid_from.slice(0, 10)}\` : ""}
                       </div>
                     </div>
-                    <span className="mono" style={{fontSize: 10, color: "var(--text-slate)"}}>{s.raw_sha256.slice(0, 12)}…</span>
+                    <span className="mono" style={{fontSize: 10, color: "var(--text-slate)", cursor: "help"}} title={s.raw_sha256}>{shortenId(s.raw_sha256, 10, 8)}</span>
                   </div>
                 ))}
               </div>
