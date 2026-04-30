@@ -1284,6 +1284,120 @@ body {
       </div>
     );
 
+    /**
+     * Per-run timeline. Replaces a daily-aggregate bar chart that was useless
+     * for short-lived tasks (single tall bar) and only marginally useful for
+     * long ones. Shows when each run actually fired across the task's date
+     * range, sized by cost, clickable to drill into the run trace.
+     *
+     * Layout: one row per UTC day in the task's span; each row is a 24-hour
+     * horizontal track with hour gridlines at 0/6/12/18/24. A run is rendered
+     * as an orange dot at its started_at hour. Dot diameter scales with cost
+     * relative to the most expensive run in the task; very small runs still
+     * get a 6px floor so they remain pickable.
+     */
+    const RunTimelineHeatmap = ({ runs, onSelect }) => {
+      const valid = (runs || []).filter(r => r.started_at);
+      if (valid.length === 0) return null;
+
+      // Build the day list: every UTC date between min(start) and max(start),
+      // ordered ascending. Sparse days (no runs) still get an empty row so the
+      // visual gap conveys idle time honestly.
+      const days = [];
+      const firstMs = Math.min(...valid.map(r => Date.parse(r.started_at)));
+      const lastMs = Math.max(...valid.map(r => Date.parse(r.started_at)));
+      const cap = 31; // never render more than ~a month of rows
+      const dayMs = 86400000;
+      for (let t = floorUtcDay(firstMs); t <= lastMs && days.length < cap; t += dayMs) {
+        days.push(t);
+      }
+
+      const maxCost = Math.max(...valid.map(r => r.estimated_total || 0), 0.0001);
+      const runsByDay = new Map();
+      for (const r of valid) {
+        const dayMsKey = floorUtcDay(Date.parse(r.started_at));
+        if (!runsByDay.has(dayMsKey)) runsByDay.set(dayMsKey, []);
+        runsByDay.get(dayMsKey).push(r);
+      }
+
+      const ROW_HEIGHT = 38;
+      const DOT_MIN = 6;
+      const DOT_MAX = 22;
+
+      return (
+        <div className="flex-col" style={{gap: 2}}>
+          {/* Top axis ruler */}
+          <div className="flex" style={{paddingLeft: 92, fontSize: 10, color: "var(--text-slate)", fontFamily: "var(--font-mono)"}}>
+            {[0, 6, 12, 18, 24].map(h => (
+              <span key={h} style={{position: "relative", flex: h === 24 ? 0 : 1}}>{h.toString().padStart(2, "0")}:00</span>
+            ))}
+          </div>
+          {days.map(d => {
+            const dayRuns = runsByDay.get(d) || [];
+            const label = new Date(d).toISOString().slice(0, 10);
+            return (
+              <div key={d} className="flex items-center" style={{gap: 8}}>
+                <div className="mono" style={{width: 84, fontSize: 11, color: "var(--text-slate)", flexShrink: 0}}>{label}</div>
+                <div style={{
+                  position: "relative",
+                  flex: 1,
+                  height: ROW_HEIGHT,
+                  background: "color-mix(in oklab, var(--text-ink) 3%, transparent)",
+                  borderRadius: "var(--r-md)",
+                  overflow: "hidden",
+                }}>
+                  {/* hour gridlines */}
+                  {[6, 12, 18].map(h => (
+                    <div key={h} style={{
+                      position: "absolute", left: \`\${(h / 24) * 100}%\`, top: 0, bottom: 0,
+                      borderLeft: "1px dashed color-mix(in oklab, var(--text-ink) 10%, transparent)",
+                    }}/>
+                  ))}
+                  {/* run dots */}
+                  {dayRuns.map(r => {
+                    const start = Date.parse(r.started_at);
+                    const hourFrac = ((start - d) / dayMs) * 100;
+                    const cost = r.estimated_total || 0;
+                    const size = DOT_MIN + Math.sqrt(cost / maxCost) * (DOT_MAX - DOT_MIN);
+                    const events = r.event_count || 0;
+                    const dur = r.span_duration_ms ? \`\${Math.round(r.span_duration_ms / 1000)}s\` : "—";
+                    const tooltip = \`\${r.run_id || "(no id)"}\\ncost: $\${cost.toFixed(4)}\\nevents: \${events}\\nduration: \${dur}\\nstart: \${r.started_at}\`;
+                    return (
+                      <button
+                        key={r.run_id}
+                        title={tooltip}
+                        onClick={(ev) => { ev.stopPropagation(); onSelect && r.run_id && onSelect(r.run_id); }}
+                        style={{
+                          position: "absolute",
+                          left: \`\${Math.max(0, Math.min(100, hourFrac))}%\`,
+                          top: "50%",
+                          transform: "translate(-50%, -50%)",
+                          width: size,
+                          height: size,
+                          borderRadius: "50%",
+                          background: "var(--signal-orange)",
+                          opacity: 0.55 + 0.45 * (cost / maxCost),
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                        }}
+                        aria-label={\`Run at \${r.started_at}, cost $\${cost.toFixed(4)}\`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    };
+
+    function floorUtcDay(ms) {
+      const d = new Date(ms);
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    }
+
     // Task Detail
     const TaskDetail = ({ taskData, onNav, workspace }) => {
       // Hooks must be called unconditionally — pass empty arrays when data isn't ready yet.
@@ -1297,8 +1411,6 @@ body {
       );
 
       const t = taskData;
-      const trend = t.daily && t.daily.length > 0 ? t.daily : [];
-      const maxTrend = Math.max(...trend, 0.01);
 
       return (
         <DetailShell activeNav="task" onNav={onNav} workspace={workspace}>
@@ -1320,25 +1432,21 @@ body {
             ]}
           />
 
-          {trend.length > 0 && (
+          {/* Run timeline replaces a daily-bar chart that degenerated to a
+              single tall stripe for short tasks and aggregated away the
+              per-run information that's actually useful for debugging cost
+              spikes. The heatmap surfaces *when* runs fired and *which*
+              were expensive, with each dot linking to its run trace. */}
+          {t.rawRuns && t.rawRuns.length > 0 && (
             <section className="card" style={{padding: 24, marginBottom: 16}}>
               <div className="flex justify-between items-end mb-4">
                 <div>
-                  <div className="eyebrow" style={{marginBottom: 6}}>Cost trend</div>
-                  <h4 className="t-h4" style={{margin: 0}}>Daily cost · {trend.length} day{trend.length !== 1 ? "s" : ""}</h4>
+                  <div className="eyebrow" style={{marginBottom: 6}}>Run timeline</div>
+                  <h4 className="t-h4" style={{margin: 0}}>{t.rawRuns.length} run{t.rawRuns.length === 1 ? "" : "s"} across the task</h4>
                 </div>
+                <div className="muted" style={{fontSize: 11}}>Dot size = cost · click to open</div>
               </div>
-              <div style={{display: "flex", alignItems: "flex-end", gap: 4, height: 140, justifyContent: trend.length < 7 ? "flex-start" : "stretch"}}>
-                {trend.map((v, i) => (
-                  <div key={i} style={{
-                    flex: trend.length < 7 ? "0 0 32px" : 1,
-                    height: \`\${(v / maxTrend) * 100}%\`,
-                    background: i === trend.length - 1 ? "var(--signal-orange)" : "var(--text-ink)",
-                    borderRadius: "var(--r-pill)",
-                    minHeight: 4,
-                  }}/>
-                ))}
-              </div>
+              <RunTimelineHeatmap runs={t.rawRuns} onSelect={(runId) => onNav("run", null, runId)}/>
             </section>
           )}
 
