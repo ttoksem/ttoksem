@@ -32,6 +32,19 @@ export default {
                 });
                 return result.allowed;
               },
+              // Mirror apps/server: dashboard's /api/me/permissions needs token
+              // introspection so the UI can gate write-class affordances on
+              // the actual scopes. Without this the worker returned 501 and
+              // the client fell back to assuming everything was permitted.
+              describeAccessToken: async ({ workspaceKey, token }) => {
+                const result = await service.verifyAccessKey({
+                  workspaceKey,
+                  tokenHash: await hashAccessToken(token),
+                  requiredScopes: ["dashboard:read"],
+                });
+                if (!result.key) return null;
+                return { scopes: result.key.scopes_json };
+              },
             },
     });
     return app.fetch(request, env);
