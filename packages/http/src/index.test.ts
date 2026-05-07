@@ -331,6 +331,81 @@ describe("createHttpApp auth", () => {
       app.request("/api/inbox?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
     ).resolves.toMatchObject({ status: 403 });
   });
+
+  it("shows an inbox group via GET /api/inbox/groups/:groupId, 404 on miss", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        showInboxGroup: async ({ groupId }) => {
+          if (groupId !== "grp_known") throw new Error(`Inbox group not found: ${groupId}`);
+          return {
+            group: {
+              group_id: "grp_known",
+              assignment_status: "unassigned",
+              event_count: 1,
+              run_count: 0,
+              token_count: 1,
+              estimated_total: 0,
+              currency: null,
+              first_occurred_at: "2026-04-28T00:00:00.000Z",
+              last_occurred_at: "2026-04-28T00:00:00.000Z",
+              source_context: {
+                date_bucket: "2026-04-28",
+                tool: null,
+                cwd: null,
+                git_branch: null,
+                command: null,
+                conversation_id: null,
+                request_id: null,
+                external_ref: null,
+              },
+              reason_codes: ["same_day"],
+              sample_event_ids: ["usage_test"],
+              prompt_samples: [],
+              suggested_task: null,
+            },
+            events: [usageEventRecord({ id: "evt_1" })],
+          };
+        },
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const ok = await app.request("/api/inbox/groups/grp_known?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toMatchObject({
+      group: { group_id: "grp_known" },
+      events: [{ id: "evt_1" }],
+    });
+
+    const miss = await app.request("/api/inbox/groups/grp_unknown?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(miss.status).toBe(404);
+  });
+
+  it("requires dashboard:read for GET /api/inbox/groups/:groupId", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/inbox/groups/grp_x?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/inbox/groups/grp_x?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {

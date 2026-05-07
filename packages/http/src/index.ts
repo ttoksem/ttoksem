@@ -356,6 +356,28 @@ const routeListInbox = createRoute({
   },
 });
 
+const routeShowInboxGroup = createRoute({
+  method: "get", path: "/api/inbox/groups/{groupId}", tags: ["Inbox"],
+  summary: "Show a single inbox group with its events", security: BEARER_AUTH,
+  request: {
+    params: z.object({ groupId: z.string() }),
+    query: WorkspaceQuery.extend({ limit: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ group: z.unknown(), events: z.array(UsageEventRecordSchema) }),
+        },
+      },
+      description: "Inbox group with events",
+    },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Group not found" },
+  },
+});
+
 const routeRunActions = createRoute({
   method: "get", path: "/api/runs/{runId}/actions", tags: ["Runs"],
   summary: "List assistant actions reconstructed for a run", security: BEARER_AUTH,
@@ -714,6 +736,23 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       limit: limit ? parseLimit(limit, 200) : 200,
     });
     return c.json({ events }, 200);
+  });
+
+  app.openapi(routeShowInboxGroup, async (c) => {
+    const { workspace: wk, limit } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    try {
+      const result = await options.service.showInboxGroup({
+        workspace: workspaceResolver(workspaceKey),
+        groupId: c.req.valid("param").groupId,
+        limit: limit ? parseLimit(limit, 50) : undefined,
+      });
+      return c.json(result, 200);
+    } catch {
+      return c.json({ error: "Inbox group not found" }, 404);
+    }
   });
 
   // ── Run actions ────────────────────────────────────────────────────────────
