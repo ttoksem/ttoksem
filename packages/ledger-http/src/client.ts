@@ -1,6 +1,6 @@
-import type { Ledger, RunAction, InboxGroup, InboxAssignmentResult } from "@ttoksem/core";
+import type { Ledger, RunAction, InboxGroup, InboxAssignmentResult, AccessKeyVerificationResult, DashboardData, DashboardTaskDetailData } from "@ttoksem/core";
 import type { WorkspaceResolver } from "@ttoksem/core";
-import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord } from "@ttoksem/schema";
+import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord, DailyReport, PricingRuleRecord, PricingSourceSnapshotRecord } from "@ttoksem/schema";
 import { HttpLedgerError } from "./errors.js";
 
 export interface HttpLedgerClientOptions {
@@ -10,7 +10,7 @@ export interface HttpLedgerClientOptions {
   fetch?: typeof globalThis.fetch;
 }
 
-export class HttpLedgerClient {
+export class HttpLedgerClient implements Ledger {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
   private readonly defaultWorkspaceKey: string | undefined;
@@ -326,11 +326,95 @@ export class HttpLedgerClient {
     );
     return result as InboxAssignmentResult;
   }
-}
 
-// Type shim — HttpLedgerClient does not yet implement Ledger (methods land in
-// Tasks 2-5). The shim variable assignment will fail at compile time once any
-// method is referenced through this typing path, alerting us if Task 5 forgets
-// to swap to `class HttpLedgerClient implements Ledger`.
-// We deliberately do NOT add `implements Ledger` to the class declaration yet;
-// that lands in Task 5 once all 28 methods exist.
+  // Pricing reads
+  async listPricingSourceSnapshots(): Promise<PricingSourceSnapshotRecord[]> {
+    const result = await this.request("GET", "/api/pricing/snapshots");
+    return (result as { snapshots: PricingSourceSnapshotRecord[] }).snapshots;
+  }
+
+  async getPricingSourceSnapshot(id: string): Promise<PricingSourceSnapshotRecord | null> {
+    try {
+      const result = await this.request("GET", `/api/pricing/snapshots/${encodeURIComponent(id)}`);
+      return (result as { snapshot: PricingSourceSnapshotRecord }).snapshot;
+    } catch (error) {
+      if (error instanceof HttpLedgerError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listPricingRules(input: { workspace: WorkspaceResolver }): Promise<PricingRuleRecord[]> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request("GET", `/api/pricing/rules?workspace=${encodeURIComponent(wk)}`);
+    return (result as { rules: PricingRuleRecord[] }).rules;
+  }
+
+  // Dashboard / Reports
+  async dashboard(input: {
+    workspace: WorkspaceResolver;
+    taskLimit?: number;
+    recentLimit?: number;
+    dayLimit?: number;
+    timeZoneOffsetMinutes?: number;
+  }): Promise<DashboardData> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.taskLimit !== undefined) params.set("taskLimit", String(input.taskLimit));
+    if (input.recentLimit !== undefined) params.set("recentLimit", String(input.recentLimit));
+    if (input.dayLimit !== undefined) params.set("dayLimit", String(input.dayLimit));
+    if (input.timeZoneOffsetMinutes !== undefined) params.set("timeZoneOffsetMinutes", String(input.timeZoneOffsetMinutes));
+    const result = await this.request("GET", `/api/dashboard?${params.toString()}`);
+    return result as DashboardData;
+  }
+
+  async dashboardTask(input: {
+    workspace: WorkspaceResolver;
+    taskKey: string;
+    recentLimit?: number;
+    dayLimit?: number;
+    runLimit?: number;
+    timeZoneOffsetMinutes?: number;
+  }): Promise<DashboardTaskDetailData> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.recentLimit !== undefined) params.set("recentLimit", String(input.recentLimit));
+    if (input.dayLimit !== undefined) params.set("dayLimit", String(input.dayLimit));
+    if (input.runLimit !== undefined) params.set("runLimit", String(input.runLimit));
+    if (input.timeZoneOffsetMinutes !== undefined) params.set("timeZoneOffsetMinutes", String(input.timeZoneOffsetMinutes));
+    const result = await this.request(
+      "GET",
+      `/api/tasks/${encodeURIComponent(input.taskKey)}?${params.toString()}`,
+    );
+    return result as DashboardTaskDetailData;
+  }
+
+  async reportToday(input: { workspace: WorkspaceResolver; date?: string }): Promise<DailyReport> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.date !== undefined) params.set("date", input.date);
+    const result = await this.request("GET", `/api/reports/today?${params.toString()}`);
+    return (result as { report: DailyReport }).report;
+  }
+
+  async reportTask(input: { workspace: WorkspaceResolver; taskKey: string }): Promise<DailyReport> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "GET",
+      `/api/reports/tasks/${encodeURIComponent(input.taskKey)}?workspace=${encodeURIComponent(wk)}`,
+    );
+    return (result as { report: DailyReport }).report;
+  }
+
+  // Auth (server-internal — no public route)
+  async verifyAccessKey(_input: {
+    workspaceKey: string;
+    tokenHash: string;
+    requiredScopes: string[];
+  }): Promise<AccessKeyVerificationResult> {
+    throw new HttpLedgerError(
+      "verifyAccessKey has no public HTTP route; the server uses it internally during request authorization. " +
+      "If you need to verify a token from outside the server, make an authenticated request to any protected endpoint and observe the 200/401/403 response.",
+      0,
+    );
+  }
+}

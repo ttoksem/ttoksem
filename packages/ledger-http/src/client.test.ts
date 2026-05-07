@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "@ttoksem/http";
-import type { LedgerService, RunAction, InboxGroup, InboxAssignmentResult } from "@ttoksem/core";
-import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord } from "@ttoksem/schema";
+import type { LedgerService, RunAction, InboxGroup, InboxAssignmentResult, DashboardData, DashboardTaskDetailData } from "@ttoksem/core";
+import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord, DailyReport, PricingRuleRecord, PricingSourceSnapshotRecord } from "@ttoksem/schema";
 import { HttpLedgerClient } from "./client.js";
+import { HttpLedgerError } from "./errors.js";
 
 function workspaceRecord(over: Partial<WorkspaceRecord> = {}): WorkspaceRecord {
   return {
@@ -374,5 +375,138 @@ describe("HttpLedgerClient — inbox methods", () => {
     });
     const result = await client.acceptInboxGroup({ workspace: { key: "test" }, groupId: "g_test" });
     expect(result.assigned_count).toBe(1);
+  });
+});
+
+function pricingSnapshotRecord(over: Partial<PricingSourceSnapshotRecord> = {}): PricingSourceSnapshotRecord {
+  return {
+    id: "price_snapshot_test",
+    source_name: "litellm",
+    source_url: null,
+    source_version: null,
+    source_commit: null,
+    source_retrieved_at: null,
+    bundled_at: null,
+    valid_from: null,
+    raw_sha256: "0".repeat(64),
+    raw_storage_ref: null,
+    metadata_json: null,
+    created_at: "2026-04-28T00:00:00.000Z",
+    ...over,
+  };
+}
+
+function dailyReport(over: Partial<DailyReport> = {}): DailyReport {
+  return {
+    workspace: workspaceRecord({}),
+    date: "2026-05-07",
+    estimated_total: 0,
+    observed_total: 0,
+    currency: null,
+    event_count: 0,
+    unpriced_count: 0,
+    ...over,
+  };
+}
+
+function dashboardData(): DashboardData {
+  return {
+    workspace: { key: "test", name: "Test" },
+    summary: {
+      event_count: 0, estimated_total: 0, observed_total: 0,
+      currency: "USD", unpriced_count: 0, unassigned_count: 0,
+      assigned_count: 0, task_count: 0, run_count: 0,
+    },
+    attention: [], insights: [], task_insights: [], tasks: [],
+    recent: [], pricing_breakdown: [], accuracy_breakdown: [], daily: [],
+  } as DashboardData;
+}
+
+describe("HttpLedgerClient — pricing + reports + auth", () => {
+  it("listPricingSourceSnapshots GETs /api/pricing/snapshots", async () => {
+    const client = buildClient({
+      listPricingSourceSnapshots: async () => [pricingSnapshotRecord({ id: "price_snapshot_a" })],
+    });
+    const snapshots = await client.listPricingSourceSnapshots();
+    expect(snapshots[0].id).toBe("price_snapshot_a");
+  });
+
+  it("getPricingSourceSnapshot GETs /api/pricing/snapshots/:id; null on 404", async () => {
+    const client = buildClient({
+      getPricingSourceSnapshot: async (id) => (id === "price_snapshot_a" ? pricingSnapshotRecord({ id: "price_snapshot_a" }) : null),
+    });
+    const ok = await client.getPricingSourceSnapshot("price_snapshot_a");
+    expect(ok?.id).toBe("price_snapshot_a");
+    const miss = await client.getPricingSourceSnapshot("price_snapshot_missing");
+    expect(miss).toBeNull();
+  });
+
+  it("listPricingRules GETs /api/pricing/rules", async () => {
+    const rule: PricingRuleRecord = {
+      id: "price_a",
+      workspace_id: "ws_test",
+      source_snapshot_id: null,
+      provider: "openai",
+      model: "gpt",
+      usage_kind: "conversation_turn",
+      unit_type: "token",
+      price_nanos_per_unit: 100,
+      currency: "USD",
+      effective_from: "2026-04-28T00:00:00Z",
+      effective_to: null,
+      source: "manual",
+      attribution_json: null,
+      metadata_json: null,
+      created_at: "2026-04-28T00:00:00Z",
+      updated_at: "2026-04-28T00:00:00Z",
+    } as PricingRuleRecord;
+    const client = buildClient({ listPricingRules: async () => [rule] });
+    const rules = await client.listPricingRules({ workspace: { key: "test" } });
+    expect(rules[0].id).toBe("price_a");
+  });
+
+  it("dashboard GETs /api/dashboard", async () => {
+    const client = buildClient({ dashboard: async () => dashboardData() });
+    const dash = await client.dashboard({ workspace: { key: "test" } });
+    expect(dash.workspace.key).toBe("test");
+  });
+
+  it("dashboardTask GETs /api/tasks/:taskKey", async () => {
+    const client = buildClient({
+      dashboardTask: async () => ({
+        workspace: { key: "test", name: "Test" },
+        task: { key: "alpha", name: "Alpha", description: null, status: "active", created_at: "2026-04-27T00:00:00.000Z", started_at: null, closed_at: null },
+        insight: {
+          task_key: "alpha", task_name: "Alpha", status: "clear",
+          event_count: 0, token_count: 0, estimated_total: 0,
+          unpriced_count: 0, run_count: 0,
+          first_activity_at: null, last_activity_at: null,
+          latest_prompt: null, signals: [], insight: "No usage.",
+        },
+        recent: [], daily: [], runs: [],
+        provider_breakdown: [], pricing_breakdown: [], accuracy_breakdown: [],
+      } as DashboardTaskDetailData),
+    });
+    const detail = await client.dashboardTask({ workspace: { key: "test" }, taskKey: "alpha" });
+    expect(detail.task.key).toBe("alpha");
+  });
+
+  it("reportToday GETs /api/reports/today", async () => {
+    const client = buildClient({ reportToday: async () => dailyReport({ date: "2026-05-07" }) });
+    const report = await client.reportToday({ workspace: { key: "test" } });
+    expect(report.date).toBe("2026-05-07");
+  });
+
+  it("reportTask GETs /api/reports/tasks/:taskKey", async () => {
+    const client = buildClient({ reportTask: async () => dailyReport({ date: "2026-05-07" }) });
+    const report = await client.reportTask({ workspace: { key: "test" }, taskKey: "alpha" });
+    expect(report.date).toBe("2026-05-07");
+  });
+
+  it("verifyAccessKey throws (no public route; server-internal only)", async () => {
+    const client = buildClient({});
+    await expect(
+      client.verifyAccessKey({ workspaceKey: "test", tokenHash: "h", requiredScopes: ["api:read"] }),
+    ).rejects.toBeInstanceOf(HttpLedgerError);
   });
 });
