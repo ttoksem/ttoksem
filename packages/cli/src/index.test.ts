@@ -1225,6 +1225,26 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("prints a TTOKSEM_TASK export hint after `task start`", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      runCli(["workspace", "init", "--key", "cli-test", "--root", tempDir], env);
+
+      const result = runCliCaptureBoth(
+        ["task", "start", "design-feature", "--workspace", "cli-test"],
+        env,
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("task design-feature");
+      expect(result.stderr).toContain("hint:");
+      expect(result.stderr).toContain("export TTOKSEM_TASK=design-feature");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {

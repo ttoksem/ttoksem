@@ -111,6 +111,9 @@ task
         description: options.description,
       });
       console.log(`task ${started.key} ${started.status} ${started.id} ${started.name}`);
+      process.stderr.write(
+        `hint: export TTOKSEM_TASK=${started.key}  # autocapture will attribute future events to this task\n`,
+      );
       await close();
     },
   );
