@@ -564,24 +564,6 @@ export class SqliteLedgerStore implements LedgerStore {
     return task;
   }
 
-  async setActiveTask(
-    workspaceId: string,
-    _taskId: string | null,
-    now: string,
-  ): Promise<WorkspaceRecord> {
-    // The workspace-level active task pointer was removed (see ADR-0010);
-    // active task is now shell-scoped via the TTOKSEM_TASK env var. This
-    // method is retained on the LedgerStore interface only until the
-    // typed surface is updated in the next commit; for now it just bumps
-    // updated_at so existing callers keep round-tripping a record.
-    this.db
-      .prepare("UPDATE workspaces SET updated_at = @now WHERE id = @workspaceId")
-      .run({ workspaceId, now });
-    const workspace = await this.getWorkspaceById(workspaceId);
-    if (!workspace) throw new Error("Workspace not found.");
-    return workspace;
-  }
-
   async createRun(input: CreateRunInput): Promise<RunRecord> {
     this.db
       .prepare(

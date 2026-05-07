@@ -20,7 +20,6 @@ export const WorkspaceRecordSchema = z.object({
   description: nullableString,
   status: z.enum(["active", "archived"]),
   root_path: nullableString,
-  active_task_id: z.string().startsWith("task_").nullable().optional(),
   source: z.string(),
   external_ref_json: z.record(z.string(), z.unknown()).nullable().optional(),
   metadata_json: z.record(z.string(), z.unknown()).nullable().optional(),

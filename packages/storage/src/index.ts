@@ -270,7 +270,6 @@ export interface LedgerStore {
   listTasks(workspaceId: string): Promise<TaskRecord[]>;
   startTask(taskId: string, now: string): Promise<TaskRecord>;
   closeTask(taskId: string, now: string): Promise<TaskRecord>;
-  setActiveTask(workspaceId: string, taskId: string | null, now: string): Promise<WorkspaceRecord>;
 
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRunById(id: string): Promise<RunRecord | null>;
