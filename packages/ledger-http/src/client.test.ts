@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "@ttoksem/http";
-import type { LedgerService, RunAction } from "@ttoksem/core";
+import type { LedgerService, RunAction, InboxGroup, InboxAssignmentResult } from "@ttoksem/core";
 import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord } from "@ttoksem/schema";
 import { HttpLedgerClient } from "./client.js";
 
@@ -79,6 +79,44 @@ function usageEventRecord(over: Partial<UsageEventRecord> = {}): UsageEventRecor
     ...over,
   };
 }
+
+function inboxGroup(over: Partial<InboxGroup> = {}): InboxGroup {
+  return {
+    group_id: "grp_test",
+    assignment_status: "unassigned",
+    event_count: 1,
+    run_count: 0,
+    token_count: 1,
+    estimated_total: 0,
+    currency: null,
+    first_occurred_at: "2026-04-28T00:00:00Z",
+    last_occurred_at: "2026-04-28T00:00:00Z",
+    source_context: {
+      date_bucket: "2026-04-28",
+      tool: null,
+      cwd: null,
+      git_branch: null,
+      command: null,
+      conversation_id: null,
+      request_id: null,
+      external_ref: null,
+    },
+    reason_codes: ["same_day"],
+    sample_event_ids: ["usage_test"],
+    prompt_samples: [],
+    suggested_task: null,
+    ...over,
+  } as InboxGroup;
+}
+
+const stubAssignmentResult: InboxAssignmentResult = {
+  group: inboxGroup(),
+  task: { key: "alpha", name: "Alpha" },
+  assigned_count: 1,
+  skipped_count: 0,
+  assigned_event_ids: ["usage_test"],
+  skipped_event_ids: [],
+};
 
 function buildClient(servicePartial: Partial<LedgerService>) {
   const app = createHttpApp({
@@ -282,5 +320,59 @@ describe("HttpLedgerClient — run + usage methods", () => {
     });
     const at = await client.getLastImportedAt({ workspace: { key: "test" }, source: "claude-session" });
     expect(at).toBe("2026-05-07T00:00:00Z");
+  });
+});
+
+describe("HttpLedgerClient — inbox methods", () => {
+  it("listInbox GETs /api/inbox", async () => {
+    const client = buildClient({
+      listInbox: async () => [usageEventRecord({ id: "u1" })],
+    });
+    const events = await client.listInbox({ workspace: { key: "test" } });
+    expect(events).toHaveLength(1);
+  });
+
+  it("listInboxGroups GETs /api/inbox/groups", async () => {
+    const client = buildClient({
+      listInboxGroups: async () => [inboxGroup({ group_id: "g1" })],
+    });
+    const groups = await client.listInboxGroups({ workspace: { key: "test" } });
+    expect(groups[0].group_id).toBe("g1");
+  });
+
+  it("showInboxGroup GETs /api/inbox/groups/:groupId", async () => {
+    const client = buildClient({
+      showInboxGroup: async ({ groupId }) => ({
+        group: inboxGroup({ group_id: groupId }),
+        events: [usageEventRecord({ id: "u1" })],
+      }),
+    });
+    const result = await client.showInboxGroup({ workspace: { key: "test" }, groupId: "g_test" });
+    expect(result.group.group_id).toBe("g_test");
+  });
+
+  it("assignInboxEvent POSTs to /api/inbox/events/:usageId/assign", async () => {
+    const client = buildClient({
+      assignInboxEvent: async (input) =>
+        usageEventRecord({ id: input.usageEventId, task_id: "task_target", assignment_status: "assigned" }),
+    });
+    const result = await client.assignInboxEvent({ workspace: { key: "test" }, usageEventId: "u1", taskKey: "alpha" });
+    expect(result.assignment_status).toBe("assigned");
+  });
+
+  it("assignInboxGroup POSTs to /api/inbox/:groupId/assign", async () => {
+    const client = buildClient({
+      assignInboxGroup: async () => stubAssignmentResult,
+    });
+    const result = await client.assignInboxGroup({ workspace: { key: "test" }, groupId: "g_test", taskKey: "alpha" });
+    expect(result.assigned_count).toBe(1);
+  });
+
+  it("acceptInboxGroup POSTs to /api/inbox/:groupId/accept", async () => {
+    const client = buildClient({
+      acceptInboxGroup: async () => stubAssignmentResult,
+    });
+    const result = await client.acceptInboxGroup({ workspace: { key: "test" }, groupId: "g_test" });
+    expect(result.assigned_count).toBe(1);
   });
 });

@@ -1,4 +1,4 @@
-import type { Ledger, RunAction } from "@ttoksem/core";
+import type { Ledger, RunAction, InboxGroup, InboxAssignmentResult } from "@ttoksem/core";
 import type { WorkspaceResolver } from "@ttoksem/core";
 import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord } from "@ttoksem/schema";
 import { HttpLedgerError } from "./errors.js";
@@ -239,6 +239,92 @@ export class HttpLedgerClient {
     const params = new URLSearchParams({ workspace: wk, source: input.source });
     const result = await this.request("GET", `/api/usage/last-import?${params.toString()}`);
     return (result as { occurred_at: string | null }).occurred_at;
+  }
+
+  // Inbox
+  async listInbox(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    limit?: number;
+  }): Promise<UsageEventRecord[]> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.limit !== undefined) params.set("limit", String(input.limit));
+    const result = await this.request("GET", `/api/inbox?${params.toString()}`);
+    return (result as { events: UsageEventRecord[] }).events;
+  }
+
+  async listInboxGroups(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    limit?: number;
+  }): Promise<InboxGroup[]> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.limit !== undefined) params.set("limit", String(input.limit));
+    const result = await this.request("GET", `/api/inbox/groups?${params.toString()}`);
+    return (result as { groups: InboxGroup[] }).groups;
+  }
+
+  async showInboxGroup(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    groupId: string;
+    limit?: number;
+  }): Promise<{ group: InboxGroup; events: UsageEventRecord[] }> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.limit !== undefined) params.set("limit", String(input.limit));
+    const result = await this.request(
+      "GET",
+      `/api/inbox/groups/${encodeURIComponent(input.groupId)}?${params.toString()}`,
+    );
+    return result as { group: InboxGroup; events: UsageEventRecord[] };
+  }
+
+  async assignInboxEvent(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    usageEventId: string;
+    taskKey: string;
+  }): Promise<UsageEventRecord> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "POST",
+      `/api/inbox/events/${encodeURIComponent(input.usageEventId)}/assign?workspace=${encodeURIComponent(wk)}`,
+      { task_key: input.taskKey },
+    );
+    return (result as { usage_event: UsageEventRecord }).usage_event;
+  }
+
+  async assignInboxGroup(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    groupId: string;
+    taskKey: string;
+    all?: boolean;
+    createIfMissing?: boolean;
+  }): Promise<InboxAssignmentResult> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "POST",
+      `/api/inbox/${encodeURIComponent(input.groupId)}/assign?workspace=${encodeURIComponent(wk)}`,
+      {
+        task_key: input.taskKey,
+        all: input.all,
+        create_if_missing: input.createIfMissing,
+      },
+    );
+    return result as InboxAssignmentResult;
+  }
+
+  async acceptInboxGroup(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    groupId: string;
+    all?: boolean;
+  }): Promise<InboxAssignmentResult> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "POST",
+      `/api/inbox/${encodeURIComponent(input.groupId)}/accept?workspace=${encodeURIComponent(wk)}`,
+      { all: input.all },
+    );
+    return result as InboxAssignmentResult;
   }
 }
 
