@@ -1,5 +1,5 @@
 import type { DashboardData, DashboardTaskDetailData, LedgerService } from "@ttoksem/core";
-import type { TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
+import type { PricingSourceSnapshotRecord, TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "./index.js";
 
@@ -406,6 +406,49 @@ describe("createHttpApp auth", () => {
       app.request("/api/inbox/groups/grp_x?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
     ).resolves.toMatchObject({ status: 403 });
   });
+
+  it("returns a pricing snapshot via GET /api/pricing/snapshots/:id, 404 on miss", async () => {
+    const snapshot = pricingSnapshotRecord({ id: "price_snapshot_test" });
+    const app = createHttpApp({
+      service: fakeService({
+        getPricingSourceSnapshot: async (id) => (id === "price_snapshot_test" ? snapshot : null),
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const ok = await app.request("/api/pricing/snapshots/price_snapshot_test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toMatchObject({ snapshot: { id: "price_snapshot_test" } });
+
+    const miss = await app.request("/api/pricing/snapshots/price_snapshot_missing", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(miss.status).toBe(404);
+  });
+
+  it("requires dashboard:read for GET /api/pricing/snapshots/:id", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/pricing/snapshots/price_snapshot_x")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/pricing/snapshots/price_snapshot_x", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
@@ -486,6 +529,24 @@ function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
     assignInboxEvent: async () => usageEventRecord({ task_id: "task_test", assignment_status: "assigned" }),
     ...overrides,
   } as unknown as LedgerService;
+}
+
+function pricingSnapshotRecord(overrides: Partial<PricingSourceSnapshotRecord>): PricingSourceSnapshotRecord {
+  return {
+    id: "price_snapshot_test",
+    source_name: "anthropic",
+    source_url: null,
+    source_version: null,
+    source_commit: null,
+    source_retrieved_at: null,
+    bundled_at: null,
+    valid_from: null,
+    raw_sha256: "0".repeat(64),
+    raw_storage_ref: null,
+    metadata_json: null,
+    created_at: "2026-04-28T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function workspaceRecord(overrides: Partial<WorkspaceRecord>): WorkspaceRecord {

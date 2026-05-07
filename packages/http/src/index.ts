@@ -413,6 +413,18 @@ const routeListPricingSnapshots = createRoute({
   },
 });
 
+const routeGetPricingSnapshot = createRoute({
+  method: "get", path: "/api/pricing/snapshots/{id}", tags: ["Pricing"],
+  summary: "Get a pricing source snapshot by ID", security: BEARER_AUTH,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ snapshot: PricingSourceSnapshotRecordSchema }) } }, description: "Pricing snapshot" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Snapshot not found" },
+  },
+});
+
 const routeListPricingRules = createRoute({
   method: "get", path: "/api/pricing/rules", tags: ["Pricing"],
   summary: "List pricing rules for a workspace", security: BEARER_AUTH,
@@ -789,6 +801,14 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     if (authResponse) return authResponse as never;
     const snapshots = await options.service.listPricingSourceSnapshots();
     return c.json({ snapshots }, 200);
+  });
+
+  app.openapi(routeGetPricingSnapshot, async (c) => {
+    const authResponse = await authorizeRequest(c, options.auth, defaultWorkspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const snapshot = await options.service.getPricingSourceSnapshot(c.req.valid("param").id);
+    if (!snapshot) return c.json({ error: "Pricing snapshot not found" }, 404);
+    return c.json({ snapshot }, 200);
   });
 
   app.openapi(routeListPricingRules, async (c) => {
