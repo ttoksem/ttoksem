@@ -137,6 +137,27 @@ describe("createHttpApp auth", () => {
     });
     expect(recorded).toHaveLength(1);
   });
+
+  it("returns 410 Gone with Sunset and Deprecation headers for GET /api/tasks/active", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/tasks/active?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+
+    expect(response.status).toBe(410);
+    expect(response.headers.get("Sunset")).toBe("Sat, 07 Nov 2026 00:00:00 GMT");
+    expect(response.headers.get("Deprecation")).toBe("Mon, 07 May 2026 00:00:00 GMT");
+    await expect(response.json()).resolves.toMatchObject({ error: "endpoint_removed" });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
@@ -226,7 +247,6 @@ function workspaceRecord(overrides: Partial<WorkspaceRecord>): WorkspaceRecord {
     description: null,
     status: "active",
     root_path: null,
-    active_task_id: null,
     source: "test",
     external_ref_json: null,
     metadata_json: null,
