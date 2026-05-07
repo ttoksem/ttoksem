@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "@ttoksem/http";
-import type { LedgerService } from "@ttoksem/core";
-import type { TaskRecord, WorkspaceRecord } from "@ttoksem/schema";
+import type { LedgerService, RunAction } from "@ttoksem/core";
+import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord } from "@ttoksem/schema";
 import { HttpLedgerClient } from "./client.js";
 
 function workspaceRecord(over: Partial<WorkspaceRecord> = {}): WorkspaceRecord {
@@ -40,6 +40,42 @@ function taskRecord(over: Partial<TaskRecord> = {}): TaskRecord {
     started_at: "2026-04-28T00:00:00.000Z",
     closed_at: null,
     updated_at: "2026-04-28T00:00:00.000Z",
+    ...over,
+  };
+}
+
+function usageEventRecord(over: Partial<UsageEventRecord> = {}): UsageEventRecord {
+  return {
+    id: "usage_test",
+    workspace_id: "ws_test",
+    task_id: null,
+    run_id: null,
+    message_id: "msg_test",
+    source: "test",
+    idempotency_key: null,
+    occurred_at: "2026-04-28T00:00:00.000Z",
+    started_at: null,
+    ended_at: null,
+    duration_ms: null,
+    provider: "openai",
+    model: "gpt-5.5",
+    usage_kind: "conversation_turn",
+    input_tokens: 1,
+    output_tokens: 1,
+    total_tokens: 2,
+    observed_cost_nanos: null,
+    estimated_cost_nanos: null,
+    observed_currency: null,
+    estimated_currency: null,
+    accuracy_mode: "exact",
+    pricing_mode: "unpriced",
+    unpriced_reason: "missing_pricing_rule",
+    pricing_rule_ids_json: null,
+    pricing_source_snapshot_ids_json: null,
+    cost_calculated_at: null,
+    assignment_status: "unassigned",
+    payload_json: {},
+    created_at: "2026-04-28T00:00:00.000Z",
     ...over,
   };
 }
@@ -157,5 +193,94 @@ describe("HttpLedgerClient — workspace + task methods", () => {
     });
     const stats = await client.getTaskStats({ workspace: { key: "test" }, key: "alpha" });
     expect(stats.run_count).toBe(3);
+  });
+});
+
+describe("HttpLedgerClient — run + usage methods", () => {
+  it("runActions GETs /api/runs/:runId/actions", async () => {
+    const action: RunAction = {
+      event_id: "evt_x",
+      occurred_at: "2026-04-28T00:00:00Z",
+      message_id: "msg_x",
+      text_excerpt: "text",
+      thinking_excerpt: null,
+      tool_calls: [],
+      has_thinking: false,
+      source: "missing",
+    };
+    const client = buildClient({ runActions: async () => [action] });
+    const actions = await client.runActions({ workspace: { key: "test" }, runId: "run_x" });
+    expect(actions).toHaveLength(1);
+  });
+
+  it("runMeta GETs /api/runs/:runId/meta", async () => {
+    const client = buildClient({
+      runMeta: async () => ({ run_id: "run_x", task_key: "alpha", task_name: "Alpha" }),
+    });
+    const meta = await client.runMeta({ workspace: { key: "test" }, runId: "run_x" });
+    expect(meta?.run_id).toBe("run_x");
+  });
+
+  it("recordUsage POSTs to /api/usage/events", async () => {
+    const mockFetch = async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && url.includes("/api/usage/events")) {
+        return new Response(JSON.stringify({ usage_event: usageEventRecord({ id: "usage_new" }) }), { status: 201 });
+      }
+      throw new Error(`Unexpected request: ${init?.method} ${url}`);
+    };
+    const client = new HttpLedgerClient({
+      baseUrl: "http://test.invalid",
+      token: "test-token",
+      defaultWorkspaceKey: "test",
+      fetch: mockFetch as typeof fetch,
+    });
+    const event = await client.recordUsage({
+      schema_version: "1.0",
+      message_id: "m1",
+      kind: "ingest_message",
+      type: "ai.usage.observed",
+      occurred_at: "2026-04-28T00:00:00Z",
+      source: { system: "test" },
+      workspace: { key: "test" },
+      payload: {
+        usage: {
+          provider: "openai",
+          model: "gpt",
+          usage_kind: "conversation_turn",
+          input_tokens: 1,
+          output_tokens: 1,
+        },
+      },
+    } as AiUsageObserved);
+    expect(event.id).toBe("usage_new");
+  });
+
+  it("listUnpricedUsage GETs /api/usage/unpriced", async () => {
+    const client = buildClient({
+      listUnpricedUsage: async () => [usageEventRecord({ id: "u1" }), usageEventRecord({ id: "u2" })],
+    });
+    const events = await client.listUnpricedUsage({ workspace: { key: "test" } });
+    expect(events.map((e) => e.id)).toEqual(["u1", "u2"]);
+  });
+
+  it("moveUsage POSTs to /api/usage/events/:usageId/move", async () => {
+    const seen: Array<{ usageEventId: string; taskKey: string }> = [];
+    const client = buildClient({
+      moveUsage: async (input) => {
+        seen.push({ usageEventId: input.usageEventId, taskKey: input.taskKey });
+        return usageEventRecord({ id: input.usageEventId, task_id: "task_target", assignment_status: "assigned" });
+      },
+    });
+    const moved = await client.moveUsage({ workspace: { key: "test" }, usageEventId: "u1", taskKey: "target" });
+    expect(moved.assignment_status).toBe("assigned");
+    expect(seen).toEqual([{ usageEventId: "u1", taskKey: "target" }]);
+  });
+
+  it("getLastImportedAt GETs /api/usage/last-import", async () => {
+    const client = buildClient({
+      getLastImportedAt: async () => "2026-05-07T00:00:00Z",
+    });
+    const at = await client.getLastImportedAt({ workspace: { key: "test" }, source: "claude-session" });
+    expect(at).toBe("2026-05-07T00:00:00Z");
   });
 });

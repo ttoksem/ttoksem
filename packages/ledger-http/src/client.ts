@@ -1,6 +1,6 @@
-import type { Ledger } from "@ttoksem/core";
+import type { Ledger, RunAction } from "@ttoksem/core";
 import type { WorkspaceResolver } from "@ttoksem/core";
-import type { TaskRecord, WorkspaceRecord } from "@ttoksem/schema";
+import type { TaskRecord, WorkspaceRecord, AiUsageObserved, UsageEventRecord } from "@ttoksem/schema";
 import { HttpLedgerError } from "./errors.js";
 
 export interface HttpLedgerClientOptions {
@@ -173,6 +173,72 @@ export class HttpLedgerClient {
       `/api/tasks/${encodeURIComponent(input.key)}/stats?workspace=${encodeURIComponent(wk)}`,
     );
     return result as Awaited<ReturnType<HttpLedgerClient["getTaskStats"]>>;
+  }
+
+  // Runs
+  async runActions(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    runId: string;
+  }): Promise<RunAction[]> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "GET",
+      `/api/runs/${encodeURIComponent(input.runId)}/actions?workspace=${encodeURIComponent(wk)}`,
+    );
+    return (result as { actions: RunAction[] }).actions;
+  }
+
+  async runMeta(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    runId: string;
+  }): Promise<{ run_id: string; task_key: string; task_name: string } | null> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "GET",
+      `/api/runs/${encodeURIComponent(input.runId)}/meta?workspace=${encodeURIComponent(wk)}`,
+    );
+    return result as { run_id: string; task_key: string; task_name: string } | null;
+  }
+
+  // Usage
+  async recordUsage(message: AiUsageObserved): Promise<UsageEventRecord> {
+    const result = await this.request("POST", "/api/usage/events", message);
+    return (result as { usage_event: UsageEventRecord }).usage_event;
+  }
+
+  async listUnpricedUsage(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    limit?: number;
+  }): Promise<UsageEventRecord[]> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk });
+    if (input.limit !== undefined) params.set("limit", String(input.limit));
+    const result = await this.request("GET", `/api/usage/unpriced?${params.toString()}`);
+    return (result as { events: UsageEventRecord[] }).events;
+  }
+
+  async moveUsage(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    usageEventId: string;
+    taskKey: string;
+  }): Promise<UsageEventRecord> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "POST",
+      `/api/usage/events/${encodeURIComponent(input.usageEventId)}/move?workspace=${encodeURIComponent(wk)}`,
+      { task_key: input.taskKey },
+    );
+    return (result as { usage_event: UsageEventRecord }).usage_event;
+  }
+
+  async getLastImportedAt(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    source: string;
+  }): Promise<string | null> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const params = new URLSearchParams({ workspace: wk, source: input.source });
+    const result = await this.request("GET", `/api/usage/last-import?${params.toString()}`);
+    return (result as { occurred_at: string | null }).occurred_at;
   }
 }
 
