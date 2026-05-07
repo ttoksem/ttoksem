@@ -27,10 +27,9 @@ import type {
  * the HttpLedgerClient both implement. Higher-level than LedgerStore.
  *
  * Mirrors the existing public surface of LedgerService so the two
- * implementations are interchangeable. Methods explicitly excluded:
- *   - setActiveTask / getActiveTask: not currently on LedgerService; the
- *     workspace-level "active task" pointer is being removed in favor of
- *     a shell-scoped TTOKSEM_TASK env var (Plan 1, Task 5).
+ * implementations are interchangeable. Active task is no longer a
+ * workspace-level concept; tasks must be addressed by key, with shell-scoped
+ * TTOKSEM_TASK env var driving caller defaults (Plan 3).
  */
 export interface Ledger {
   // Lifecycle
@@ -72,7 +71,7 @@ export interface Ledger {
     description?: string | null;
   }): Promise<TaskRecord>;
   /** @deprecated Use archiveTask. Kept as alias until two minor releases pass. */
-  closeTask(input: { workspace: WorkspaceResolver; key?: string }): Promise<TaskRecord>;
+  closeTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord>;
   archiveTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord>;
   listTasks(input: { workspace: WorkspaceResolver }): Promise<TaskRecord[]>;
   updateTask(input: {

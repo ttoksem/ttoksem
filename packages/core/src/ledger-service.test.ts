@@ -434,7 +434,6 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     listTasks: async () => [],
     startTask: async () => taskRecord("ws_test"),
     closeTask: async () => taskRecord("ws_test"),
-    setActiveTask: async () => workspaceRecord(),
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
     updateRunTiming: async (input) => ({
@@ -519,7 +518,6 @@ function workspaceRecord(): WorkspaceRecord {
     description: null,
     status: "active",
     root_path: "/tmp/test",
-    active_task_id: null,
     source: "test",
     external_ref_json: null,
     metadata_json: null,
