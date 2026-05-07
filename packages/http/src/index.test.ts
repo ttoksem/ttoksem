@@ -1,5 +1,11 @@
 import type { DashboardData, DashboardTaskDetailData, LedgerService } from "@ttoksem/core";
-import type { PricingSourceSnapshotRecord, TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
+import type {
+  DailyReport,
+  PricingSourceSnapshotRecord,
+  TaskRecord,
+  UsageEventRecord,
+  WorkspaceRecord,
+} from "@ttoksem/schema";
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "./index.js";
 
@@ -449,6 +455,84 @@ describe("createHttpApp auth", () => {
       app.request("/api/pricing/snapshots/price_snapshot_x", { headers: { Authorization: "Bearer wrong-token" } }),
     ).resolves.toMatchObject({ status: 403 });
   });
+
+  it("returns today's report via GET /api/reports/today", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        reportToday: async () => dailyReport({ date: "2026-05-07" }),
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/reports/today?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      report: { date: "2026-05-07" },
+    });
+  });
+
+  it("requires dashboard:read for GET /api/reports/today", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/reports/today?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/reports/today?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("returns a per-task report via GET /api/reports/tasks/:taskKey", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        reportTask: async () => dailyReport({ date: "2026-05-07" }),
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/reports/tasks/feature-x?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      report: { date: "2026-05-07" },
+    });
+  });
+
+  it("requires dashboard:read for GET /api/reports/tasks/:taskKey", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/reports/tasks/feature-x?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/reports/tasks/feature-x?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
@@ -529,6 +613,19 @@ function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
     assignInboxEvent: async () => usageEventRecord({ task_id: "task_test", assignment_status: "assigned" }),
     ...overrides,
   } as unknown as LedgerService;
+}
+
+function dailyReport(overrides: Partial<DailyReport> = {}): DailyReport {
+  return {
+    workspace: workspaceRecord({}),
+    date: "2026-05-07",
+    estimated_total: 0,
+    observed_total: 0,
+    currency: null,
+    event_count: 0,
+    unpriced_count: 0,
+    ...overrides,
+  };
 }
 
 function pricingSnapshotRecord(overrides: Partial<PricingSourceSnapshotRecord>): PricingSourceSnapshotRecord {

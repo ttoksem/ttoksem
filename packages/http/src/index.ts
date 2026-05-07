@@ -6,6 +6,7 @@ import { renderDashboardHtml, renderLoginHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
 import {
   AiUsageObservedSchema,
+  DailyReportSchema,
   WorkspaceRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
@@ -434,6 +435,30 @@ const routeListPricingRules = createRoute({
   },
 });
 
+const ReportResponseSchema = z.object({ report: DailyReportSchema });
+
+const routeReportToday = createRoute({
+  method: "get", path: "/api/reports/today", tags: ["Reports"],
+  summary: "Daily report for a workspace", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery.extend({ date: z.string().optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: ReportResponseSchema } }, description: "Daily report" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+  },
+});
+
+const routeReportTask = createRoute({
+  method: "get", path: "/api/reports/tasks/{taskKey}", tags: ["Reports"],
+  summary: "Daily report for a single task", security: BEARER_AUTH,
+  request: { params: TaskKeyParam, query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: ReportResponseSchema } }, description: "Per-task daily report" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+  },
+});
+
 // ── App factory ───────────────────────────────────────────────────────────────
 
 export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
@@ -820,6 +845,32 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       workspace: workspaceResolver(workspaceKey),
     });
     return c.json({ rules }, 200);
+  });
+
+  // ── Reports ────────────────────────────────────────────────────────────────
+
+  app.openapi(routeReportToday, async (c) => {
+    const { workspace: wk, date } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const report = await options.service.reportToday({
+      workspace: workspaceResolver(workspaceKey),
+      date,
+    });
+    return c.json({ report }, 200);
+  });
+
+  app.openapi(routeReportTask, async (c) => {
+    const { workspace: wk } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const report = await options.service.reportTask({
+      workspace: workspaceResolver(workspaceKey),
+      taskKey: c.req.valid("param").taskKey,
+    });
+    return c.json({ report }, 200);
   });
 
   // ── OpenAPI spec ───────────────────────────────────────────────────────────
