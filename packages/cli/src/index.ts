@@ -9,6 +9,7 @@ import {
   type DashboardData,
   type InboxAssignmentResult,
   type InboxGroup,
+  type LocalLedger,
 } from "@ttoksem/core";
 import {
   AiUsageObservedSchema,
@@ -30,6 +31,37 @@ import {
   parseAuthMode,
   registerAuthCommands,
 } from "./auth.js";
+import { makeLedger, requireLocalLedger } from "./ledger-factory.js";
+
+/**
+ * Adapter that turns the existing makeService() into the shape the
+ * makeLedger() factory expects. Centralizes the `await service.init()`
+ * call so each subcommand body becomes a uniform two-line block.
+ */
+async function makeLocalService(): Promise<{ service: LedgerService; close: () => Promise<void> }> {
+  const { service, close } = await makeService();
+  await service.init();
+  return { service, close };
+}
+
+/**
+ * Variant of makeLocalService for subcommands that create the DB (workspace init).
+ */
+async function makeLocalServiceAllowCreate(): Promise<{ service: LedgerService; close: () => Promise<void> }> {
+  const { service, close } = await makeService({ allowCreate: true });
+  await service.init();
+  return { service, close };
+}
+
+/** Convenience: build a LedgerHandle for a standard (non-create) subcommand. */
+function makeLedgerLocal() {
+  return makeLedger({ makeLocalService });
+}
+
+/** Convenience: build a LedgerHandle for workspace init (allowCreate). */
+function makeLedgerAllowCreate() {
+  return makeLedger({ makeLocalService: makeLocalServiceAllowCreate });
+}
 
 const program = new Command();
 
@@ -39,10 +71,14 @@ program
   .command("doctor")
   .description("Check local CLI and SQLite setup")
   .action(async () => {
-    const { service, dbPath, close } = await makeService();
-    await service.init();
-    console.log(`ok database=${dbPath}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      requireLocalLedger(handle);
+      const dbPath = resolveDbPath(false);
+      console.log(`ok database=${dbPath}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 const workspace = program.command("workspace").description("Workspace commands");
@@ -54,13 +90,16 @@ workspace
   .option("--name <name>", "workspace name")
   .option("--root <path>", "workspace root path")
   .action(async (options: { key?: string; name?: string; root?: string }) => {
-    const { service, close } = await makeService({ allowCreate: true });
-    await service.init();
-    const rootPath = resolveFromCommandCwd(options.root ?? ".");
-    const key = options.key ?? slug(rootPath.split("/").filter(Boolean).at(-1) ?? "workspace");
-    const workspace = await service.createWorkspace({ key, name: options.name, rootPath });
-    console.log(`workspace ${workspace.key} ${workspace.id}`);
-    await close();
+    const handle = await makeLedgerAllowCreate();
+    try {
+      const service = requireLocalLedger(handle);
+      const rootPath = resolveFromCommandCwd(options.root ?? ".");
+      const key = options.key ?? slug(rootPath.split("/").filter(Boolean).at(-1) ?? "workspace");
+      const workspace = await service.createWorkspace({ key, name: options.name, rootPath });
+      console.log(`workspace ${workspace.key} ${workspace.id}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 workspace
@@ -68,23 +107,28 @@ workspace
   .description("Show workspace for the current directory")
   .option("--root <path>", "workspace root path")
   .action(async (options: { root?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const current = await service.currentWorkspace(resolveFromCommandCwd(options.root ?? "."));
-    console.log(JSON.stringify(current, null, 2));
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const current = await service.currentWorkspace(resolveFromCommandCwd(options.root ?? "."));
+      console.log(JSON.stringify(current, null, 2));
+    } finally {
+      await handle.close();
+    }
   });
 
 workspace
   .command("list")
   .description("List workspaces")
   .action(async () => {
-    const { service, close } = await makeService();
-    await service.init();
-    for (const workspace of await service.listWorkspaces()) {
-      console.log(`${workspace.key}\t${workspace.id}\t${workspace.root_path ?? ""}`);
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      for (const workspace of await handle.ledger.listWorkspaces()) {
+        console.log(`${workspace.key}\t${workspace.id}\t${workspace.root_path ?? ""}`);
+      }
+    } finally {
+      await handle.close();
     }
-    await close();
   });
 
 const task = program.command("task").description("Task commands");
@@ -102,19 +146,21 @@ task
       key: string,
       options: { name?: string; description?: string; workspace?: string; root?: string },
     ) => {
-      const { service, close } = await makeService();
-      await service.init();
-      const started = await service.startTask({
-        workspace: workspaceResolver(options),
-        key: slug(key),
-        name: options.name ?? key,
-        description: options.description,
-      });
-      console.log(`task ${started.key} ${started.status} ${started.id} ${started.name}`);
-      process.stderr.write(
-        `hint: export TTOKSEM_TASK=${started.key}  # autocapture will attribute future events to this task\n`,
-      );
-      await close();
+      const handle = await makeLedger({ makeLocalService });
+      try {
+        const started = await handle.ledger.startTask({
+          workspace: workspaceResolver(options),
+          key: slug(key),
+          name: options.name ?? key,
+          description: options.description,
+        });
+        console.log(`task ${started.key} ${started.status} ${started.id} ${started.name}`);
+        process.stderr.write(
+          `hint: export TTOKSEM_TASK=${started.key}  # autocapture will attribute future events to this task\n`,
+        );
+      } finally {
+        await handle.close();
+      }
     },
   );
 
@@ -131,18 +177,20 @@ task
     if (!options.name && options.description == null && !options.clearDescription) {
       throw new Error("Provide --name, --description, or --clear-description.");
     }
-    const { service, close } = await makeService();
-    await service.init();
-    const update = {
-      workspace: workspaceResolver(options),
-      key: slug(key),
-      ...(options.name ? { name: options.name } : {}),
-      ...(options.clearDescription ? { description: null } : {}),
-      ...(options.description != null ? { description: options.description } : {}),
-    };
-    const updated = await service.updateTask(update);
-    console.log(`task ${updated.key} ${updated.status} ${updated.id} ${updated.name}`);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const update = {
+        workspace: workspaceResolver(options),
+        key: slug(key),
+        ...(options.name ? { name: options.name } : {}),
+        ...(options.clearDescription ? { description: null } : {}),
+        ...(options.description != null ? { description: options.description } : {}),
+      };
+      const updated = await handle.ledger.updateTask(update);
+      console.log(`task ${updated.key} ${updated.status} ${updated.id} ${updated.name}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 task
@@ -152,14 +200,16 @@ task
   .option("--root <path>", "workspace root path")
   .description("Archive a task by key")
   .action(async (key: string, options: { workspace?: string; root?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const archived = await service.archiveTask({
-      workspace: workspaceResolver(options),
-      key: slug(key),
-    });
-    console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const archived = await handle.ledger.archiveTask({
+        workspace: workspaceResolver(options),
+        key: slug(key),
+      });
+      console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 task
@@ -173,14 +223,16 @@ task
       "[deprecation] `task close` is renamed to `task archive`. Update your scripts. " +
         "This alias will be removed in two minor releases.\n",
     );
-    const { service, close } = await makeService();
-    await service.init();
-    const archived = await service.archiveTask({
-      workspace: workspaceResolver(options),
-      key: slug(key),
-    });
-    console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const archived = await handle.ledger.archiveTask({
+        workspace: workspaceResolver(options),
+        key: slug(key),
+      });
+      console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 task
@@ -189,12 +241,14 @@ task
   .option("--root <path>", "workspace root path")
   .description("List workspace tasks")
   .action(async (options: { workspace?: string; root?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    for (const item of await service.listTasks({ workspace: workspaceResolver(options) })) {
-      console.log(`${item.key}\t${item.status}\t${item.id}\t${item.name}`);
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      for (const item of await handle.ledger.listTasks({ workspace: workspaceResolver(options) })) {
+        console.log(`${item.key}\t${item.status}\t${item.id}\t${item.name}`);
+      }
+    } finally {
+      await handle.close();
     }
-    await close();
   });
 
 task
@@ -209,14 +263,16 @@ task
       "`task list` to see tasks with status='active'. " +
       "See MIGRATION.md#task-active.\n",
     );
-    const { service, close } = await makeService();
-    await service.init();
-    const tasks = await service.listTasks({ workspace: workspaceResolver(options) });
-    const active = tasks
-      .filter((t) => t.status === "active")
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-    if (active) console.log(active.key);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const tasks = await handle.ledger.listTasks({ workspace: workspaceResolver(options) });
+      const active = tasks
+        .filter((t) => t.status === "active")
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+      if (active) console.log(active.key);
+    } finally {
+      await handle.close();
+    }
   });
 
 task
@@ -227,20 +283,22 @@ task
   .option("--field <field>", "output a single field value (run_count, event_count, estimated_cost_nanos, unpriced_count, status)")
   .description("Show stats for a task (run count, event count, cost)")
   .action(async (options: { key?: string; workspace?: string; root?: string; field?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
     if (!options.key) throw new Error("--key is required.");
-    const stats = await service.getTaskStats({ workspace: workspaceResolver(options), key: options.key });
-    if (options.field) {
-      const val = stats[options.field as keyof typeof stats];
-      if (val === undefined) throw new Error(`Unknown field: ${options.field}`);
-      console.log(val ?? "");
-    } else {
-      for (const [k, v] of Object.entries(stats)) {
-        console.log(`${k}=${v ?? ""}`);
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const stats = await handle.ledger.getTaskStats({ workspace: workspaceResolver(options), key: options.key });
+      if (options.field) {
+        const val = stats[options.field as keyof typeof stats];
+        if (val === undefined) throw new Error(`Unknown field: ${options.field}`);
+        console.log(val ?? "");
+      } else {
+        for (const [k, v] of Object.entries(stats)) {
+          console.log(`${k}=${v ?? ""}`);
+        }
       }
+    } finally {
+      await handle.close();
     }
-    await close();
   });
 
 const usage = program.command("usage").description("Usage commands");
@@ -252,11 +310,13 @@ usage
   .option("--source <source>", "source filter (e.g. claude-session, codex-session)", "claude-session")
   .description("Print the occurred_at of the last imported event for a given source, or nothing if none")
   .action(async (options: { workspace?: string; root?: string; source: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const ts = await service.getLastImportedAt({ workspace: workspaceResolver(options), source: options.source });
-    if (ts) console.log(ts);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const ts = await handle.ledger.getLastImportedAt({ workspace: workspaceResolver(options), source: options.source });
+      if (ts) console.log(ts);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -278,12 +338,14 @@ usage
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: UsageAddOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
     const message = options.file ? readMessage(options.file) : buildUsageMessage(options);
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const event = await handle.ledger.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -294,15 +356,17 @@ usage
   .option("--root <path>", "workspace root path")
   .description("Assign an existing usage event to a task")
   .action(async (usageEventId: string, options: UsageMoveOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const event = await service.moveUsage({
-      workspace: workspaceResolver(options),
-      usageEventId,
-      taskKey: slug(options.task),
-    });
-    console.log(`usage ${event.id} moved task_id=${event.task_id ?? ""}`);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const event = await handle.ledger.moveUsage({
+        workspace: workspaceResolver(options),
+        usageEventId,
+        taskKey: slug(options.task),
+      });
+      console.log(`usage ${event.id} moved task_id=${event.task_id ?? ""}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -327,12 +391,15 @@ usage
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: CodexTurnOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const message = buildCodexTurnMessage(options);
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const message = buildCodexTurnMessage(options);
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -350,13 +417,16 @@ usage
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
   .action(async (options: CodexSessionImportOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await importCodexSessions(service, options);
-    console.log(
-      `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await importCodexSessions(service, options);
+      console.log(
+        `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -380,12 +450,15 @@ usage
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: ClaudeTurnOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const message = buildClaudeTurnMessage(options);
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const message = buildClaudeTurnMessage(options);
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -404,13 +477,16 @@ usage
   .option("--dry-run", "scan and print counts without writing usage events")
   .option("--no-subagents", "skip subagent JSONL files (default: include)")
   .action(async (options: ClaudeSessionImportOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await importClaudeSessions(service, options);
-    console.log(
-      `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await importClaudeSessions(service, options);
+      console.log(
+        `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -427,24 +503,27 @@ usage
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: OpenAiResponseOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const response = readJsonRecord(options.file);
-    const message = openAiUsageObservedFromResponse({
-      workspaceKey: options.workspace,
-      taskKey: options.task ? slug(options.task) : null,
-      runId: options.runId ?? null,
-      model: options.model ?? null,
-      operation: options.operation,
-      occurredAt: options.occurredAt ?? null,
-      observedCost: parseOptionalNumber(options.observedCost),
-      currency: options.currency,
-      idempotencyKey: options.idempotencyKey ?? null,
-      response,
-    });
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const response = readJsonRecord(options.file);
+      const message = openAiUsageObservedFromResponse({
+        workspaceKey: options.workspace,
+        taskKey: options.task ? slug(options.task) : null,
+        runId: options.runId ?? null,
+        model: options.model ?? null,
+        operation: options.operation,
+        occurredAt: options.occurredAt ?? null,
+        observedCost: parseOptionalNumber(options.observedCost),
+        currency: options.currency,
+        idempotencyKey: options.idempotencyKey ?? null,
+        response,
+      });
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -461,24 +540,27 @@ usage
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: AnthropicResponseOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const response = readJsonRecord(options.file);
-    const message = anthropicUsageObservedFromResponse({
-      workspaceKey: options.workspace,
-      taskKey: options.task ? slug(options.task) : null,
-      runId: options.runId ?? null,
-      model: options.model ?? null,
-      operation: options.operation,
-      occurredAt: options.occurredAt ?? null,
-      observedCost: parseOptionalNumber(options.observedCost),
-      currency: options.currency,
-      idempotencyKey: options.idempotencyKey ?? null,
-      response,
-    });
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const response = readJsonRecord(options.file);
+      const message = anthropicUsageObservedFromResponse({
+        workspaceKey: options.workspace,
+        taskKey: options.task ? slug(options.task) : null,
+        runId: options.runId ?? null,
+        model: options.model ?? null,
+        operation: options.operation,
+        occurredAt: options.occurredAt ?? null,
+        observedCost: parseOptionalNumber(options.observedCost),
+        currency: options.currency,
+        idempotencyKey: options.idempotencyKey ?? null,
+        response,
+      });
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 const inbox = program.command("inbox").description("Inbox commands");
@@ -491,30 +573,32 @@ inbox
   .option("--events", "show raw unassigned usage events instead of inbox groups")
   .description("List assignment inbox groups")
   .action(async (options: InboxListOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
     const limit = parsePositiveInteger(options.limit);
-    if (options.events) {
-      const events = await service.listInbox({
-        workspace: workspaceResolver(options),
-        limit,
-      });
-      if (events.length === 0) {
-        console.log("No unassigned usage events.");
-      } else {
-        for (const event of events) {
-          printUsageEventLine(event);
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      if (options.events) {
+        const events = await handle.ledger.listInbox({
+          workspace: workspaceResolver(options),
+          limit,
+        });
+        if (events.length === 0) {
+          console.log("No unassigned usage events.");
+        } else {
+          for (const event of events) {
+            printUsageEventLine(event);
+          }
         }
+      } else {
+        const groups = await handle.ledger.listInboxGroups({
+          workspace: workspaceResolver(options),
+          limit,
+        });
+        if (groups.length === 0) console.log("No inbox groups.");
+        else printInboxGroups(groups);
       }
-    } else {
-      const groups = await service.listInboxGroups({
-        workspace: workspaceResolver(options),
-        limit,
-      });
-      if (groups.length === 0) console.log("No inbox groups.");
-      else printInboxGroups(groups);
+    } finally {
+      await handle.close();
     }
-    await close();
   });
 
 inbox
@@ -525,15 +609,17 @@ inbox
   .option("--limit <count>", "maximum events to show", "50")
   .description("Show an inbox group and its sample events")
   .action(async (groupId: string, options: InboxShowOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.showInboxGroup({
-      workspace: workspaceResolver(options),
-      groupId,
-      limit: parsePositiveInteger(options.limit),
-    });
-    printInboxGroupDetail(result.group, result.events);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const result = await handle.ledger.showInboxGroup({
+        workspace: workspaceResolver(options),
+        groupId,
+        limit: parsePositiveInteger(options.limit),
+      });
+      printInboxGroupDetail(result.group, result.events);
+    } finally {
+      await handle.close();
+    }
   });
 
 inbox
@@ -545,16 +631,18 @@ inbox
   .option("--all", "assign every eligible event in the group")
   .description("Assign an inbox group to a task")
   .action(async (groupId: string, options: InboxAssignOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.assignInboxGroup({
-      workspace: workspaceResolver(options),
-      groupId,
-      taskKey: slug(options.task),
-      all: options.all,
-    });
-    printInboxAssignmentResult(result);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const result = await handle.ledger.assignInboxGroup({
+        workspace: workspaceResolver(options),
+        groupId,
+        taskKey: slug(options.task),
+        all: options.all,
+      });
+      printInboxAssignmentResult(result);
+    } finally {
+      await handle.close();
+    }
   });
 
 inbox
@@ -565,15 +653,17 @@ inbox
   .option("--all", "assign every eligible event in the group")
   .description("Accept an inbox group's suggested task")
   .action(async (groupId: string, options: InboxAcceptOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.acceptInboxGroup({
-      workspace: workspaceResolver(options),
-      groupId,
-      all: options.all,
-    });
-    printInboxAssignmentResult(result);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const result = await handle.ledger.acceptInboxGroup({
+        workspace: workspaceResolver(options),
+        groupId,
+        all: options.all,
+      });
+      printInboxAssignmentResult(result);
+    } finally {
+      await handle.close();
+    }
   });
 
 inbox
@@ -584,15 +674,17 @@ inbox
   .option("--root <path>", "workspace root path")
   .description("Assign one inbox usage event to a task")
   .action(async (usageEventId: string, options: InboxAssignEventOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const event = await service.assignInboxEvent({
-      workspace: workspaceResolver(options),
-      usageEventId,
-      taskKey: slug(options.task),
-    });
-    console.log(`usage ${event.id} moved task_id=${event.task_id ?? ""}`);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const event = await handle.ledger.assignInboxEvent({
+        workspace: workspaceResolver(options),
+        usageEventId,
+        taskKey: slug(options.task),
+      });
+      console.log(`usage ${event.id} moved task_id=${event.task_id ?? ""}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 const dashboard = program.command("dashboard").description("Dashboard commands");
@@ -606,16 +698,18 @@ dashboard
   .option("--day-limit <count>", "maximum daily buckets", "14")
   .description("Show a report-style workspace dashboard")
   .action(async (options: DashboardOverviewOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const data = await service.dashboard({
-      workspace: workspaceResolver(options),
-      taskLimit: parsePositiveInteger(options.taskLimit),
-      recentLimit: parsePositiveInteger(options.recentLimit),
-      dayLimit: parsePositiveInteger(options.dayLimit),
-    });
-    printDashboardOverview(data);
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      const data = await handle.ledger.dashboard({
+        workspace: workspaceResolver(options),
+        taskLimit: parsePositiveInteger(options.taskLimit),
+        recentLimit: parsePositiveInteger(options.recentLimit),
+        dayLimit: parsePositiveInteger(options.dayLimit),
+      });
+      printDashboardOverview(data);
+    } finally {
+      await handle.close();
+    }
   });
 
 dashboard
@@ -632,9 +726,17 @@ dashboard
     if (authMode === "none" && !isLoopbackHost(options.host) && !options.unsafeNoAuth) {
       throw new Error("--auth none on a non-loopback host requires --unsafe-no-auth.");
     }
+    // Guard: dashboard serve is local-only (it opens the SQLite db directly).
+    // requireLocalLedger fires before any logic when TTOKSEM_HTTP_URL is set.
+    const handle = await makeLedgerLocal();
+    try {
+      requireLocalLedger(handle);
+    } finally {
+      await handle.close();
+    }
     const initialToken =
       authMode === "access-key"
-        ? await ensureDashboardAccessKey(makeService, options.workspace, options.createKeyName)
+        ? await ensureDashboardAccessKey(makeLedgerLocal, requireLocalLedger, options.workspace, options.createKeyName)
         : null;
     const dbPath = resolveDbPath(false);
     const server = await serveDashboard({
@@ -652,7 +754,7 @@ dashboard
     await waitForShutdown(server.close);
   });
 
-registerAuthCommands(program, makeService);
+registerAuthCommands(program, makeService, makeLedgerLocal, requireLocalLedger);
 
 const pricing = program.command("pricing").description("Pricing commands");
 const pricingSnapshot = pricing.command("snapshot").description("Pricing source snapshot commands");
@@ -672,47 +774,52 @@ pricingSnapshot
   .option("--metadata <json>", "metadata JSON object")
   .description("Create or reuse a pricing source snapshot")
   .action(async (options: PricingSnapshotUpsertOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const snapshot = await service.upsertPricingSourceSnapshot({
-      id: options.id,
-      sourceName: parsePricingSourceName(options.sourceName),
-      sourceUrl: options.sourceUrl,
-      sourceVersion: options.sourceVersion,
-      sourceCommit: options.sourceCommit,
-      sourceRetrievedAt: options.sourceRetrievedAt,
-      bundledAt: options.bundledAt,
-      validFrom: options.validFrom,
-      rawSha256: options.rawSha256,
-      rawStorageRef: options.rawStorageRef,
-      metadataJson: parseOptionalJsonObject(options.metadata),
-    });
-    console.log(
-      `pricing snapshot ${snapshot.id} ${snapshot.source_name} ${snapshot.raw_sha256}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const snapshot = await service.upsertPricingSourceSnapshot({
+        id: options.id,
+        sourceName: parsePricingSourceName(options.sourceName),
+        sourceUrl: options.sourceUrl,
+        sourceVersion: options.sourceVersion,
+        sourceCommit: options.sourceCommit,
+        sourceRetrievedAt: options.sourceRetrievedAt,
+        bundledAt: options.bundledAt,
+        validFrom: options.validFrom,
+        rawSha256: options.rawSha256,
+        rawStorageRef: options.rawStorageRef,
+        metadataJson: parseOptionalJsonObject(options.metadata),
+      });
+      console.log(
+        `pricing snapshot ${snapshot.id} ${snapshot.source_name} ${snapshot.raw_sha256}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 pricingSnapshot
   .command("list")
   .description("List pricing source snapshots")
   .action(async () => {
-    const { service, close } = await makeService();
-    await service.init();
-    for (const snapshot of await service.listPricingSourceSnapshots()) {
-      console.log(
-        [
-          snapshot.id,
-          snapshot.source_name,
-          `sha256=${snapshot.raw_sha256}`,
-          snapshot.source_commit ? `commit=${snapshot.source_commit}` : "",
-          snapshot.valid_from ? `valid_from=${snapshot.valid_from}` : "",
-        ]
-          .filter(Boolean)
-          .join("\t"),
-      );
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      for (const snapshot of await handle.ledger.listPricingSourceSnapshots()) {
+        console.log(
+          [
+            snapshot.id,
+            snapshot.source_name,
+            `sha256=${snapshot.raw_sha256}`,
+            snapshot.source_commit ? `commit=${snapshot.source_commit}` : "",
+            snapshot.valid_from ? `valid_from=${snapshot.valid_from}` : "",
+          ]
+            .filter(Boolean)
+            .join("\t"),
+        );
+      }
+    } finally {
+      await handle.close();
     }
-    await close();
   });
 
 pricing
@@ -727,37 +834,40 @@ pricing
   .option("--limit <count>", "maximum normalized rules to import")
   .description("Import normalized pricing rules from a LiteLLM pricing snapshot")
   .action(async (options: PricingImportLiteLlmOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const snapshot = await service.getPricingSourceSnapshot(options.sourceSnapshotId);
-    if (!snapshot) throw new Error(`Pricing source snapshot not found: ${options.sourceSnapshotId}`);
-    const rawStorageRef = options.file ?? snapshot.raw_storage_ref;
-    if (!rawStorageRef) throw new Error("Provide --file or store raw_storage_ref on the snapshot.");
-    const raw = JSON.parse(readFileSync(resolveFromCommandCwd(rawStorageRef), "utf8")) as unknown;
-    const normalized = normalizeLiteLlmPricingRules(raw, {
-      provider: options.provider,
-      model: options.model,
-      effectiveFrom: options.effectiveFrom ?? snapshot.valid_from ?? snapshot.source_retrieved_at ?? undefined,
-      limit: options.limit ? parsePositiveInteger(options.limit) : undefined,
-    });
-    for (const rule of normalized.rules) {
-      await service.upsertPricingRule({
-        workspace: workspaceResolver(options),
-        sourceSnapshotId: snapshot.id,
-        provider: rule.provider,
-        model: rule.model,
-        usageKind: rule.usageKind,
-        unitType: rule.unitType,
-        priceNanosPerUnit: rule.priceNanosPerUnit,
-        currency: "USD",
-        effectiveFrom: rule.effectiveFrom,
-        source: "litellm",
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const snapshot = await service.getPricingSourceSnapshot(options.sourceSnapshotId);
+      if (!snapshot) throw new Error(`Pricing source snapshot not found: ${options.sourceSnapshotId}`);
+      const rawStorageRef = options.file ?? snapshot.raw_storage_ref;
+      if (!rawStorageRef) throw new Error("Provide --file or store raw_storage_ref on the snapshot.");
+      const raw = JSON.parse(readFileSync(resolveFromCommandCwd(rawStorageRef), "utf8")) as unknown;
+      const normalized = normalizeLiteLlmPricingRules(raw, {
+        provider: options.provider,
+        model: options.model,
+        effectiveFrom: options.effectiveFrom ?? snapshot.valid_from ?? snapshot.source_retrieved_at ?? undefined,
+        limit: options.limit ? parsePositiveInteger(options.limit) : undefined,
       });
+      for (const rule of normalized.rules) {
+        await service.upsertPricingRule({
+          workspace: workspaceResolver(options),
+          sourceSnapshotId: snapshot.id,
+          provider: rule.provider,
+          model: rule.model,
+          usageKind: rule.usageKind,
+          unitType: rule.unitType,
+          priceNanosPerUnit: rule.priceNanosPerUnit,
+          currency: "USD",
+          effectiveFrom: rule.effectiveFrom,
+          source: "litellm",
+        });
+      }
+      console.log(
+        `pricing import-litellm imported=${normalized.rules.length} skipped=${normalized.skipped} snapshot=${snapshot.id}`,
+      );
+    } finally {
+      await handle.close();
     }
-    console.log(
-      `pricing import-litellm imported=${normalized.rules.length} skipped=${normalized.skipped} snapshot=${snapshot.id}`,
-    );
-    await close();
   });
 
 pricing
@@ -776,24 +886,27 @@ pricing
   .option("--root <path>", "workspace root path")
   .description("Create or update an active pricing rule")
   .action(async (options: PricingUpsertOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const rule = await service.upsertPricingRule({
-      workspace: workspaceResolver(options),
-      sourceSnapshotId: options.sourceSnapshotId,
-      provider: options.provider,
-      model: options.model,
-      usageKind: options.usageKind,
-      unitType: options.unitType,
-      priceNanosPerUnit: priceNanosPerUnit(options.price, options.per),
-      currency: options.currency,
-      effectiveFrom: options.effectiveFrom,
-      source: options.source,
-    });
-    console.log(
-      `pricing ${rule.provider}/${rule.model} ${rule.usage_kind} ${rule.unit_type} ${rule.price_nanos_per_unit} nanos ${rule.currency}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const rule = await service.upsertPricingRule({
+        workspace: workspaceResolver(options),
+        sourceSnapshotId: options.sourceSnapshotId,
+        provider: options.provider,
+        model: options.model,
+        usageKind: options.usageKind,
+        unitType: options.unitType,
+        priceNanosPerUnit: priceNanosPerUnit(options.price, options.per),
+        currency: options.currency,
+        effectiveFrom: options.effectiveFrom,
+        source: options.source,
+      });
+      console.log(
+        `pricing ${rule.provider}/${rule.model} ${rule.usage_kind} ${rule.unit_type} ${rule.price_nanos_per_unit} nanos ${rule.currency}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 pricing
@@ -802,25 +915,27 @@ pricing
   .option("--root <path>", "workspace root path")
   .description("List active pricing rules")
   .action(async (options: { workspace?: string; root?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    for (const rule of await service.listPricingRules({ workspace: workspaceResolver(options) })) {
-      console.log(
-        [
-          rule.provider,
-          rule.model,
-          rule.usage_kind,
-          rule.unit_type,
-          `nanos=${rule.price_nanos_per_unit}`,
-          rule.currency,
-          `from=${rule.effective_from}`,
-          rule.source_snapshot_id ? `snapshot=${rule.source_snapshot_id}` : "",
-        ]
-          .filter(Boolean)
-          .join("\t"),
-      );
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      for (const rule of await handle.ledger.listPricingRules({ workspace: workspaceResolver(options) })) {
+        console.log(
+          [
+            rule.provider,
+            rule.model,
+            rule.usage_kind,
+            rule.unit_type,
+            `nanos=${rule.price_nanos_per_unit}`,
+            rule.currency,
+            `from=${rule.effective_from}`,
+            rule.source_snapshot_id ? `snapshot=${rule.source_snapshot_id}` : "",
+          ]
+            .filter(Boolean)
+            .join("\t"),
+        );
+      }
+    } finally {
+      await handle.close();
     }
-    await close();
   });
 
 pricing
@@ -830,16 +945,19 @@ pricing
   .option("--limit <count>", "maximum unpriced events to check", "100")
   .description("Apply active pricing rules to unpriced usage events")
   .action(async (options: PricingRepriceOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.repriceUnpricedUsage({
-      workspace: workspaceResolver(options),
-      limit: parsePositiveInteger(options.limit),
-    });
-    console.log(
-      `reprice checked=${result.checked} repriced=${result.repriced} still_unpriced=${result.still_unpriced}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await service.repriceUnpricedUsage({
+        workspace: workspaceResolver(options),
+        limit: parsePositiveInteger(options.limit),
+      });
+      console.log(
+        `reprice checked=${result.checked} repriced=${result.repriced} still_unpriced=${result.still_unpriced}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 pricing
@@ -850,17 +968,20 @@ pricing
   .option("--mode <mode>", "unpriced or repriceable", "repriceable")
   .description("Recalculate existing usage event pricing from active rules")
   .action(async (options: PricingMigrateEventsOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.migrateUsageEventPricing({
-      workspace: workspaceResolver(options),
-      limit: parsePositiveInteger(options.limit),
-      mode: parsePricingMigrationMode(options.mode),
-    });
-    console.log(
-      `pricing migrate-events checked=${result.checked} migrated=${result.migrated} unchanged=${result.unchanged} still_unpriced=${result.still_unpriced}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await service.migrateUsageEventPricing({
+        workspace: workspaceResolver(options),
+        limit: parsePositiveInteger(options.limit),
+        mode: parsePricingMigrationMode(options.mode),
+      });
+      console.log(
+        `pricing migrate-events checked=${result.checked} migrated=${result.migrated} unchanged=${result.unchanged} still_unpriced=${result.still_unpriced}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 const report = program.command("report").description("Report commands");
@@ -872,10 +993,12 @@ report
   .option("--date <yyyy-mm-dd>", "UTC date")
   .description("Show today's workspace cost summary")
   .action(async (options: { workspace?: string; root?: string; date?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    printReport(await service.reportToday({ workspace: workspaceResolver(options), date: options.date }));
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      printReport(await handle.ledger.reportToday({ workspace: workspaceResolver(options), date: options.date }));
+    } finally {
+      await handle.close();
+    }
   });
 
 report
@@ -885,10 +1008,12 @@ report
   .option("--root <path>", "workspace root path")
   .description("Show task cost summary")
   .action(async (key: string, options: { workspace?: string; root?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    printReport(await service.reportTask({ workspace: workspaceResolver(options), taskKey: slug(key) }));
-    await close();
+    const handle = await makeLedger({ makeLocalService });
+    try {
+      printReport(await handle.ledger.reportTask({ workspace: workspaceResolver(options), taskKey: slug(key) }));
+    } finally {
+      await handle.close();
+    }
   });
 
 program.parseAsync().catch((error: unknown) => {
@@ -1327,7 +1452,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
 }
 
 async function importCodexSessions(
-  service: LedgerService,
+  service: LocalLedger,
   options: CodexSessionImportOptions,
 ): Promise<{ scannedFiles: number; tokenEvents: number; imported: number; skipped: number; errors: number }> {
   const files = codexSessionFiles(options);
@@ -1808,7 +1933,7 @@ function buildClaudeTurnMessage(options: ClaudeTurnOptions): AiUsageObserved {
 }
 
 async function importClaudeSessions(
-  service: LedgerService,
+  service: LocalLedger,
   options: ClaudeSessionImportOptions,
 ): Promise<{ scannedFiles: number; assistantEvents: number; imported: number; skipped: number; errors: number }> {
   const files = claudeSessionFiles(options);

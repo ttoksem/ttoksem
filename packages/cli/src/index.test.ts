@@ -1245,6 +1245,67 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("HttpLedgerClient round-trips against a real LedgerService via in-process Hono", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+
+    // Boot real backing infra: SqliteLedgerStore → LedgerService.
+    const { SqliteLedgerStore } = await import("@ttoksem/storage-sqlite");
+    const { LedgerService } = await import("@ttoksem/core");
+    const store = new SqliteLedgerStore(dbPath);
+    const service = new LedgerService({ store });
+    await service.init();
+    await service.createWorkspace({ key: "e2e", name: "E2E", rootPath: tempDir });
+
+    // Spin up an in-process Hono app backed by that real service.
+    const { createHttpApp } = await import("@ttoksem/http");
+    const app = createHttpApp({
+      service,
+      defaultWorkspaceKey: "e2e",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async () => true,
+      },
+    });
+
+    // Build the HTTP client with the in-process app.fetch as the transport.
+    // Hono's app.fetch expects a Request object, not a (url, init) pair, so we
+    // wrap it in a fetch-compatible adapter that constructs a Request first.
+    const { HttpLedgerClient } = await import("@ttoksem/ledger-http");
+    const honoFetch: typeof fetch = async (input, init?) =>
+      app.fetch(new Request(input as string, init as RequestInit));
+    const client = new HttpLedgerClient({
+      baseUrl: "http://test.invalid",
+      token: "valid",
+      defaultWorkspaceKey: "e2e",
+      fetch: honoFetch,
+    });
+
+    try {
+      // Read-side round-trip: listTasks should return [] on a fresh workspace.
+      const initial = await client.listTasks({ workspace: { key: "e2e" } });
+      expect(initial).toEqual([]);
+
+      // Write-side round-trip: startTask via the client, listTasks via the client.
+      const created = await client.startTask({
+        workspace: { key: "e2e" },
+        key: "alpha",
+        name: "Alpha",
+      });
+      expect(created.key).toBe("alpha");
+
+      const after = await client.listTasks({ workspace: { key: "e2e" } });
+      expect(after.map((t) => t.key)).toEqual(["alpha"]);
+
+      // Confirm the data actually lives in the local DB (via the server-side service).
+      const localTasks = await service.listTasks({ workspace: { key: "e2e" } });
+      expect(localTasks.map((t) => t.key)).toEqual(["alpha"]);
+    } finally {
+      await store.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {

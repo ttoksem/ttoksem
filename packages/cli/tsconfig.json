@@ -8,6 +8,7 @@
   "references": [
     { "path": "../schema" },
     { "path": "../core" },
+    { "path": "../ledger-http" },
     { "path": "../providers" },
     { "path": "../storage-sqlite" },
     { "path": "../../apps/server" }
