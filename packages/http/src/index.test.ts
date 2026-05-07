@@ -247,6 +247,48 @@ describe("createHttpApp auth", () => {
     expect(response.headers.get("Deprecation")).toBe("Thu, 07 May 2026 00:00:00 GMT");
     await expect(response.json()).resolves.toMatchObject({ error: "endpoint_removed" });
   });
+
+  it("lists workspaces via GET /api/workspaces", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        listWorkspaces: async () => [
+          workspaceRecord({ key: "test", name: "Test workspace" }),
+          workspaceRecord({ id: "ws_other", key: "other", name: "Other workspace" }),
+        ],
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/workspaces", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      workspaces: [{ key: "test" }, { key: "other" }],
+    });
+  });
+
+  it("requires dashboard:read for GET /api/workspaces", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/workspaces")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/workspaces", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {

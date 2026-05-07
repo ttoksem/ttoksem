@@ -52,6 +52,7 @@ const TaskKeyParam = z.object({ taskKey: z.string() });
 const ErrorSchema = z.object({ error: z.string(), detail: z.string().optional() });
 
 const WorkspaceResponseSchema = z.object({ workspace: WorkspaceRecordSchema });
+const WorkspacesResponseSchema = z.object({ workspaces: z.array(WorkspaceRecordSchema) });
 const TaskResponseSchema = z.object({ task: TaskRecordSchema });
 const UsageEventResponseSchema = z.object({ usage_event: UsageEventRecordSchema });
 
@@ -97,6 +98,16 @@ const routeCreateWorkspace = createRoute({
   responses: {
     201: { content: { "application/json": { schema: WorkspaceResponseSchema } }, description: "Workspace created" },
     400: { content: { "application/json": { schema: ErrorSchema } }, description: "Bad request" },
+  },
+});
+
+const routeListWorkspaces = createRoute({
+  method: "get", path: "/api/workspaces", tags: ["Workspaces"],
+  summary: "List all workspaces", security: BEARER_AUTH,
+  responses: {
+    200: { content: { "application/json": { schema: WorkspacesResponseSchema } }, description: "OK" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
   },
 });
 
@@ -427,6 +438,13 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       rootPath: body.root_path,
     });
     return c.json({ workspace }, 201);
+  });
+
+  app.openapi(routeListWorkspaces, async (c) => {
+    const authResponse = await authorizeRequest(c, options.auth, defaultWorkspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const workspaces = await options.service.listWorkspaces();
+    return c.json({ workspaces }, 200);
   });
 
   // ── Tasks ──────────────────────────────────────────────────────────────────
