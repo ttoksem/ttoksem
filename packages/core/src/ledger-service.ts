@@ -22,7 +22,7 @@ import type {
   UsagePricingUpdateInput,
 } from "@ttoksem/storage";
 import { summarizeClaudeAssistantContent } from "@ttoksem/providers";
-import type { Ledger } from "./ledger.js";
+import type { LocalLedger } from "./ledger.js";
 import { decimalToNanos, nanosToDecimal } from "./money.js";
 
 export interface Clock {
@@ -295,7 +295,7 @@ export interface RunAction {
   source: "payload" | "jsonl" | "missing";
 }
 
-export class LedgerService implements Ledger {
+export class LedgerService implements LocalLedger {
   private readonly store: LedgerStore;
   private readonly clock: Clock;
   private readonly idFactory: (prefix: string) => string;
