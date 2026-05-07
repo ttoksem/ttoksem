@@ -83,7 +83,7 @@ Note: `verifyAccessKey` is on `Ledger` rather than `AdminLedger` because the HTT
 
 ## New HTTP routes
 
-All six are GET (read-only) and require `api:read` scope. Path conventions match existing routes in `packages/http/src/index.ts`.
+All six are GET (read-only) and require `dashboard:read` scope (matches the existing read-route convention in `packages/http/src/index.ts` — every GET that reads ledger data uses `dashboard:read`). Path conventions match existing routes in `packages/http/src/index.ts`.
 
 | # | Method | Path | Handler | Workspace param |
 |---|---|---|---|---|
