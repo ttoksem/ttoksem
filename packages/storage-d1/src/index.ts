@@ -87,7 +87,6 @@ export class D1LedgerStore implements LedgerStore {
         description TEXT,
         status TEXT NOT NULL,
         root_path TEXT,
-        active_task_id TEXT,
         source TEXT NOT NULL,
         external_ref_json TEXT,
         metadata_json TEXT,
@@ -250,6 +249,8 @@ export class D1LedgerStore implements LedgerStore {
         ON usage_events(workspace_id, assignment_status, occurred_at);
     `);
 
+    await this.dropWorkspaceActiveTaskIdIfPresent();
+
     const now = new Date().toISOString();
     for (const version of [
       "0001_initial",
@@ -259,6 +260,7 @@ export class D1LedgerStore implements LedgerStore {
       "0005_pricing_source_snapshots",
       "0006_remove_run_session_id",
       "0007_db_access_keys",
+      "0008_drop_active_task_id",
     ]) {
       await this.run("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)", [
         version,
@@ -267,15 +269,69 @@ export class D1LedgerStore implements LedgerStore {
     }
   }
 
+  private async dropWorkspaceActiveTaskIdIfPresent(): Promise<void> {
+    const cols = await this.all<{ name: string }>("PRAGMA table_info(workspaces)");
+    if (!cols.some((c) => c.name === "active_task_id")) return;
+    // D1/SQLite cannot DROP COLUMN reliably, so rebuild the table. Other
+    // tables hold FKs into workspaces(id); the SQLite store wraps this in
+    // a transaction with foreign_keys disabled. On Cloudflare D1, multi-
+    // statement transactions inside exec() are not supported; D1 uses
+    // batch() for atomicity instead, but that is not exposed via the
+    // minimal D1Database surface used here. The statements below are
+    // individually well-formed and idempotent enough to recover from a
+    // partial run on the next migrate() call (the column-presence check
+    // re-enters this branch until the rebuild completes). FK enforcement
+    // is toggled via PRAGMA where supported (no-op on real D1).
+    await this.exec("PRAGMA foreign_keys = OFF;");
+    try {
+      await this.exec(`
+        DROP INDEX IF EXISTS workspaces_active_root_path_idx;
+
+        CREATE TABLE workspaces_new (
+          id TEXT PRIMARY KEY,
+          key TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL,
+          root_path TEXT,
+          source TEXT NOT NULL,
+          external_ref_json TEXT,
+          metadata_json TEXT,
+          created_at TEXT NOT NULL,
+          archived_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT INTO workspaces_new (
+          id, key, name, description, status, root_path, source,
+          external_ref_json, metadata_json, created_at, archived_at, updated_at
+        )
+        SELECT
+          id, key, name, description, status, root_path, source,
+          external_ref_json, metadata_json, created_at, archived_at, updated_at
+        FROM workspaces;
+
+        DROP TABLE workspaces;
+        ALTER TABLE workspaces_new RENAME TO workspaces;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS workspaces_active_root_path_idx
+          ON workspaces(root_path)
+          WHERE root_path IS NOT NULL AND status = 'active';
+      `);
+    } finally {
+      await this.exec("PRAGMA foreign_keys = ON;");
+    }
+  }
+
   async close(): Promise<void> {}
 
   async createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceRecord> {
     await this.run(
       `INSERT INTO workspaces (
-        id, key, name, description, status, root_path, active_task_id, source,
+        id, key, name, description, status, root_path, source,
         external_ref_json, metadata_json, created_at, archived_at, updated_at
       ) VALUES (
-        @id, @key, @name, NULL, 'active', @root_path, NULL, @source,
+        @id, @key, @name, NULL, 'active', @root_path, @source,
         NULL, NULL, @now, NULL, @now
       )`,
       input,
@@ -389,19 +445,8 @@ export class D1LedgerStore implements LedgerStore {
     return task;
   }
 
-  async setActiveTask(
-    workspaceId: string,
-    taskId: string | null,
-    now: string,
-  ): Promise<WorkspaceRecord> {
-    await this.run("UPDATE workspaces SET active_task_id = @taskId, updated_at = @now WHERE id = @workspaceId", {
-      workspaceId,
-      taskId,
-      now,
-    });
-    const workspace = await this.getWorkspaceById(workspaceId);
-    if (!workspace) throw new Error("Workspace not found.");
-    return workspace;
+  async archiveTask(taskId: string, now: string): Promise<TaskRecord> {
+    return this.closeTask(taskId, now);
   }
 
   async createRun(input: CreateRunInput): Promise<RunRecord> {

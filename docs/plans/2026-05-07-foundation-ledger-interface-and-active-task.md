@@ -681,7 +681,7 @@ In `packages/http/src/index.ts`, locate the route definition for `GET /api/tasks
   // Endpoint removed in favor of TTOKSEM_TASK env var (see ADR-0010).
   // Two-minor-release Sunset window: 2026-11-07.
   c.header("Sunset", "Sat, 07 Nov 2026 00:00:00 GMT");
-  c.header("Deprecation", "Mon, 07 May 2026 00:00:00 GMT");
+  c.header("Deprecation", "Thu, 07 May 2026 00:00:00 GMT");
   return c.json(
     {
       error: "endpoint_removed",
@@ -938,7 +938,7 @@ const archiveTaskRoute = createRoute({
 
 // Modify the existing close handler — add deprecation headers, keep behavior
 .openapi(closeTaskRoute, async (c) => {
-  c.header("Deprecation", "Mon, 07 May 2026 00:00:00 GMT");
+  c.header("Deprecation", "Thu, 07 May 2026 00:00:00 GMT");
   c.header("Sunset", "Sat, 07 Nov 2026 00:00:00 GMT");
   c.header("Link", "</api/tasks/{taskKey}/archive>; rel=\"successor-version\"");
   const { taskKey } = c.req.valid("param");

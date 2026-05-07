@@ -143,19 +143,40 @@ task
   });
 
 task
-  .command("close")
-  .option("--key <key>", "task key")
+  .command("archive")
+  .argument("<key>", "task key")
   .option("--workspace <key>", "workspace key")
   .option("--root <path>", "workspace root path")
-  .description("Close the active task or a named task")
-  .action(async (options: { key?: string; workspace?: string; root?: string }) => {
+  .description("Archive a task by key")
+  .action(async (key: string, options: { workspace?: string; root?: string }) => {
     const { service, close } = await makeService();
     await service.init();
-    const closed = await service.closeTask({
+    const archived = await service.archiveTask({
       workspace: workspaceResolver(options),
-      key: options.key ? slug(options.key) : undefined,
+      key: slug(key),
     });
-    console.log(`task ${closed.key} ${closed.status} ${closed.id}`);
+    console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
+    await close();
+  });
+
+task
+  .command("close")
+  .argument("<key>", "task key")
+  .option("--workspace <key>", "workspace key")
+  .option("--root <path>", "workspace root path")
+  .description("(deprecated — use 'task archive') Archive a task by key")
+  .action(async (key: string, options: { workspace?: string; root?: string }) => {
+    process.stderr.write(
+      "[deprecation] `task close` is renamed to `task archive`. Update your scripts. " +
+        "This alias will be removed in two minor releases.\n",
+    );
+    const { service, close } = await makeService();
+    await service.init();
+    const archived = await service.archiveTask({
+      workspace: workspaceResolver(options),
+      key: slug(key),
+    });
+    console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
     await close();
   });
 

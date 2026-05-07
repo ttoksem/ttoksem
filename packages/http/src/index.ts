@@ -129,19 +129,35 @@ const routeUpdateTask = createRoute({
 
 const routeCloseTask = createRoute({
   method: "post", path: "/api/tasks/{taskKey}/close", tags: ["Tasks"],
-  summary: "Close a task", security: BEARER_AUTH,
+  summary: "Deprecated: use POST /api/tasks/{taskKey}/archive",
+  description:
+    "Deprecated alias for POST /api/tasks/{taskKey}/archive. Still archives the task and returns the archived record. Emits Deprecation, Sunset, and Link successor-version headers. Will return 410 Gone after the Sunset window.",
+  deprecated: true,
+  security: BEARER_AUTH,
   request: { params: TaskKeyParam, query: WorkspaceQuery },
   responses: {
-    200: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task closed" },
+    200: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task archived (close is a deprecated alias for archive)" },
+  },
+});
+
+const routeArchiveTask = createRoute({
+  method: "post", path: "/api/tasks/{taskKey}/archive", tags: ["Tasks"],
+  summary: "Archive a task", security: BEARER_AUTH,
+  request: { params: TaskKeyParam, query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: TaskResponseSchema } }, description: "Task archived" },
   },
 });
 
 const routeTaskActive = createRoute({
   method: "get", path: "/api/tasks/active", tags: ["Tasks"],
-  summary: "Get the most recently started active task key", security: BEARER_AUTH,
+  summary: "Removed: workspace active task is replaced by TTOKSEM_TASK env var",
+  description:
+    "Removed in favor of the TTOKSEM_TASK env var (ADR-0010). See MIGRATION.md#active-task. Returns 410 Gone until the endpoint is deleted entirely after the Sunset window.",
+  deprecated: true,
   request: { query: WorkspaceQuery },
   responses: {
-    200: { content: { "application/json": { schema: z.object({ key: z.string().nullable() }) } }, description: "Active task key or null" },
+    410: { content: { "application/json": { schema: ErrorSchema } }, description: "Endpoint removed; use TTOKSEM_TASK env var" },
   },
 });
 
@@ -452,7 +468,28 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
     const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
     if (authResponse) return authResponse as never;
+    const taskKey = c.req.valid("param").taskKey;
+    // Deprecation headers — /close is a deprecated alias for /archive. After
+    // Sunset, /close will return 410 Gone, then be removed. Set before the
+    // service call so they accompany error responses too.
+    c.header("Deprecation", "Thu, 07 May 2026 00:00:00 GMT");
+    c.header("Sunset", "Sat, 07 Nov 2026 00:00:00 GMT");
+    c.header(
+      "Link",
+      `</api/tasks/${taskKey}/archive>; rel="successor-version"`,
+    );
     const task = await options.service.closeTask({
+      workspace: workspaceResolver(workspaceKey),
+      key: taskKey,
+    });
+    return c.json({ task }, 200);
+  });
+
+  app.openapi(routeArchiveTask, async (c) => {
+    const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
+    if (authResponse) return authResponse as never;
+    const task = await options.service.archiveTask({
       workspace: workspaceResolver(workspaceKey),
       key: c.req.valid("param").taskKey,
     });
@@ -460,14 +497,16 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   });
 
   app.openapi(routeTaskActive, async (c) => {
-    const workspaceKey = c.req.valid("query").workspace ?? defaultWorkspaceKey;
-    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
-    if (authResponse) return authResponse as never;
-    const tasks = await options.service.listTasks({ workspace: workspaceResolver(workspaceKey) });
-    const active = tasks
-      .filter((t) => t.status === "active")
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-    return c.json({ key: active?.key ?? null }, 200);
+    c.header("Sunset", "Sat, 07 Nov 2026 00:00:00 GMT");
+    c.header("Deprecation", "Thu, 07 May 2026 00:00:00 GMT");
+    return c.json(
+      {
+        error: "endpoint_removed",
+        detail:
+          "Workspace active task is removed (ADR-0010). Use the TTOKSEM_TASK env var instead. See MIGRATION.md#active-task.",
+      },
+      410,
+    );
   });
 
   app.openapi(routeListTasks, async (c) => {

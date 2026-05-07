@@ -270,7 +270,8 @@ export interface LedgerStore {
   listTasks(workspaceId: string): Promise<TaskRecord[]>;
   startTask(taskId: string, now: string): Promise<TaskRecord>;
   closeTask(taskId: string, now: string): Promise<TaskRecord>;
-  setActiveTask(workspaceId: string, taskId: string | null, now: string): Promise<WorkspaceRecord>;
+  /** Archive a task. Replaces closeTask going forward. */
+  archiveTask(taskId: string, now: string): Promise<TaskRecord>;
 
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRunById(id: string): Promise<RunRecord | null>;

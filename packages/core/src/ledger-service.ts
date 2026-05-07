@@ -22,6 +22,7 @@ import type {
   UsagePricingUpdateInput,
 } from "@ttoksem/storage";
 import { summarizeClaudeAssistantContent } from "@ttoksem/providers";
+import type { Ledger } from "./ledger.js";
 import { decimalToNanos, nanosToDecimal } from "./money.js";
 
 export interface Clock {
@@ -294,7 +295,7 @@ export interface RunAction {
   source: "payload" | "jsonl" | "missing";
 }
 
-export class LedgerService {
+export class LedgerService implements Ledger {
   private readonly store: LedgerStore;
   private readonly clock: Clock;
   private readonly idFactory: (prefix: string) => string;
@@ -429,24 +430,21 @@ export class LedgerService {
         source: "cli",
         now,
       }));
-    const activeTask = await this.store.startTask(task.id, now);
-    await this.store.setActiveTask(workspace.id, activeTask.id, now);
-    return activeTask;
+    return this.store.startTask(task.id, now);
   }
 
-  async closeTask(input: { workspace: WorkspaceResolver; key?: string }): Promise<TaskRecord> {
+  async archiveTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
     const workspace = await this.resolveWorkspace(input.workspace);
-    const task = input.key
-      ? await this.store.getTaskByKey(workspace.id, input.key)
-      : workspace.active_task_id
-        ? await this.store.getTaskById(workspace.active_task_id)
-        : null;
-    if (!task) throw new Error("Task not found.");
-    const closed = await this.store.closeTask(task.id, this.clock.now());
-    if (workspace.active_task_id === task.id) {
-      await this.store.setActiveTask(workspace.id, null, this.clock.now());
-    }
-    return closed;
+    const task = await this.store.getTaskByKey(workspace.id, input.key);
+    if (!task) throw new Error(`Task not found: ${input.key}`);
+    return this.store.archiveTask(task.id, this.clock.now());
+  }
+
+  /**
+   * @deprecated Use archiveTask. Kept as alias until two minor releases pass.
+   */
+  async closeTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
+    return this.archiveTask(input);
   }
 
   async listTasks(input: { workspace: WorkspaceResolver }): Promise<TaskRecord[]> {
@@ -1071,7 +1069,6 @@ export class LedgerService {
     const taskRef = message.payload.task;
     if (taskRef?.id) return this.store.getTaskById(taskRef.id);
     if (taskRef?.key) return this.store.getTaskByKey(workspace.id, taskRef.key);
-    if (workspace.active_task_id) return this.store.getTaskById(workspace.active_task_id);
     return null;
   }
 
