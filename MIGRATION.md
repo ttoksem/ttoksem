@@ -51,12 +51,21 @@ pnpm cli task archive design-feature --workspace ws
 unset TTOKSEM_TASK
 ```
 
-> **Forward reference.** `TTOKSEM_TASK` plumbing through the
-> autocapture hook lands in Plan 3 and is **not yet shipped**. Until
-> Plan 3 lands, you can still run `task start` / `task archive` to
-> manage tasks explicitly, and pass `--task <key>` to imports as
-> needed; the autocapture hook just won't auto-inject a task from the
-> environment yet.
+This is the canonical workflow. The autocapture Stop hook reads
+`$TTOKSEM_TASK` directly: when set, imported events are attributed to
+that task; when unset, events fall through to the inbox for later
+classification via `pnpm cli inbox accept`. Because the variable is
+shell-scoped, two terminals can each have their own active task
+without collision.
+
+The CLI command `pnpm cli task start <key>` now prints a stderr hint
+suggesting the matching `export TTOKSEM_TASK=<key>` line, so you don't
+have to remember to copy the key by hand.
+
+The previous `pnpm cli task active` command is deprecated (see the
+sunset table below). Use `echo $TTOKSEM_TASK` for the current
+shell-scoped task, or `task list` to see tasks with `status='active'`
+in the ledger.
 
 #### Database migration
 
@@ -96,6 +105,7 @@ DB rolls back to the previous state.
 | Surface | Status now | Removal |
 | --- | --- | --- |
 | `task close` (CLI) | Deprecated `2026-05-07`, warns on use | Removed `2026-11-07` |
+| `task active` (CLI) <a id="task-active"></a> | Deprecated `2026-05-07`, warns on use; replaced by `echo $TTOKSEM_TASK` (current shell-scoped task) and `task list` (status='active' tasks) | Removed `2026-11-07` |
 | `POST /api/tasks/{taskKey}/close` (HTTP) | Deprecated `2026-05-07`, headers attached | Removed `2026-11-07` |
 | `GET /api/tasks/active` (HTTP) | Already `410 Gone` | Route deleted in the next minor after `2026-11-07` |
 
