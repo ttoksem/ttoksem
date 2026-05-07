@@ -268,6 +268,59 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0007_db_access_keys", new Date().toISOString());
+    this.dropWorkspaceActiveTaskIdIfPresent();
+    this.db
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run("0008_drop_active_task_id", new Date().toISOString());
+  }
+
+  private dropWorkspaceActiveTaskIdIfPresent(): void {
+    if (!hasColumn(this.db, "workspaces", "active_task_id")) return;
+    // SQLite cannot DROP COLUMN reliably across versions; rebuild the table.
+    // Other tables hold FKs into workspaces(id), so we disable foreign_keys
+    // for the duration of the rebuild (same approach as
+    // dropRunSessionIdIfPresent above).
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        this.db.exec(`
+          DROP INDEX IF EXISTS workspaces_active_root_path_idx;
+
+          CREATE TABLE workspaces_new (
+            id TEXT PRIMARY KEY,
+            key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL,
+            root_path TEXT,
+            source TEXT NOT NULL,
+            external_ref_json TEXT,
+            metadata_json TEXT,
+            created_at TEXT NOT NULL,
+            archived_at TEXT,
+            updated_at TEXT NOT NULL
+          );
+
+          INSERT INTO workspaces_new (
+            id, key, name, description, status, root_path, source,
+            external_ref_json, metadata_json, created_at, archived_at, updated_at
+          )
+          SELECT
+            id, key, name, description, status, root_path, source,
+            external_ref_json, metadata_json, created_at, archived_at, updated_at
+          FROM workspaces;
+
+          DROP TABLE workspaces;
+          ALTER TABLE workspaces_new RENAME TO workspaces;
+
+          CREATE UNIQUE INDEX IF NOT EXISTS workspaces_active_root_path_idx
+            ON workspaces(root_path)
+            WHERE root_path IS NOT NULL AND status = 'active';
+        `);
+      })();
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
   }
 
   private dropRunSessionIdIfPresent(): void {
@@ -389,10 +442,10 @@ export class SqliteLedgerStore implements LedgerStore {
     this.db
       .prepare(
         `INSERT INTO workspaces (
-          id, key, name, description, status, root_path, active_task_id, source,
+          id, key, name, description, status, root_path, source,
           external_ref_json, metadata_json, created_at, archived_at, updated_at
         ) VALUES (
-          @id, @key, @name, NULL, 'active', @root_path, NULL, @source,
+          @id, @key, @name, NULL, 'active', @root_path, @source,
           NULL, NULL, @now, NULL, @now
         )`,
       )
@@ -514,12 +567,17 @@ export class SqliteLedgerStore implements LedgerStore {
 
   async setActiveTask(
     workspaceId: string,
-    taskId: string | null,
+    _taskId: string | null,
     now: string,
   ): Promise<WorkspaceRecord> {
+    // The workspace-level active task pointer was removed (see ADR-0010);
+    // active task is now shell-scoped via the TTOKSEM_TASK env var. This
+    // method is retained on the LedgerStore interface only until the
+    // typed surface is updated in the next commit; for now it just bumps
+    // updated_at so existing callers keep round-tripping a record.
     this.db
-      .prepare("UPDATE workspaces SET active_task_id = @taskId, updated_at = @now WHERE id = @workspaceId")
-      .run({ workspaceId, taskId, now });
+      .prepare("UPDATE workspaces SET updated_at = @now WHERE id = @workspaceId")
+      .run({ workspaceId, now });
     const workspace = await this.getWorkspaceById(workspaceId);
     if (!workspace) throw new Error("Workspace not found.");
     return workspace;
