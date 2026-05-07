@@ -1273,7 +1273,7 @@ describe("ttoksem CLI workflows", () => {
     // Hono's app.fetch expects a Request object, not a (url, init) pair, so we
     // wrap it in a fetch-compatible adapter that constructs a Request first.
     const { HttpLedgerClient } = await import("@ttoksem/ledger-http");
-    const honoFetch: typeof fetch = (input, init?) =>
+    const honoFetch: typeof fetch = async (input, init?) =>
       app.fetch(new Request(input as string, init as RequestInit));
     const client = new HttpLedgerClient({
       baseUrl: "http://test.invalid",
