@@ -142,7 +142,6 @@ const routeTaskActive = createRoute({
   description:
     "Removed in favor of the TTOKSEM_TASK env var (ADR-0010). See MIGRATION.md#active-task. Returns 410 Gone until the endpoint is deleted entirely after the Sunset window.",
   deprecated: true,
-  security: BEARER_AUTH,
   request: { query: WorkspaceQuery },
   responses: {
     410: { content: { "application/json": { schema: ErrorSchema } }, description: "Endpoint removed; use TTOKSEM_TASK env var" },
@@ -465,7 +464,7 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
 
   app.openapi(routeTaskActive, async (c) => {
     c.header("Sunset", "Sat, 07 Nov 2026 00:00:00 GMT");
-    c.header("Deprecation", "Mon, 07 May 2026 00:00:00 GMT");
+    c.header("Deprecation", "Thu, 07 May 2026 00:00:00 GMT");
     return c.json(
       {
         error: "endpoint_removed",

@@ -155,7 +155,7 @@ describe("createHttpApp auth", () => {
 
     expect(response.status).toBe(410);
     expect(response.headers.get("Sunset")).toBe("Sat, 07 Nov 2026 00:00:00 GMT");
-    expect(response.headers.get("Deprecation")).toBe("Mon, 07 May 2026 00:00:00 GMT");
+    expect(response.headers.get("Deprecation")).toBe("Thu, 07 May 2026 00:00:00 GMT");
     await expect(response.json()).resolves.toMatchObject({ error: "endpoint_removed" });
   });
 });
