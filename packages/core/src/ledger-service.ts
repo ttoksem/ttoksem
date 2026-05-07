@@ -22,6 +22,7 @@ import type {
   UsagePricingUpdateInput,
 } from "@ttoksem/storage";
 import { summarizeClaudeAssistantContent } from "@ttoksem/providers";
+import type { Ledger } from "./ledger.js";
 import { decimalToNanos, nanosToDecimal } from "./money.js";
 
 export interface Clock {
@@ -294,7 +295,7 @@ export interface RunAction {
   source: "payload" | "jsonl" | "missing";
 }
 
-export class LedgerService {
+export class LedgerService implements Ledger {
   private readonly store: LedgerStore;
   private readonly clock: Clock;
   private readonly idFactory: (prefix: string) => string;
@@ -447,6 +448,15 @@ export class LedgerService {
       await this.store.setActiveTask(workspace.id, null, this.clock.now());
     }
     return closed;
+  }
+
+  /**
+   * Archive a task. Currently delegates to closeTask (semantically equivalent
+   * for the existing storage layer); Plan 1 Task 8 will replace this with a
+   * dedicated archive workflow.
+   */
+  async archiveTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
+    return this.closeTask({ workspace: input.workspace, key: input.key });
   }
 
   async listTasks(input: { workspace: WorkspaceResolver }): Promise<TaskRecord[]> {
