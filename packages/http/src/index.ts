@@ -6,6 +6,7 @@ import { renderDashboardHtml, renderLoginHtml } from "./dashboard-html.js";
 import type { LedgerService, WorkspaceResolver } from "@ttoksem/core";
 import {
   AiUsageObservedSchema,
+  DailyReportSchema,
   WorkspaceRecordSchema,
   TaskRecordSchema,
   UsageEventRecordSchema,
@@ -52,6 +53,7 @@ const TaskKeyParam = z.object({ taskKey: z.string() });
 const ErrorSchema = z.object({ error: z.string(), detail: z.string().optional() });
 
 const WorkspaceResponseSchema = z.object({ workspace: WorkspaceRecordSchema });
+const WorkspacesResponseSchema = z.object({ workspaces: z.array(WorkspaceRecordSchema) });
 const TaskResponseSchema = z.object({ task: TaskRecordSchema });
 const UsageEventResponseSchema = z.object({ usage_event: UsageEventRecordSchema });
 
@@ -97,6 +99,16 @@ const routeCreateWorkspace = createRoute({
   responses: {
     201: { content: { "application/json": { schema: WorkspaceResponseSchema } }, description: "Workspace created" },
     400: { content: { "application/json": { schema: ErrorSchema } }, description: "Bad request" },
+  },
+});
+
+const routeListWorkspaces = createRoute({
+  method: "get", path: "/api/workspaces", tags: ["Workspaces"],
+  summary: "List all workspaces", security: BEARER_AUTH,
+  responses: {
+    200: { content: { "application/json": { schema: WorkspacesResponseSchema } }, description: "OK" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
   },
 });
 
@@ -334,6 +346,39 @@ const routeListInboxGroups = createRoute({
   },
 });
 
+const routeListInbox = createRoute({
+  method: "get", path: "/api/inbox", tags: ["Inbox"],
+  summary: "List inbox events (events without an assigned task)", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery.extend({ limit: z.string().optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ events: z.array(UsageEventRecordSchema) }) } }, description: "Inbox events" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+  },
+});
+
+const routeShowInboxGroup = createRoute({
+  method: "get", path: "/api/inbox/groups/{groupId}", tags: ["Inbox"],
+  summary: "Show a single inbox group with its events", security: BEARER_AUTH,
+  request: {
+    params: z.object({ groupId: z.string() }),
+    query: WorkspaceQuery.extend({ limit: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ group: z.unknown(), events: z.array(UsageEventRecordSchema) }),
+        },
+      },
+      description: "Inbox group with events",
+    },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Group not found" },
+  },
+});
+
 const routeRunActions = createRoute({
   method: "get", path: "/api/runs/{runId}/actions", tags: ["Runs"],
   summary: "List assistant actions reconstructed for a run", security: BEARER_AUTH,
@@ -369,12 +414,48 @@ const routeListPricingSnapshots = createRoute({
   },
 });
 
+const routeGetPricingSnapshot = createRoute({
+  method: "get", path: "/api/pricing/snapshots/{id}", tags: ["Pricing"],
+  summary: "Get a pricing source snapshot by ID", security: BEARER_AUTH,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ snapshot: PricingSourceSnapshotRecordSchema }) } }, description: "Pricing snapshot" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Snapshot not found" },
+  },
+});
+
 const routeListPricingRules = createRoute({
   method: "get", path: "/api/pricing/rules", tags: ["Pricing"],
   summary: "List pricing rules for a workspace", security: BEARER_AUTH,
   request: { query: WorkspaceQuery },
   responses: {
     200: { content: { "application/json": { schema: z.object({ rules: z.array(PricingRuleRecordSchema) }) } }, description: "Pricing rules" },
+  },
+});
+
+const ReportResponseSchema = z.object({ report: DailyReportSchema });
+
+const routeReportToday = createRoute({
+  method: "get", path: "/api/reports/today", tags: ["Reports"],
+  summary: "Daily report for a workspace", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery.extend({ date: z.string().optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: ReportResponseSchema } }, description: "Daily report" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+  },
+});
+
+const routeReportTask = createRoute({
+  method: "get", path: "/api/reports/tasks/{taskKey}", tags: ["Reports"],
+  summary: "Daily report for a single task", security: BEARER_AUTH,
+  request: { params: TaskKeyParam, query: WorkspaceQuery },
+  responses: {
+    200: { content: { "application/json": { schema: ReportResponseSchema } }, description: "Per-task daily report" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
   },
 });
 
@@ -427,6 +508,13 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       rootPath: body.root_path,
     });
     return c.json({ workspace }, 201);
+  });
+
+  app.openapi(routeListWorkspaces, async (c) => {
+    const authResponse = await authorizeRequest(c, options.auth, defaultWorkspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const workspaces = await options.service.listWorkspaces();
+    return c.json({ workspaces }, 200);
   });
 
   // ── Tasks ──────────────────────────────────────────────────────────────────
@@ -675,6 +763,35 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     return c.json({ groups }, 200);
   });
 
+  app.openapi(routeListInbox, async (c) => {
+    const { workspace: wk, limit } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const events = await options.service.listInbox({
+      workspace: workspaceResolver(workspaceKey),
+      limit: limit ? parseLimit(limit, 200) : 200,
+    });
+    return c.json({ events }, 200);
+  });
+
+  app.openapi(routeShowInboxGroup, async (c) => {
+    const { workspace: wk, limit } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    try {
+      const result = await options.service.showInboxGroup({
+        workspace: workspaceResolver(workspaceKey),
+        groupId: c.req.valid("param").groupId,
+        limit: limit ? parseLimit(limit, 50) : undefined,
+      });
+      return c.json(result, 200);
+    } catch {
+      return c.json({ error: "Inbox group not found" }, 404);
+    }
+  });
+
   // ── Run actions ────────────────────────────────────────────────────────────
 
   app.openapi(routeRunActions, async (c) => {
@@ -711,6 +828,14 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     return c.json({ snapshots }, 200);
   });
 
+  app.openapi(routeGetPricingSnapshot, async (c) => {
+    const authResponse = await authorizeRequest(c, options.auth, defaultWorkspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const snapshot = await options.service.getPricingSourceSnapshot(c.req.valid("param").id);
+    if (!snapshot) return c.json({ error: "Pricing snapshot not found" }, 404);
+    return c.json({ snapshot }, 200);
+  });
+
   app.openapi(routeListPricingRules, async (c) => {
     const { workspace: wk } = c.req.valid("query");
     const workspaceKey = wk ?? defaultWorkspaceKey;
@@ -720,6 +845,32 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       workspace: workspaceResolver(workspaceKey),
     });
     return c.json({ rules }, 200);
+  });
+
+  // ── Reports ────────────────────────────────────────────────────────────────
+
+  app.openapi(routeReportToday, async (c) => {
+    const { workspace: wk, date } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const report = await options.service.reportToday({
+      workspace: workspaceResolver(workspaceKey),
+      date,
+    });
+    return c.json({ report }, 200);
+  });
+
+  app.openapi(routeReportTask, async (c) => {
+    const { workspace: wk } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const report = await options.service.reportTask({
+      workspace: workspaceResolver(workspaceKey),
+      taskKey: c.req.valid("param").taskKey,
+    });
+    return c.json({ report }, 200);
   });
 
   // ── OpenAPI spec ───────────────────────────────────────────────────────────

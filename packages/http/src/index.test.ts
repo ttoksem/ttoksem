@@ -1,5 +1,11 @@
 import type { DashboardData, DashboardTaskDetailData, LedgerService } from "@ttoksem/core";
-import type { TaskRecord, UsageEventRecord, WorkspaceRecord } from "@ttoksem/schema";
+import type {
+  DailyReport,
+  PricingSourceSnapshotRecord,
+  TaskRecord,
+  UsageEventRecord,
+  WorkspaceRecord,
+} from "@ttoksem/schema";
 import { describe, expect, it } from "vitest";
 import { createHttpApp } from "./index.js";
 
@@ -247,6 +253,286 @@ describe("createHttpApp auth", () => {
     expect(response.headers.get("Deprecation")).toBe("Thu, 07 May 2026 00:00:00 GMT");
     await expect(response.json()).resolves.toMatchObject({ error: "endpoint_removed" });
   });
+
+  it("lists workspaces via GET /api/workspaces", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        listWorkspaces: async () => [
+          workspaceRecord({ key: "test", name: "Test workspace" }),
+          workspaceRecord({ id: "ws_other", key: "other", name: "Other workspace" }),
+        ],
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/workspaces", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      workspaces: [{ key: "test" }, { key: "other" }],
+    });
+  });
+
+  it("requires dashboard:read for GET /api/workspaces", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/workspaces")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/workspaces", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("lists inbox events via GET /api/inbox", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        listInbox: async () => [
+          usageEventRecord({ id: "evt_1" }),
+          usageEventRecord({ id: "evt_2" }),
+        ],
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/inbox?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      events: [{ id: "evt_1" }, { id: "evt_2" }],
+    });
+  });
+
+  it("requires dashboard:read for GET /api/inbox", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/inbox?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/inbox?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("shows an inbox group via GET /api/inbox/groups/:groupId, 404 on miss", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        showInboxGroup: async ({ groupId }) => {
+          if (groupId !== "grp_known") throw new Error(`Inbox group not found: ${groupId}`);
+          return {
+            group: {
+              group_id: "grp_known",
+              assignment_status: "unassigned",
+              event_count: 1,
+              run_count: 0,
+              token_count: 1,
+              estimated_total: 0,
+              currency: null,
+              first_occurred_at: "2026-04-28T00:00:00.000Z",
+              last_occurred_at: "2026-04-28T00:00:00.000Z",
+              source_context: {
+                date_bucket: "2026-04-28",
+                tool: null,
+                cwd: null,
+                git_branch: null,
+                command: null,
+                conversation_id: null,
+                request_id: null,
+                external_ref: null,
+              },
+              reason_codes: ["same_day"],
+              sample_event_ids: ["usage_test"],
+              prompt_samples: [],
+              suggested_task: null,
+            },
+            events: [usageEventRecord({ id: "evt_1" })],
+          };
+        },
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const ok = await app.request("/api/inbox/groups/grp_known?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toMatchObject({
+      group: { group_id: "grp_known" },
+      events: [{ id: "evt_1" }],
+    });
+
+    const miss = await app.request("/api/inbox/groups/grp_unknown?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(miss.status).toBe(404);
+  });
+
+  it("requires dashboard:read for GET /api/inbox/groups/:groupId", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/inbox/groups/grp_x?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/inbox/groups/grp_x?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("returns a pricing snapshot via GET /api/pricing/snapshots/:id, 404 on miss", async () => {
+    const snapshot = pricingSnapshotRecord({ id: "price_snapshot_test" });
+    const app = createHttpApp({
+      service: fakeService({
+        getPricingSourceSnapshot: async (id) => (id === "price_snapshot_test" ? snapshot : null),
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const ok = await app.request("/api/pricing/snapshots/price_snapshot_test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toMatchObject({ snapshot: { id: "price_snapshot_test" } });
+
+    const miss = await app.request("/api/pricing/snapshots/price_snapshot_missing", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(miss.status).toBe(404);
+  });
+
+  it("requires dashboard:read for GET /api/pricing/snapshots/:id", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/pricing/snapshots/price_snapshot_x")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/pricing/snapshots/price_snapshot_x", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("returns today's report via GET /api/reports/today", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        reportToday: async () => dailyReport({ date: "2026-05-07" }),
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/reports/today?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      report: { date: "2026-05-07" },
+    });
+  });
+
+  it("requires dashboard:read for GET /api/reports/today", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/reports/today?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/reports/today?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("returns a per-task report via GET /api/reports/tasks/:taskKey", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        reportTask: async () => dailyReport({ date: "2026-05-07" }),
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/reports/tasks/feature-x?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      report: { date: "2026-05-07" },
+    });
+  });
+
+  it("requires dashboard:read for GET /api/reports/tasks/:taskKey", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/reports/tasks/feature-x?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/reports/tasks/feature-x?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
@@ -327,6 +613,37 @@ function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
     assignInboxEvent: async () => usageEventRecord({ task_id: "task_test", assignment_status: "assigned" }),
     ...overrides,
   } as unknown as LedgerService;
+}
+
+function dailyReport(overrides: Partial<DailyReport> = {}): DailyReport {
+  return {
+    workspace: workspaceRecord({}),
+    date: "2026-05-07",
+    estimated_total: 0,
+    observed_total: 0,
+    currency: null,
+    event_count: 0,
+    unpriced_count: 0,
+    ...overrides,
+  };
+}
+
+function pricingSnapshotRecord(overrides: Partial<PricingSourceSnapshotRecord>): PricingSourceSnapshotRecord {
+  return {
+    id: "price_snapshot_test",
+    source_name: "litellm",
+    source_url: null,
+    source_version: null,
+    source_commit: null,
+    source_retrieved_at: null,
+    bundled_at: null,
+    valid_from: null,
+    raw_sha256: "0".repeat(64),
+    raw_storage_ref: null,
+    metadata_json: null,
+    created_at: "2026-04-28T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 function workspaceRecord(overrides: Partial<WorkspaceRecord>): WorkspaceRecord {
