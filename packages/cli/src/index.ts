@@ -9,6 +9,7 @@ import {
   type DashboardData,
   type InboxAssignmentResult,
   type InboxGroup,
+  type LocalLedger,
 } from "@ttoksem/core";
 import {
   AiUsageObservedSchema,
@@ -30,7 +31,7 @@ import {
   parseAuthMode,
   registerAuthCommands,
 } from "./auth.js";
-import { makeLedger } from "./ledger-factory.js";
+import { makeLedger, requireLocalLedger } from "./ledger-factory.js";
 
 /**
  * Adapter that turns the existing makeService() into the shape the
@@ -43,6 +44,25 @@ async function makeLocalService(): Promise<{ service: LedgerService; close: () =
   return { service, close };
 }
 
+/**
+ * Variant of makeLocalService for subcommands that create the DB (workspace init).
+ */
+async function makeLocalServiceAllowCreate(): Promise<{ service: LedgerService; close: () => Promise<void> }> {
+  const { service, close } = await makeService({ allowCreate: true });
+  await service.init();
+  return { service, close };
+}
+
+/** Convenience: build a LedgerHandle for a standard (non-create) subcommand. */
+function makeLedgerLocal() {
+  return makeLedger({ makeLocalService });
+}
+
+/** Convenience: build a LedgerHandle for workspace init (allowCreate). */
+function makeLedgerAllowCreate() {
+  return makeLedger({ makeLocalService: makeLocalServiceAllowCreate });
+}
+
 const program = new Command();
 
 program.name("ttoksem").description("Local-first AI task costbook").version("0.0.0");
@@ -51,10 +71,14 @@ program
   .command("doctor")
   .description("Check local CLI and SQLite setup")
   .action(async () => {
-    const { service, dbPath, close } = await makeService();
-    await service.init();
-    console.log(`ok database=${dbPath}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      requireLocalLedger(handle);
+      const dbPath = resolveDbPath(false);
+      console.log(`ok database=${dbPath}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 const workspace = program.command("workspace").description("Workspace commands");
@@ -66,13 +90,16 @@ workspace
   .option("--name <name>", "workspace name")
   .option("--root <path>", "workspace root path")
   .action(async (options: { key?: string; name?: string; root?: string }) => {
-    const { service, close } = await makeService({ allowCreate: true });
-    await service.init();
-    const rootPath = resolveFromCommandCwd(options.root ?? ".");
-    const key = options.key ?? slug(rootPath.split("/").filter(Boolean).at(-1) ?? "workspace");
-    const workspace = await service.createWorkspace({ key, name: options.name, rootPath });
-    console.log(`workspace ${workspace.key} ${workspace.id}`);
-    await close();
+    const handle = await makeLedgerAllowCreate();
+    try {
+      const service = requireLocalLedger(handle);
+      const rootPath = resolveFromCommandCwd(options.root ?? ".");
+      const key = options.key ?? slug(rootPath.split("/").filter(Boolean).at(-1) ?? "workspace");
+      const workspace = await service.createWorkspace({ key, name: options.name, rootPath });
+      console.log(`workspace ${workspace.key} ${workspace.id}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 workspace
@@ -80,11 +107,14 @@ workspace
   .description("Show workspace for the current directory")
   .option("--root <path>", "workspace root path")
   .action(async (options: { root?: string }) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const current = await service.currentWorkspace(resolveFromCommandCwd(options.root ?? "."));
-    console.log(JSON.stringify(current, null, 2));
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const current = await service.currentWorkspace(resolveFromCommandCwd(options.root ?? "."));
+      console.log(JSON.stringify(current, null, 2));
+    } finally {
+      await handle.close();
+    }
   });
 
 workspace
@@ -361,12 +391,15 @@ usage
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: CodexTurnOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const message = buildCodexTurnMessage(options);
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const message = buildCodexTurnMessage(options);
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -384,13 +417,16 @@ usage
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
   .action(async (options: CodexSessionImportOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await importCodexSessions(service, options);
-    console.log(
-      `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await importCodexSessions(service, options);
+      console.log(
+        `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -414,12 +450,15 @@ usage
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: ClaudeTurnOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const message = buildClaudeTurnMessage(options);
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const message = buildClaudeTurnMessage(options);
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -438,13 +477,16 @@ usage
   .option("--dry-run", "scan and print counts without writing usage events")
   .option("--no-subagents", "skip subagent JSONL files (default: include)")
   .action(async (options: ClaudeSessionImportOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await importClaudeSessions(service, options);
-    console.log(
-      `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await importClaudeSessions(service, options);
+      console.log(
+        `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -461,24 +503,27 @@ usage
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: OpenAiResponseOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const response = readJsonRecord(options.file);
-    const message = openAiUsageObservedFromResponse({
-      workspaceKey: options.workspace,
-      taskKey: options.task ? slug(options.task) : null,
-      runId: options.runId ?? null,
-      model: options.model ?? null,
-      operation: options.operation,
-      occurredAt: options.occurredAt ?? null,
-      observedCost: parseOptionalNumber(options.observedCost),
-      currency: options.currency,
-      idempotencyKey: options.idempotencyKey ?? null,
-      response,
-    });
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const response = readJsonRecord(options.file);
+      const message = openAiUsageObservedFromResponse({
+        workspaceKey: options.workspace,
+        taskKey: options.task ? slug(options.task) : null,
+        runId: options.runId ?? null,
+        model: options.model ?? null,
+        operation: options.operation,
+        occurredAt: options.occurredAt ?? null,
+        observedCost: parseOptionalNumber(options.observedCost),
+        currency: options.currency,
+        idempotencyKey: options.idempotencyKey ?? null,
+        response,
+      });
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 usage
@@ -495,24 +540,27 @@ usage
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: AnthropicResponseOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const response = readJsonRecord(options.file);
-    const message = anthropicUsageObservedFromResponse({
-      workspaceKey: options.workspace,
-      taskKey: options.task ? slug(options.task) : null,
-      runId: options.runId ?? null,
-      model: options.model ?? null,
-      operation: options.operation,
-      occurredAt: options.occurredAt ?? null,
-      observedCost: parseOptionalNumber(options.observedCost),
-      currency: options.currency,
-      idempotencyKey: options.idempotencyKey ?? null,
-      response,
-    });
-    const event = await service.recordUsage(message);
-    console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const response = readJsonRecord(options.file);
+      const message = anthropicUsageObservedFromResponse({
+        workspaceKey: options.workspace,
+        taskKey: options.task ? slug(options.task) : null,
+        runId: options.runId ?? null,
+        model: options.model ?? null,
+        operation: options.operation,
+        occurredAt: options.occurredAt ?? null,
+        observedCost: parseOptionalNumber(options.observedCost),
+        currency: options.currency,
+        idempotencyKey: options.idempotencyKey ?? null,
+        response,
+      });
+      const event = await service.recordUsage(message);
+      console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
+    } finally {
+      await handle.close();
+    }
   });
 
 const inbox = program.command("inbox").description("Inbox commands");
@@ -678,9 +726,17 @@ dashboard
     if (authMode === "none" && !isLoopbackHost(options.host) && !options.unsafeNoAuth) {
       throw new Error("--auth none on a non-loopback host requires --unsafe-no-auth.");
     }
+    // Guard: dashboard serve is local-only (it opens the SQLite db directly).
+    // requireLocalLedger fires before any logic when TTOKSEM_HTTP_URL is set.
+    const handle = await makeLedgerLocal();
+    try {
+      requireLocalLedger(handle);
+    } finally {
+      await handle.close();
+    }
     const initialToken =
       authMode === "access-key"
-        ? await ensureDashboardAccessKey(makeService, options.workspace, options.createKeyName)
+        ? await ensureDashboardAccessKey(makeLedgerLocal, requireLocalLedger, options.workspace, options.createKeyName)
         : null;
     const dbPath = resolveDbPath(false);
     const server = await serveDashboard({
@@ -698,7 +754,7 @@ dashboard
     await waitForShutdown(server.close);
   });
 
-registerAuthCommands(program, makeService);
+registerAuthCommands(program, makeService, makeLedgerLocal, requireLocalLedger);
 
 const pricing = program.command("pricing").description("Pricing commands");
 const pricingSnapshot = pricing.command("snapshot").description("Pricing source snapshot commands");
@@ -718,25 +774,28 @@ pricingSnapshot
   .option("--metadata <json>", "metadata JSON object")
   .description("Create or reuse a pricing source snapshot")
   .action(async (options: PricingSnapshotUpsertOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const snapshot = await service.upsertPricingSourceSnapshot({
-      id: options.id,
-      sourceName: parsePricingSourceName(options.sourceName),
-      sourceUrl: options.sourceUrl,
-      sourceVersion: options.sourceVersion,
-      sourceCommit: options.sourceCommit,
-      sourceRetrievedAt: options.sourceRetrievedAt,
-      bundledAt: options.bundledAt,
-      validFrom: options.validFrom,
-      rawSha256: options.rawSha256,
-      rawStorageRef: options.rawStorageRef,
-      metadataJson: parseOptionalJsonObject(options.metadata),
-    });
-    console.log(
-      `pricing snapshot ${snapshot.id} ${snapshot.source_name} ${snapshot.raw_sha256}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const snapshot = await service.upsertPricingSourceSnapshot({
+        id: options.id,
+        sourceName: parsePricingSourceName(options.sourceName),
+        sourceUrl: options.sourceUrl,
+        sourceVersion: options.sourceVersion,
+        sourceCommit: options.sourceCommit,
+        sourceRetrievedAt: options.sourceRetrievedAt,
+        bundledAt: options.bundledAt,
+        validFrom: options.validFrom,
+        rawSha256: options.rawSha256,
+        rawStorageRef: options.rawStorageRef,
+        metadataJson: parseOptionalJsonObject(options.metadata),
+      });
+      console.log(
+        `pricing snapshot ${snapshot.id} ${snapshot.source_name} ${snapshot.raw_sha256}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 pricingSnapshot
@@ -775,37 +834,40 @@ pricing
   .option("--limit <count>", "maximum normalized rules to import")
   .description("Import normalized pricing rules from a LiteLLM pricing snapshot")
   .action(async (options: PricingImportLiteLlmOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const snapshot = await service.getPricingSourceSnapshot(options.sourceSnapshotId);
-    if (!snapshot) throw new Error(`Pricing source snapshot not found: ${options.sourceSnapshotId}`);
-    const rawStorageRef = options.file ?? snapshot.raw_storage_ref;
-    if (!rawStorageRef) throw new Error("Provide --file or store raw_storage_ref on the snapshot.");
-    const raw = JSON.parse(readFileSync(resolveFromCommandCwd(rawStorageRef), "utf8")) as unknown;
-    const normalized = normalizeLiteLlmPricingRules(raw, {
-      provider: options.provider,
-      model: options.model,
-      effectiveFrom: options.effectiveFrom ?? snapshot.valid_from ?? snapshot.source_retrieved_at ?? undefined,
-      limit: options.limit ? parsePositiveInteger(options.limit) : undefined,
-    });
-    for (const rule of normalized.rules) {
-      await service.upsertPricingRule({
-        workspace: workspaceResolver(options),
-        sourceSnapshotId: snapshot.id,
-        provider: rule.provider,
-        model: rule.model,
-        usageKind: rule.usageKind,
-        unitType: rule.unitType,
-        priceNanosPerUnit: rule.priceNanosPerUnit,
-        currency: "USD",
-        effectiveFrom: rule.effectiveFrom,
-        source: "litellm",
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const snapshot = await service.getPricingSourceSnapshot(options.sourceSnapshotId);
+      if (!snapshot) throw new Error(`Pricing source snapshot not found: ${options.sourceSnapshotId}`);
+      const rawStorageRef = options.file ?? snapshot.raw_storage_ref;
+      if (!rawStorageRef) throw new Error("Provide --file or store raw_storage_ref on the snapshot.");
+      const raw = JSON.parse(readFileSync(resolveFromCommandCwd(rawStorageRef), "utf8")) as unknown;
+      const normalized = normalizeLiteLlmPricingRules(raw, {
+        provider: options.provider,
+        model: options.model,
+        effectiveFrom: options.effectiveFrom ?? snapshot.valid_from ?? snapshot.source_retrieved_at ?? undefined,
+        limit: options.limit ? parsePositiveInteger(options.limit) : undefined,
       });
+      for (const rule of normalized.rules) {
+        await service.upsertPricingRule({
+          workspace: workspaceResolver(options),
+          sourceSnapshotId: snapshot.id,
+          provider: rule.provider,
+          model: rule.model,
+          usageKind: rule.usageKind,
+          unitType: rule.unitType,
+          priceNanosPerUnit: rule.priceNanosPerUnit,
+          currency: "USD",
+          effectiveFrom: rule.effectiveFrom,
+          source: "litellm",
+        });
+      }
+      console.log(
+        `pricing import-litellm imported=${normalized.rules.length} skipped=${normalized.skipped} snapshot=${snapshot.id}`,
+      );
+    } finally {
+      await handle.close();
     }
-    console.log(
-      `pricing import-litellm imported=${normalized.rules.length} skipped=${normalized.skipped} snapshot=${snapshot.id}`,
-    );
-    await close();
   });
 
 pricing
@@ -824,24 +886,27 @@ pricing
   .option("--root <path>", "workspace root path")
   .description("Create or update an active pricing rule")
   .action(async (options: PricingUpsertOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const rule = await service.upsertPricingRule({
-      workspace: workspaceResolver(options),
-      sourceSnapshotId: options.sourceSnapshotId,
-      provider: options.provider,
-      model: options.model,
-      usageKind: options.usageKind,
-      unitType: options.unitType,
-      priceNanosPerUnit: priceNanosPerUnit(options.price, options.per),
-      currency: options.currency,
-      effectiveFrom: options.effectiveFrom,
-      source: options.source,
-    });
-    console.log(
-      `pricing ${rule.provider}/${rule.model} ${rule.usage_kind} ${rule.unit_type} ${rule.price_nanos_per_unit} nanos ${rule.currency}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const rule = await service.upsertPricingRule({
+        workspace: workspaceResolver(options),
+        sourceSnapshotId: options.sourceSnapshotId,
+        provider: options.provider,
+        model: options.model,
+        usageKind: options.usageKind,
+        unitType: options.unitType,
+        priceNanosPerUnit: priceNanosPerUnit(options.price, options.per),
+        currency: options.currency,
+        effectiveFrom: options.effectiveFrom,
+        source: options.source,
+      });
+      console.log(
+        `pricing ${rule.provider}/${rule.model} ${rule.usage_kind} ${rule.unit_type} ${rule.price_nanos_per_unit} nanos ${rule.currency}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 pricing
@@ -880,16 +945,19 @@ pricing
   .option("--limit <count>", "maximum unpriced events to check", "100")
   .description("Apply active pricing rules to unpriced usage events")
   .action(async (options: PricingRepriceOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.repriceUnpricedUsage({
-      workspace: workspaceResolver(options),
-      limit: parsePositiveInteger(options.limit),
-    });
-    console.log(
-      `reprice checked=${result.checked} repriced=${result.repriced} still_unpriced=${result.still_unpriced}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await service.repriceUnpricedUsage({
+        workspace: workspaceResolver(options),
+        limit: parsePositiveInteger(options.limit),
+      });
+      console.log(
+        `reprice checked=${result.checked} repriced=${result.repriced} still_unpriced=${result.still_unpriced}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 pricing
@@ -900,17 +968,20 @@ pricing
   .option("--mode <mode>", "unpriced or repriceable", "repriceable")
   .description("Recalculate existing usage event pricing from active rules")
   .action(async (options: PricingMigrateEventsOptions) => {
-    const { service, close } = await makeService();
-    await service.init();
-    const result = await service.migrateUsageEventPricing({
-      workspace: workspaceResolver(options),
-      limit: parsePositiveInteger(options.limit),
-      mode: parsePricingMigrationMode(options.mode),
-    });
-    console.log(
-      `pricing migrate-events checked=${result.checked} migrated=${result.migrated} unchanged=${result.unchanged} still_unpriced=${result.still_unpriced}`,
-    );
-    await close();
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const result = await service.migrateUsageEventPricing({
+        workspace: workspaceResolver(options),
+        limit: parsePositiveInteger(options.limit),
+        mode: parsePricingMigrationMode(options.mode),
+      });
+      console.log(
+        `pricing migrate-events checked=${result.checked} migrated=${result.migrated} unchanged=${result.unchanged} still_unpriced=${result.still_unpriced}`,
+      );
+    } finally {
+      await handle.close();
+    }
   });
 
 const report = program.command("report").description("Report commands");
@@ -1381,7 +1452,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
 }
 
 async function importCodexSessions(
-  service: LedgerService,
+  service: LocalLedger,
   options: CodexSessionImportOptions,
 ): Promise<{ scannedFiles: number; tokenEvents: number; imported: number; skipped: number; errors: number }> {
   const files = codexSessionFiles(options);
@@ -1862,7 +1933,7 @@ function buildClaudeTurnMessage(options: ClaudeTurnOptions): AiUsageObserved {
 }
 
 async function importClaudeSessions(
-  service: LedgerService,
+  service: LocalLedger,
   options: ClaudeSessionImportOptions,
 ): Promise<{ scannedFiles: number; assistantEvents: number; imported: number; skipped: number; errors: number }> {
   const files = claudeSessionFiles(options);
