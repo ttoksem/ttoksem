@@ -1,5 +1,6 @@
 import type { Ledger } from "@ttoksem/core";
 import type { WorkspaceResolver } from "@ttoksem/core";
+import type { TaskRecord, WorkspaceRecord } from "@ttoksem/schema";
 import { HttpLedgerError } from "./errors.js";
 
 export interface HttpLedgerClientOptions {
@@ -70,6 +71,108 @@ export class HttpLedgerClient {
       );
     }
     throw new HttpLedgerError("No workspace key provided and no defaultWorkspaceKey configured", 0);
+  }
+
+  // Workspaces
+  async createWorkspace(input: {
+    key: string;
+    name?: string;
+    rootPath?: string | null;
+  }): Promise<WorkspaceRecord> {
+    const result = await this.request("POST", "/api/workspaces", {
+      key: input.key,
+      name: input.name,
+      root_path: input.rootPath ?? undefined,
+    });
+    return (result as { workspace: WorkspaceRecord }).workspace;
+  }
+
+  async listWorkspaces(): Promise<WorkspaceRecord[]> {
+    const result = await this.request("GET", "/api/workspaces");
+    return (result as { workspaces: WorkspaceRecord[] }).workspaces;
+  }
+
+  // Tasks
+  async startTask(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    key: string;
+    name?: string;
+    description?: string | null;
+  }): Promise<TaskRecord> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request("POST", `/api/tasks?workspace=${encodeURIComponent(wk)}`, {
+      key: input.key,
+      name: input.name,
+      description: input.description,
+    });
+    return (result as { task: TaskRecord }).task;
+  }
+
+  async archiveTask(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    key: string;
+  }): Promise<TaskRecord> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "POST",
+      `/api/tasks/${encodeURIComponent(input.key)}/archive?workspace=${encodeURIComponent(wk)}`,
+    );
+    return (result as { task: TaskRecord }).task;
+  }
+
+  /** @deprecated Use archiveTask. Kept as alias until two minor releases pass. */
+  async closeTask(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    key: string;
+  }): Promise<TaskRecord> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "POST",
+      `/api/tasks/${encodeURIComponent(input.key)}/close?workspace=${encodeURIComponent(wk)}`,
+    );
+    return (result as { task: TaskRecord }).task;
+  }
+
+  async listTasks(input: { workspace: import("@ttoksem/core").WorkspaceResolver }): Promise<TaskRecord[]> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request("GET", `/api/tasks?workspace=${encodeURIComponent(wk)}`);
+    return (result as { tasks: TaskRecord[] }).tasks;
+  }
+
+  async updateTask(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    key: string;
+    name?: string;
+    description?: string | null;
+  }): Promise<TaskRecord> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "PATCH",
+      `/api/tasks/${encodeURIComponent(input.key)}?workspace=${encodeURIComponent(wk)}`,
+      { name: input.name, description: input.description },
+    );
+    return (result as { task: TaskRecord }).task;
+  }
+
+  async getTaskStats(input: {
+    workspace: import("@ttoksem/core").WorkspaceResolver;
+    key: string;
+  }): Promise<{
+    key: string;
+    status: string;
+    run_count: number;
+    event_count: number;
+    estimated_cost_nanos: number;
+    unpriced_count: number;
+    first_activity_at: string | null;
+    last_activity_at: string | null;
+  }> {
+    const wk = this.resolveWorkspaceKey(input.workspace);
+    const result = await this.request(
+      "GET",
+      `/api/tasks/${encodeURIComponent(input.key)}/stats?workspace=${encodeURIComponent(wk)}`,
+    );
+    return result as Awaited<ReturnType<HttpLedgerClient["getTaskStats"]>>;
   }
 }
 
