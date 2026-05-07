@@ -469,18 +469,19 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
     const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["api:write"]);
     if (authResponse) return authResponse as never;
     const taskKey = c.req.valid("param").taskKey;
-    const task = await options.service.closeTask({
-      workspace: workspaceResolver(workspaceKey),
-      key: taskKey,
-    });
     // Deprecation headers — /close is a deprecated alias for /archive. After
-    // Sunset, /close will return 410 Gone, then be removed.
+    // Sunset, /close will return 410 Gone, then be removed. Set before the
+    // service call so they accompany error responses too.
     c.header("Deprecation", "Thu, 07 May 2026 00:00:00 GMT");
     c.header("Sunset", "Sat, 07 Nov 2026 00:00:00 GMT");
     c.header(
       "Link",
       `</api/tasks/${taskKey}/archive>; rel="successor-version"`,
     );
+    const task = await options.service.closeTask({
+      workspace: workspaceResolver(workspaceKey),
+      key: taskKey,
+    });
     return c.json({ task }, 200);
   });
 
