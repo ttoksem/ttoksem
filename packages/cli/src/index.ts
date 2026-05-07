@@ -198,8 +198,14 @@ task
   .command("active")
   .option("--workspace <key>", "workspace key")
   .option("--root <path>", "workspace root path")
-  .description("Print the key of the most recently started active task, or nothing if none")
+  .description("(deprecated — use $TTOKSEM_TASK) Print the key of the most recently started active task, or nothing if none")
   .action(async (options: { workspace?: string; root?: string }) => {
+    process.stderr.write(
+      "[deprecation] `task active` is going away in two minor releases. " +
+      "Use `echo $TTOKSEM_TASK` for the current shell-scoped task, or " +
+      "`task list` to see tasks with status='active'. " +
+      "See MIGRATION.md#task-active.\n",
+    );
     const { service, close } = await makeService();
     await service.init();
     const tasks = await service.listTasks({ workspace: workspaceResolver(options) });
