@@ -123,3 +123,13 @@ cp .ttoksem/ttoksem.db .ttoksem/ttoksem.db.bak.$(date +%Y%m%dT%H%M%S)
 before the first launch on the new version. If you skip this and
 later need to downgrade, the dropped `active_task_id` column cannot
 be reconstructed from the migrated schema alone.
+
+## Remote mode (Plan 4)
+
+`HttpLedgerClient` ships in `@ttoksem/ledger-http` and the CLI auto-
+detects `TTOKSEM_HTTP_URL`. See [docs/REMOTE-MODE.md](docs/REMOTE-MODE.md)
+for the env vars, supported subcommands, and the admin/local
+restrictions in remote mode.
+
+No DB migration. No breaking changes. Local mode (no env var) is
+unchanged.
