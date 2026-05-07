@@ -138,6 +138,95 @@ describe("createHttpApp auth", () => {
     expect(recorded).toHaveLength(1);
   });
 
+  it("archives a task via POST /api/tasks/:taskKey/archive", async () => {
+    const archived: Array<{ key: string }> = [];
+    const app = createHttpApp({
+      service: fakeService({
+        archiveTask: async (input) => {
+          archived.push({ key: input.key });
+          return taskRecord({ key: input.key, status: "closed" });
+        },
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "write-token" && requiredScopes.includes("api:write"),
+      },
+    });
+
+    const response = await app.request("/api/tasks/feature-x/archive?workspace=test", {
+      method: "POST",
+      headers: { Authorization: "Bearer write-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      task: { key: "feature-x", status: "closed" },
+    });
+    expect(archived).toEqual([{ key: "feature-x" }]);
+  });
+
+  it("requires api:write for POST /api/tasks/:taskKey/archive", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "write-token" && requiredScopes.includes("api:write"),
+      },
+    });
+
+    await expect(
+      app.request("/api/tasks/feature-x/archive?workspace=test", { method: "POST" }),
+    ).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/tasks/feature-x/archive?workspace=test", {
+        method: "POST",
+        headers: { Authorization: "Bearer wrong-token" },
+      }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
+
+  it("POST /api/tasks/:taskKey/close still archives but emits deprecation headers", async () => {
+    const archived: Array<{ key: string }> = [];
+    const app = createHttpApp({
+      service: fakeService({
+        // closeTask in service forwards to archiveTask, but the HTTP handler
+        // calls service.closeTask directly. Track via closeTask here so the
+        // existing service contract is preserved.
+        closeTask: async (input) => {
+          archived.push({ key: input.key });
+          return taskRecord({ key: input.key, status: "closed" });
+        },
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "write-token" && requiredScopes.includes("api:write"),
+      },
+    });
+
+    const response = await app.request("/api/tasks/feature-x/close?workspace=test", {
+      method: "POST",
+      headers: { Authorization: "Bearer write-token" },
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      task: { key: "feature-x", status: "closed" },
+    });
+    expect(archived).toEqual([{ key: "feature-x" }]);
+
+    expect(response.headers.get("Deprecation")).toBe("Thu, 07 May 2026 00:00:00 GMT");
+    expect(response.headers.get("Sunset")).toBe("Sat, 07 Nov 2026 00:00:00 GMT");
+    const link = response.headers.get("Link");
+    expect(link).toContain("/api/tasks/feature-x/archive");
+    expect(link).toContain('rel="successor-version"');
+  });
+
   it("returns 410 Gone with Sunset and Deprecation headers for GET /api/tasks/active", async () => {
     const app = createHttpApp({
       service: fakeService(),
@@ -168,6 +257,7 @@ function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {
     startTask: async () => taskRecord({}),
     updateTask: async () => taskRecord({}),
     closeTask: async () => taskRecord({ status: "closed" }),
+    archiveTask: async () => taskRecord({ status: "closed" }),
     recordUsage: async () => usageEventRecord({}),
     moveUsage: async () => usageEventRecord({ task_id: "task_test", assignment_status: "assigned" }),
     assignInboxGroup: async () => ({
