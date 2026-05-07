@@ -433,20 +433,18 @@ export class LedgerService implements Ledger {
     return this.store.startTask(task.id, now);
   }
 
-  async closeTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
+  async archiveTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
     const workspace = await this.resolveWorkspace(input.workspace);
     const task = await this.store.getTaskByKey(workspace.id, input.key);
     if (!task) throw new Error(`Task not found: ${input.key}`);
-    return this.store.closeTask(task.id, this.clock.now());
+    return this.store.archiveTask(task.id, this.clock.now());
   }
 
   /**
-   * Archive a task. Currently delegates to closeTask (semantically equivalent
-   * for the existing storage layer); Plan 1 Task 8 will replace this with a
-   * dedicated archive workflow.
+   * @deprecated Use archiveTask. Kept as alias until two minor releases pass.
    */
-  async archiveTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
-    return this.closeTask({ workspace: input.workspace, key: input.key });
+  async closeTask(input: { workspace: WorkspaceResolver; key: string }): Promise<TaskRecord> {
+    return this.archiveTask(input);
   }
 
   async listTasks(input: { workspace: WorkspaceResolver }): Promise<TaskRecord[]> {

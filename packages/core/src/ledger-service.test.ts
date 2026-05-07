@@ -411,6 +411,87 @@ describe("LedgerService", () => {
       }),
     ).resolves.toMatchObject({ allowed: false, reason: "workspace_not_allowed" });
   });
+
+  it("archiveTask delegates to store.archiveTask and returns the archived record", async () => {
+    const workspace = workspaceRecord();
+    const task = taskRecord(workspace.id);
+    const archiveCalls: Array<{ taskId: string; now: string }> = [];
+    const closeCalls: Array<{ taskId: string; now: string }> = [];
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        getTaskByKey: async () => task,
+        archiveTask: async (taskId, now) => {
+          archiveCalls.push({ taskId, now });
+          return { ...task, status: "closed", closed_at: now, updated_at: now };
+        },
+        closeTask: async (taskId, now) => {
+          closeCalls.push({ taskId, now });
+          return { ...task, status: "closed", closed_at: now, updated_at: now };
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    const archived = await service.archiveTask({
+      workspace: { key: workspace.key },
+      key: task.key,
+    });
+
+    expect(archived.status).toBe("closed");
+    expect(archiveCalls).toEqual([{ taskId: task.id, now: "2026-04-27T00:00:10.000Z" }]);
+    expect(closeCalls).toEqual([]);
+  });
+
+  it("closeTask still works as a deprecated alias forwarding to archiveTask", async () => {
+    const workspace = workspaceRecord();
+    const task = taskRecord(workspace.id);
+    const archiveCalls: Array<{ taskId: string; now: string }> = [];
+    const closeCalls: Array<{ taskId: string; now: string }> = [];
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        getTaskByKey: async () => task,
+        archiveTask: async (taskId, now) => {
+          archiveCalls.push({ taskId, now });
+          return { ...task, status: "closed", closed_at: now, updated_at: now };
+        },
+        closeTask: async (taskId, now) => {
+          closeCalls.push({ taskId, now });
+          return { ...task, status: "closed", closed_at: now, updated_at: now };
+        },
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    const closed = await service.closeTask({
+      workspace: { key: workspace.key },
+      key: task.key,
+    });
+
+    expect(closed.status).toBe("closed");
+    // closeTask should delegate to archiveTask, so store.archiveTask is hit, not store.closeTask.
+    expect(archiveCalls).toEqual([{ taskId: task.id, now: "2026-04-27T00:00:10.000Z" }]);
+    expect(closeCalls).toEqual([]);
+  });
+
+  it("archiveTask throws when the task does not exist", async () => {
+    const workspace = workspaceRecord();
+    const service = new LedgerService({
+      store: fakeStore({
+        getWorkspaceByKey: async () => workspace,
+        getTaskByKey: async () => null,
+      }),
+      clock: { now: () => "2026-04-27T00:00:10.000Z" },
+      idFactory: (prefix) => `${prefix}_test`,
+    });
+
+    await expect(
+      service.archiveTask({ workspace: { key: workspace.key }, key: "missing" }),
+    ).rejects.toThrow(/Task not found: missing/);
+  });
 });
 
 function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
@@ -433,8 +514,8 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     getTaskByKey: async () => null,
     listTasks: async () => [],
     startTask: async () => taskRecord("ws_test"),
-    closeTask: async () => taskRecord("ws_test"),
-    archiveTask: async () => taskRecord("ws_test"),
+    closeTask: async () => ({ ...taskRecord("ws_test"), status: "closed" }),
+    archiveTask: async () => ({ ...taskRecord("ws_test"), status: "closed" }),
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
     updateRunTiming: async (input) => ({
