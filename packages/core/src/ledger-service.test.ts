@@ -434,6 +434,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     listTasks: async () => [],
     startTask: async () => taskRecord("ws_test"),
     closeTask: async () => taskRecord("ws_test"),
+    archiveTask: async () => taskRecord("ws_test"),
     createRun: async (input) => runRecord(input),
     getRunById: async () => null,
     updateRunTiming: async (input) => ({

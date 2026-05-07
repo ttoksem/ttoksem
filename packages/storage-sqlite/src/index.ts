@@ -564,6 +564,10 @@ export class SqliteLedgerStore implements LedgerStore {
     return task;
   }
 
+  async archiveTask(taskId: string, now: string): Promise<TaskRecord> {
+    return this.closeTask(taskId, now);
+  }
+
   async createRun(input: CreateRunInput): Promise<RunRecord> {
     this.db
       .prepare(
