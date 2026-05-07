@@ -67,6 +67,9 @@ importers:
       '@ttoksem/core':
         specifier: workspace:*
         version: link:../core
+      '@ttoksem/ledger-http':
+        specifier: workspace:*
+        version: link:../ledger-http
       '@ttoksem/providers':
         specifier: workspace:*
         version: link:../providers
@@ -86,6 +89,9 @@ importers:
         specifier: ^4.20.6
         version: 4.21.0
     devDependencies:
+      '@ttoksem/http':
+        specifier: workspace:*
+        version: link:../http
       '@types/node':
         specifier: ^22.15.2
         version: 22.19.17
@@ -130,6 +136,25 @@ importers:
         specifier: ^4.12.15
         version: 4.12.15
     devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@22.19.17)(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/ledger-http:
+    dependencies:
+      '@ttoksem/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ttoksem/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@ttoksem/http':
+        specifier: workspace:*
+        version: link:../http
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
