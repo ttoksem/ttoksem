@@ -631,7 +631,7 @@ function dailyReport(overrides: Partial<DailyReport> = {}): DailyReport {
 function pricingSnapshotRecord(overrides: Partial<PricingSourceSnapshotRecord>): PricingSourceSnapshotRecord {
   return {
     id: "price_snapshot_test",
-    source_name: "anthropic",
+    source_name: "litellm",
     source_url: null,
     source_version: null,
     source_commit: null,
