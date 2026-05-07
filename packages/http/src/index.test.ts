@@ -289,6 +289,48 @@ describe("createHttpApp auth", () => {
       app.request("/api/workspaces", { headers: { Authorization: "Bearer wrong-token" } }),
     ).resolves.toMatchObject({ status: 403 });
   });
+
+  it("lists inbox events via GET /api/inbox", async () => {
+    const app = createHttpApp({
+      service: fakeService({
+        listInbox: async () => [
+          usageEventRecord({ id: "evt_1" }),
+          usageEventRecord({ id: "evt_2" }),
+        ],
+      }),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    const response = await app.request("/api/inbox?workspace=test", {
+      headers: { Authorization: "Bearer valid-token" },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      events: [{ id: "evt_1" }, { id: "evt_2" }],
+    });
+  });
+
+  it("requires dashboard:read for GET /api/inbox", async () => {
+    const app = createHttpApp({
+      service: fakeService(),
+      defaultWorkspaceKey: "test",
+      auth: {
+        mode: "access-key",
+        verifyAccessToken: async ({ token, requiredScopes }) =>
+          token === "valid-token" && requiredScopes.includes("dashboard:read"),
+      },
+    });
+
+    await expect(app.request("/api/inbox?workspace=test")).resolves.toMatchObject({ status: 401 });
+    await expect(
+      app.request("/api/inbox?workspace=test", { headers: { Authorization: "Bearer wrong-token" } }),
+    ).resolves.toMatchObject({ status: 403 });
+  });
 });
 
 function fakeService(overrides: Partial<LedgerService> = {}): LedgerService {

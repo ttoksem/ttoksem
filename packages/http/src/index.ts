@@ -345,6 +345,17 @@ const routeListInboxGroups = createRoute({
   },
 });
 
+const routeListInbox = createRoute({
+  method: "get", path: "/api/inbox", tags: ["Inbox"],
+  summary: "List inbox events (events without an assigned task)", security: BEARER_AUTH,
+  request: { query: WorkspaceQuery.extend({ limit: z.string().optional() }) },
+  responses: {
+    200: { content: { "application/json": { schema: z.object({ events: z.array(UsageEventRecordSchema) }) } }, description: "Inbox events" },
+    401: { content: { "application/json": { schema: ErrorSchema } }, description: "Unauthorized" },
+    403: { content: { "application/json": { schema: ErrorSchema } }, description: "Forbidden" },
+  },
+});
+
 const routeRunActions = createRoute({
   method: "get", path: "/api/runs/{runId}/actions", tags: ["Runs"],
   summary: "List assistant actions reconstructed for a run", security: BEARER_AUTH,
@@ -691,6 +702,18 @@ export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
       limit: limit ? parseLimit(limit, 50) : 50,
     });
     return c.json({ groups }, 200);
+  });
+
+  app.openapi(routeListInbox, async (c) => {
+    const { workspace: wk, limit } = c.req.valid("query");
+    const workspaceKey = wk ?? defaultWorkspaceKey;
+    const authResponse = await authorizeRequest(c, options.auth, workspaceKey, ["dashboard:read"]);
+    if (authResponse) return authResponse as never;
+    const events = await options.service.listInbox({
+      workspace: workspaceResolver(workspaceKey),
+      limit: limit ? parseLimit(limit, 200) : 200,
+    });
+    return c.json({ events }, 200);
   });
 
   // ── Run actions ────────────────────────────────────────────────────────────
