@@ -155,7 +155,7 @@ task
       workspace: workspaceResolver(options),
       key: slug(key),
     });
-    console.log(`task ${archived.key} ${archived.status} ${archived.id}`);
+    console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
     await close();
   });
 
@@ -176,7 +176,7 @@ task
       workspace: workspaceResolver(options),
       key: slug(key),
     });
-    console.log(`task ${archived.key} ${archived.status} ${archived.id}`);
+    console.log(`task ${archived.key} ${archived.status} ${archived.id} ${archived.name}`);
     await close();
   });
 
