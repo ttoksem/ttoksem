@@ -23,7 +23,7 @@ import type {
 } from "./ledger-service.js";
 
 /**
- * Remote-safe business operations. HttpLedgerClient (Plan 3) implements
+ * Remote-safe business operations. HttpLedgerClient (Plan 4) implements
  * exactly this interface. Anything in here is callable over HTTP.
  *
  * `verifyAccessKey` lives here because the HTTP server uses it internally
@@ -32,7 +32,7 @@ import type {
  *
  * Active task is no longer a workspace-level concept; tasks must be
  * addressed by key, with shell-scoped TTOKSEM_TASK env var driving caller
- * defaults (Plan 3).
+ * defaults (shipped in Plan 3).
  */
 export interface Ledger {
   // Workspaces
@@ -166,7 +166,7 @@ export interface Ledger {
  * pricing-policy writes, and pricing-data maintenance.
  *
  * Intentionally NOT exposed over HTTP. The `Ledger` interface above is what
- * `HttpLedgerClient` (Plan 3) implements; admin operations are reachable
+ * `HttpLedgerClient` (Plan 4) implements; admin operations are reachable
  * only via the local CLI, which runs in-process with `LedgerService`.
  *
  * If a future plan ever exposes admin operations over HTTP, the right move

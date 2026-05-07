@@ -1205,6 +1205,46 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("emits a deprecation banner when running `task active`", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      runCli(["workspace", "init", "--key", "cli-test", "--root", tempDir], env);
+      runCli(["task", "start", "alpha", "--workspace", "cli-test"], env);
+
+      const result = runCliCaptureBoth(["task", "active", "--workspace", "cli-test"], env);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("alpha");
+      expect(result.stderr).toContain("[deprecation]");
+      expect(result.stderr).toContain("task active");
+      expect(result.stderr).toContain("$TTOKSEM_TASK");
+      expect(result.stderr).toContain("MIGRATION.md");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints a TTOKSEM_TASK export hint after `task start`", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      runCli(["workspace", "init", "--key", "cli-test", "--root", tempDir], env);
+
+      const result = runCliCaptureBoth(
+        ["task", "start", "design-feature", "--workspace", "cli-test"],
+        env,
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("task design-feature");
+      expect(result.stderr).toContain("hint:");
+      expect(result.stderr).toContain("export TTOKSEM_TASK=design-feature");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {
