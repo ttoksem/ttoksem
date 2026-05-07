@@ -62,7 +62,6 @@ export class SqliteLedgerStore implements LedgerStore {
         description TEXT,
         status TEXT NOT NULL,
         root_path TEXT,
-        active_task_id TEXT,
         source TEXT NOT NULL,
         external_ref_json TEXT,
         metadata_json TEXT,

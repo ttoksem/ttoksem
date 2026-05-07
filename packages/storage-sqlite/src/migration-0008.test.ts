@@ -102,22 +102,21 @@ describe("migration 0008_drop_active_task_id", () => {
         .all() as Array<{ name: string }>;
       const colNames = cols.map((c) => c.name);
       expect(colNames).not.toContain("active_task_id");
-      expect(colNames).toEqual(
-        expect.arrayContaining([
-          "id",
-          "key",
-          "name",
-          "description",
-          "status",
-          "root_path",
-          "source",
-          "external_ref_json",
-          "metadata_json",
-          "created_at",
-          "archived_at",
-          "updated_at",
-        ]),
-      );
+      const expected = [
+        "id",
+        "key",
+        "name",
+        "description",
+        "status",
+        "root_path",
+        "source",
+        "external_ref_json",
+        "metadata_json",
+        "created_at",
+        "archived_at",
+        "updated_at",
+      ];
+      expect(colNames.slice().sort()).toEqual(expected.slice().sort());
 
       const row = verify
         .prepare("SELECT id, key, status, root_path FROM workspaces WHERE id = ?")
