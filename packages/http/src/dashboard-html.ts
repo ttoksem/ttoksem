@@ -695,8 +695,12 @@ body {
           return { name: model, provider, cost: b.estimated_total, events: b.event_count, color: MODEL_COLORS[i % MODEL_COLORS.length] };
         });
 
+      // api.daily contains only days that actually have events, sorted ASC.
+      // The dashboard window is "last N days" (server passes dayLimit=30 for the
+      // workspace view), but we surface the real first→last range plus the count
+      // of *active* days so the label can't be mistaken for a calendar month.
       const period = api.daily.length >= 2
-        ? \`\${api.daily[0].date.slice(0, 7)} (\${api.daily.length}d)\`
+        ? \`\${api.daily[0].date} → \${api.daily[api.daily.length - 1].date} · \${api.daily.length}d active\`
         : api.daily[0]?.date || "—";
 
       const tokens = api.tasks.reduce((a, t) => a + (t.token_count || 0), 0);
@@ -976,7 +980,7 @@ body {
               <div className="eyebrow muted" style={{marginBottom: 12}}>Period</div>
               <div className="card" style={{padding: 14, borderRadius: "var(--r-lg)"}}>
                 <div style={{fontSize: 13, fontWeight: 500}}>{d.period}</div>
-                <div style={{fontSize: 11, color: "var(--text-slate)"}} className="mono">UTC · {d.daily.length} days</div>
+                <div style={{fontSize: 11, color: "var(--text-slate)"}} className="mono">UTC · {d.daily.length} active days</div>
               </div>
             </div>
 
@@ -1002,7 +1006,7 @@ body {
 
             {/* Hero strip */}
             <section style={{position: "relative", padding: "32px 0 24px"}}>
-              <div style={{position: "absolute", top: 24, left: -8, fontSize: 144, fontWeight: 500, letterSpacing: "-0.04em", color: "color-mix(in oklab, var(--text-ink) 5%, transparent)", lineHeight: 0.85, pointerEvents: "none", whiteSpace: "nowrap"}}>monthly report</div>
+              <div style={{position: "absolute", top: 24, left: -8, fontSize: 144, fontWeight: 500, letterSpacing: "-0.04em", color: "color-mix(in oklab, var(--text-ink) 5%, transparent)", lineHeight: 0.85, pointerEvents: "none", whiteSpace: "nowrap"}}>recent activity</div>
               <div style={{position: "relative", paddingTop: 80, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 32, flexWrap: "wrap"}}>
                 <div>
                   <div className="eyebrow" style={{marginBottom: 12}}>{d.workspace} · {d.period}</div>
