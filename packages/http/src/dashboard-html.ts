@@ -888,6 +888,12 @@ body {
       const firstDate = d.dailyDates?.[0] || "";
       const lastDate = d.dailyDates?.[d.dailyDates.length - 1] || "";
 
+      // Paginate the task table — server caps at taskLimit (default 80) and
+      // workspaces with that many active tasks render an unwieldy scroll list
+      // without pagination. 10 rows per page lines up with the Inbox + Tasks
+      // sidebar items below the fold.
+      const tasksPage = usePaginated(d.tasks, 10);
+
       return (
         <div style={{background: "var(--surface-canvas)", display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh"}}>
           {/* Sidebar */}
@@ -1317,36 +1323,39 @@ body {
                 </div>
               </div>
               {d.tasks.length > 0 ? (
-                <table className="t">
-                  <thead><tr>
-                    <th>task_id</th>
-                    <th>model</th>
-                    <th style={{textAlign: "right"}}>events</th>
-                    <th style={{textAlign: "right"}}>runs</th>
-                    <th style={{textAlign: "right"}}>% of total</th>
-                    <th style={{textAlign: "right"}}>cost (usd)</th>
-                  </tr></thead>
-                  <tbody>
-                    {d.tasks.map(t => (
-                      <tr key={t.id} style={{cursor: "pointer"}} onClick={() => {
-                        if (!onNav) return;
-                        // "unassigned" is a synthetic bucket for inbox events, not a real task.
-                        if (t.id === "unassigned") onNav("inbox");
-                        else onNav("task", t.id);
-                      }}>
-                        <td className="mono" style={{fontSize: 13}}>
-                          {t.id}
-                          {t.id === "unassigned" && <span className="chip chip--orange" style={{fontSize: 9, marginLeft: 8}}>inbox</span>}
-                        </td>
-                        <td><span className="chip" style={{fontSize: 11}}>{t.model}</span></td>
-                        <td className="tnum" style={{textAlign: "right"}}>{t.events}</td>
-                        <td className="tnum" style={{textAlign: "right"}}>{t.runs}</td>
-                        <td className="tnum" style={{textAlign: "right", color: "var(--text-slate)"}}>{d.totalCost > 0 ? ((t.cost / d.totalCost) * 100).toFixed(1) : "0.0"}%</td>
-                        <td style={{textAlign: "right", fontWeight: 500}} className="tnum">\${t.cost.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <>
+                  <table className="t">
+                    <thead><tr>
+                      <th>task_id</th>
+                      <th>model</th>
+                      <th style={{textAlign: "right"}}>events</th>
+                      <th style={{textAlign: "right"}}>runs</th>
+                      <th style={{textAlign: "right"}}>% of total</th>
+                      <th style={{textAlign: "right"}}>cost (usd)</th>
+                    </tr></thead>
+                    <tbody>
+                      {tasksPage.slice.map(t => (
+                        <tr key={t.id} style={{cursor: "pointer"}} onClick={() => {
+                          if (!onNav) return;
+                          // "unassigned" is a synthetic bucket for inbox events, not a real task.
+                          if (t.id === "unassigned") onNav("inbox");
+                          else onNav("task", t.id);
+                        }}>
+                          <td className="mono" style={{fontSize: 13}}>
+                            {t.id}
+                            {t.id === "unassigned" && <span className="chip chip--orange" style={{fontSize: 9, marginLeft: 8}}>inbox</span>}
+                          </td>
+                          <td><span className="chip" style={{fontSize: 11}}>{t.model}</span></td>
+                          <td className="tnum" style={{textAlign: "right"}}>{t.events}</td>
+                          <td className="tnum" style={{textAlign: "right"}}>{t.runs}</td>
+                          <td className="tnum" style={{textAlign: "right", color: "var(--text-slate)"}}>{d.totalCost > 0 ? ((t.cost / d.totalCost) * 100).toFixed(1) : "0.0"}%</td>
+                          <td style={{textAlign: "right", fontWeight: 500}} className="tnum">\${t.cost.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <Paginator {...tasksPage} onChange={tasksPage.setPage} label="tasks"/>
+                </>
               ) : (
                 <div style={{fontSize: 13, color: "var(--text-slate)", padding: "16px 0"}}>No tasks found</div>
               )}
