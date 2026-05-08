@@ -144,7 +144,7 @@ Stored timestamps are UTC ISO text. The browser dashboard keeps those source val
 
 ## Prompt Retention Policy
 
-`usage chat-turn`, `usage import-codex-sessions`, `usage claude-turn`, and `usage import-claude-sessions` default to `--prompt-mode full` for local Codex/Claude logging, because the task and run reports use prompt samples to explain where tokens were spent.
+`usage codex-turn`, `usage import-codex-sessions`, `usage claude-turn`, and `usage import-claude-sessions` default to `--prompt-mode full` for local Codex/Claude logging, because the task and run reports use prompt samples to explain where tokens were spent.
 
 Sensitive workspaces can choose stricter modes:
 
@@ -219,32 +219,80 @@ Use `TTOKSEM_DB=/path/to/ttoksem.db` to select a local SQLite file. Without it, 
 The pricing numbers below are example rules, not provider price guidance.
 
 ```bash
+# Setup
 pnpm cli workspace init --key ttoksem-dev --root .
+pnpm cli workspace list
 pnpm cli task start implement-chat-usage-logging --workspace ttoksem-dev
+export TTOKSEM_TASK=implement-chat-usage-logging   # see "Shell-scoped active task" below
+
+# Pricing setup
 pnpm cli pricing snapshot upsert --id price_snapshot_example --source-name litellm --raw-sha256 sha256:example --source-commit example --valid-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing import-litellm --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --file .ttoksem/pricing-snapshots/litellm-model-prices.json
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type input_token --price 0.10 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
 pnpm cli pricing upsert --workspace ttoksem-dev --source-snapshot-id price_snapshot_example --provider openai --model codex-chat --usage-kind conversation_turn --unit-type output_token --price 0.50 --per 1000000 --effective-from 2026-01-01T00:00:00.000Z
-pnpm cli usage chat-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
+
+# Usage ingest (Codex / Claude / OpenAI)
+pnpm cli usage codex-turn --workspace ttoksem-dev --task implement-chat-usage-logging --started-at 2026-04-27T05:00:00.000Z --ended-at 2026-04-27T05:00:03.000Z
 pnpm cli usage openai-response --workspace ttoksem-dev --task implement-chat-usage-logging --file ./openai-response.json --operation chat.completions.create
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5 --dry-run
 pnpm cli usage import-codex-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --thread-id <codex_thread_id> --model gpt-5.5
 pnpm cli usage claude-turn --workspace ttoksem-dev --task implement-chat-usage-logging --prompt-text "manual claude turn" --input-chars 80 --output-chars 200
 pnpm cli usage import-claude-sessions --workspace ttoksem-dev --task implement-chat-usage-logging --dry-run
 pnpm cli usage import-claude-sessions --workspace ttoksem-dev --task implement-chat-usage-logging
+
+# Maintenance
 pnpm cli pricing reprice --workspace ttoksem-dev
 pnpm cli pricing migrate-events --workspace ttoksem-dev
+
+# Auth + access keys
 pnpm cli auth key create --name "hwanghee dashboard" --scope dashboard:read
 pnpm cli auth key create --name "http writer" --scope api:write --workspace-scope ttoksem-dev
+
+# Inbox
 pnpm cli inbox list --workspace ttoksem-dev
 pnpm cli inbox show <inbox_group_id> --workspace ttoksem-dev
 pnpm cli inbox accept <inbox_group_id> --workspace ttoksem-dev --all
 pnpm cli inbox assign <inbox_group_id> --workspace ttoksem-dev --task implement-chat-usage-logging --all
 pnpm cli inbox assign-event <usage_id> --workspace ttoksem-dev --task implement-chat-usage-logging
+
+# Reports + dashboard
+pnpm cli report today --workspace ttoksem-dev
 pnpm cli report task implement-chat-usage-logging --workspace ttoksem-dev
 pnpm cli dashboard serve --workspace ttoksem-dev --port 4317
+
+# Wrap up
+pnpm cli task archive implement-chat-usage-logging --workspace ttoksem-dev
+unset TTOKSEM_TASK
 ```
 
-If `usage chat-turn` or `usage import-codex-sessions` is recorded without `--task`, the event remains unassigned and appears in `inbox list`. The default inbox view is group-based; use `inbox list --events` for the raw event list. `usage codex-turn` remains available as the current Codex logging compatibility command.
+If `usage codex-turn` / `usage claude-turn` / `usage import-*-sessions` is recorded without `--task` (and `$TTOKSEM_TASK` is unset), the event remains unassigned and appears in `inbox list`. The default inbox view is group-based; use `inbox list --events` for the raw event list.
 
-For Codex-agent workflows, `usage import-codex-sessions` is intended to be called by the agent, skill, or local hook as part of the work loop. The user should not need to run the import command manually after each request.
+For Codex/Claude-agent workflows, `usage import-codex-sessions` and `usage import-claude-sessions` are intended to be called by the agent, skill, or local hook as part of the work loop. The user should not need to run the import command manually after each request.
+
+### Shell-scoped active task (`TTOKSEM_TASK`)
+
+The autocapture Stop hook reads `$TTOKSEM_TASK` directly. When set, imported events are attributed to that task; when unset, events fall through to the inbox for later classification via `pnpm cli inbox accept`. Because the variable is shell-scoped, two terminals can each have their own active task without collision.
+
+`pnpm cli task start <key>` prints a stderr hint suggesting the matching `export TTOKSEM_TASK=<key>` line, so you don't have to remember to copy the key by hand.
+
+### Renamed and deprecated commands
+
+- `task close` is renamed to `task archive`. The old name still works but prints a deprecation banner; it will be removed on `2026-11-07`.
+- `task active` is deprecated on the same timeline. Use `echo $TTOKSEM_TASK` to read the current shell-scoped task, or `task list` to see tasks with `status='active'` in the ledger.
+- `closeTask({ workspace })` (no key) is removed: `key` is now required. Pass the task key explicitly or use `task archive <key>`.
+
+See [MIGRATION.md](MIGRATION.md) for full sunset timeline and rollback notes.
+
+### Remote mode
+
+The CLI can talk to a running ttoksem server instead of the local SQLite DB. Set `TTOKSEM_HTTP_URL` (and `TTOKSEM_HTTP_TOKEN` if the server enforces auth) before invoking the CLI:
+
+```bash
+export TTOKSEM_HTTP_URL=https://ledger.example.com
+export TTOKSEM_HTTP_TOKEN=ttoksem_live_…
+pnpm cli task list --workspace ttoksem-dev
+```
+
+Subcommands needing admin or filesystem capabilities (`workspace init`/`current`, `auth key *`, `pricing snapshot/rule upsert`, `pricing import-litellm`, `pricing reprice`, `pricing migrate-events`, `usage codex-turn`/`claude-turn`/`import-*-sessions`/`openai-response`/`anthropic-response`, `dashboard serve`, `doctor`) hard-error in remote mode with a clear "requires local DB" message.
+
+See [docs/REMOTE-MODE.md](docs/REMOTE-MODE.md) for the env vars, supported subcommand list, error mapping, and limitations.
