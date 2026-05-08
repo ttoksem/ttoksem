@@ -93,6 +93,47 @@ export function registerAuthCommands(
         await handle.close();
       }
     });
+
+  authKey
+    .command("reset")
+    .argument("<id>", "existing access key id to rotate")
+    .option("--name <name>", "override the new key name (default: copy from old key)")
+    .description("Rotate an access key: mint a new token preserving name/scopes/workspaces, then revoke the old one")
+    .action(async (id: string, options: { name?: string }) => {
+      const handle = await makeLedgerFn();
+      try {
+        const service = requireLocalLedgerFn(handle);
+        const keys = await service.listAccessKeys();
+        const old = keys.find((k) => k.id === id);
+        if (!old) {
+          throw new Error(`access key not found: ${id}`);
+        }
+        if (old.revoked_at) {
+          // Refuse to "reset" an already-revoked key — the operator probably
+          // wants `auth key create` instead. Resetting a revoked key would
+          // silently materialize a new active key from a revoked context,
+          // which is surprising.
+          throw new Error(`access key ${id} is already revoked. Use \`auth key create\` to mint a fresh key.`);
+        }
+        const result = await createAccessKeyWithToken(service, {
+          name: options.name ?? old.name,
+          scopes: old.scopes_json,
+          workspaceKeys:
+            old.workspace_keys_json && old.workspace_keys_json.length > 0
+              ? old.workspace_keys_json
+              : undefined,
+          expiresAt: old.expires_at ?? undefined,
+        });
+        await service.revokeAccessKey({ id: old.id });
+        console.log(
+          `access key ${result.key.id} prefix=${result.key.token_prefix} scopes=${result.key.scopes_json.join(",")} workspaces=${accessKeyWorkspaces(result.key)}`,
+        );
+        console.log(`token ${result.token}`);
+        console.log(`(revoked old key ${old.id})`);
+      } finally {
+        await handle.close();
+      }
+    });
 }
 
 export async function ensureDashboardAccessKey(
