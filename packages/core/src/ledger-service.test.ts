@@ -583,6 +583,7 @@ function fakeStore(overrides: Partial<LedgerStore>): LedgerStore {
     listDashboardPricingModeBreakdownForTask: async () => [],
     listDashboardAccuracyModeBreakdown: async () => [],
     listDashboardAccuracyModeBreakdownForTask: async () => [],
+    listDashboardProviderModelBreakdown: async () => [],
     listDashboardProviderModelBreakdownForTask: async () => [],
     listDashboardDailyCosts: async () => [],
     listDashboardDailyCostsForTask: async () => [],

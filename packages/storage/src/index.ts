@@ -354,6 +354,10 @@ export interface LedgerStore {
     workspaceId: string,
     taskId: string,
   ): Promise<DashboardBreakdownRow[]>;
+  listDashboardProviderModelBreakdown(
+    workspaceId: string,
+    limit: number,
+  ): Promise<DashboardBreakdownRow[]>;
   listDashboardProviderModelBreakdownForTask(
     workspaceId: string,
     taskId: string,

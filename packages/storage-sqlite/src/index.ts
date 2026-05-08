@@ -1371,6 +1371,25 @@ export class SqliteLedgerStore implements LedgerStore {
       .all(workspaceId, taskId) as DashboardBreakdownRow[];
   }
 
+  async listDashboardProviderModelBreakdown(
+    workspaceId: string,
+    limit: number,
+  ): Promise<DashboardBreakdownRow[]> {
+    return this.db
+      .prepare(
+        `SELECT
+           provider || '/' || model AS key,
+           COUNT(*) AS event_count,
+           COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
+         FROM usage_events
+         WHERE workspace_id = ?
+         GROUP BY provider, model
+         ORDER BY estimated_cost_nanos DESC, event_count DESC
+         LIMIT ?`,
+      )
+      .all(workspaceId, limit) as DashboardBreakdownRow[];
+  }
+
   async listDashboardProviderModelBreakdownForTask(
     workspaceId: string,
     taskId: string,

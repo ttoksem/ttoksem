@@ -418,7 +418,7 @@ function dashboardData(): DashboardData {
       assigned_count: 0, task_count: 0, run_count: 0,
     },
     attention: [], insights: [], task_insights: [], tasks: [],
-    recent: [], pricing_breakdown: [], accuracy_breakdown: [], daily: [],
+    recent: [], pricing_breakdown: [], accuracy_breakdown: [], provider_breakdown: [], daily: [],
   } as DashboardData;
 }
 

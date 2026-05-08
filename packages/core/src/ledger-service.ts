@@ -174,6 +174,12 @@ export interface DashboardData {
     event_count: number;
     estimated_total: number;
   }>;
+  /** Top provider/model combinations by cost. Keys are `<provider>/<model>`. */
+  provider_breakdown: Array<{
+    key: string;
+    event_count: number;
+    estimated_total: number;
+  }>;
   accuracy_breakdown: Array<{
     key: string;
     event_count: number;
@@ -916,6 +922,7 @@ export class LedgerService implements LocalLedger {
       accuracyBreakdown,
       daily,
       unpricedGroups,
+      providerBreakdown,
     ] = await Promise.all([
       this.store.getDashboardSummary(workspace.id),
       this.store.listDashboardTaskCosts(workspace.id, input.taskLimit ?? 20),
@@ -929,6 +936,7 @@ export class LedgerService implements LocalLedger {
         input.timeZoneOffsetMinutes,
       ),
       this.store.listUnpricedProviderModelGroups(workspace.id, 5),
+      this.store.listDashboardProviderModelBreakdown(workspace.id, 10),
     ]);
     const taskInsights = buildTaskInsights(taskInsightRows);
     const { attention, insights } = buildAttention(summary, taskInsights, unpricedGroups);
@@ -962,6 +970,11 @@ export class LedgerService implements LocalLedger {
       })),
       recent: recent.map(toDashboardRecent),
       pricing_breakdown: pricingBreakdown.map((row) => ({
+        key: row.key,
+        event_count: row.event_count,
+        estimated_total: nanosToDecimal(row.estimated_cost_nanos),
+      })),
+      provider_breakdown: providerBreakdown.map((row) => ({
         key: row.key,
         event_count: row.event_count,
         estimated_total: nanosToDecimal(row.estimated_cost_nanos),

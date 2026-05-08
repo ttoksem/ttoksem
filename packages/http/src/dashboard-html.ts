@@ -683,7 +683,10 @@ body {
     const MODEL_COLORS = ["#CF4500", "#141413", "#3860BE", "#C97A1B", "#1F6F3D"];
 
     function mapDashboard(api, workspaceKey) {
-      const models = api.pricing_breakdown
+      // Use provider_breakdown (provider/model) — pricing_breakdown is
+      // pricing-mode (rule_calculated/unpriced/unknown) and won't have a
+      // slash, which collapsed the providers panel into one "unknown" row.
+      const models = (api.provider_breakdown ?? [])
         .slice(0, 5)
         .map((b, i) => {
           const parts = b.key.split("/");

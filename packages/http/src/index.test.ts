@@ -685,6 +685,7 @@ function dashboardData(): DashboardData {
     recent: [],
     pricing_breakdown: [],
     accuracy_breakdown: [],
+    provider_breakdown: [],
     daily: [],
   };
 }

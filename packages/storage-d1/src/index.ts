@@ -1117,6 +1117,27 @@ export class D1LedgerStore implements LedgerStore {
     return this.breakdown("accuracy_mode", "workspace_id = ? AND task_id = ?", [workspaceId, taskId]);
   }
 
+  async listDashboardProviderModelBreakdown(
+    workspaceId: string,
+    limit: number,
+  ): Promise<DashboardBreakdownRow[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT
+           provider || '/' || model AS key,
+           COUNT(*) AS event_count,
+           COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos
+         FROM usage_events
+         WHERE workspace_id = ?
+         GROUP BY provider, model
+         ORDER BY estimated_cost_nanos DESC, event_count DESC
+         LIMIT ?`,
+      )
+      .bind(workspaceId, limit)
+      .all<DashboardBreakdownRow>();
+    return (result.results ?? []) as DashboardBreakdownRow[];
+  }
+
   async listDashboardProviderModelBreakdownForTask(
     workspaceId: string,
     taskId: string,
