@@ -216,7 +216,16 @@ Use `TTOKSEM_DB=/path/to/ttoksem.db` to select a local SQLite file. Without it, 
 
 ## Current CLI Slice
 
-The pricing numbers below are example rules, not provider price guidance.
+Discover commands and options interactively:
+
+```bash
+pnpm cli --help                  # top-level command groups
+pnpm cli task --help             # subcommands under one group
+pnpm cli task start --help       # arguments + options for a leaf command
+pnpm cli help <command>          # equivalent to <command> --help
+```
+
+`--version` prints the CLI version. The pricing numbers below are example rules, not provider price guidance.
 
 ```bash
 # Setup
