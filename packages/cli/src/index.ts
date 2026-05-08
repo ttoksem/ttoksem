@@ -32,6 +32,38 @@ import {
   registerAuthCommands,
 } from "./auth.js";
 import { makeLedger, requireLocalLedger } from "./ledger-factory.js";
+import { HttpLedgerError } from "@ttoksem/ledger-http";
+
+/**
+ * Translate top-level CLI errors into actionable single-line stderr
+ * messages. Most errors are local Error objects whose `.message` is
+ * already user-readable; HttpLedgerError needs status-aware framing.
+ */
+function formatCliError(error: unknown): string {
+  if (error instanceof HttpLedgerError) {
+    const detail = error.body?.detail ?? error.body?.error;
+    const suffix = detail ? ` — ${detail}` : "";
+    switch (error.status) {
+      case 0:
+        return `${error.message}. Check that TTOKSEM_HTTP_URL is reachable, or unset it to fall back to local mode.`;
+      case 401:
+        return `Authentication failed (HTTP 401)${suffix}. Set or refresh TTOKSEM_HTTP_TOKEN.`;
+      case 403:
+        return `Authorization failed (HTTP 403)${suffix}. The token is missing the required scope (typically dashboard:read for reads or api:write for mutations).`;
+      case 404:
+        return `Not found (HTTP 404)${suffix}.`;
+      case 410:
+        return `Endpoint removed (HTTP 410)${suffix}. Run \`pnpm cli --help\` to see current commands.`;
+      default:
+        if (error.status >= 500) {
+          return `Server error (HTTP ${error.status})${suffix}. Check the ttoksem server logs.`;
+        }
+        return `${error.message}${suffix}`;
+    }
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 /**
  * Adapter that turns the existing makeService() into the shape the
@@ -1017,7 +1049,7 @@ report
   });
 
 program.parseAsync().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(formatCliError(error));
   process.exitCode = 1;
 });
 
