@@ -747,7 +747,6 @@ body {
         workspace: workspaceKey,
         period,
         totalCost: api.summary.estimated_total,
-        prevCost: api.summary.estimated_total * 1.15,
         events: api.summary.event_count,
         tokens,
         unpriced: api.summary.unpriced_count,
@@ -875,7 +874,6 @@ body {
 
     const CompactPro = ({ data, onNav }) => {
       const d = data;
-      const delta = d.prevCost > 0 ? ((d.totalCost - d.prevCost) / d.prevCost) * 100 : 0;
       const maxDay = Math.max(...d.daily, 0.01);
       const total = d.daily.reduce((a, b) => a + b, 0);
 
@@ -1012,11 +1010,6 @@ body {
                   <div className="eyebrow" style={{marginBottom: 12}}>{d.workspace} · {d.period}</div>
                   <div style={{display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap"}}>
                     <div style={{fontSize: 88, fontWeight: 500, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums"}}>\${d.totalCost.toFixed(2)}</div>
-                    {delta !== 0 && (
-                      <div className={\`kpi__delta \${delta < 0 ? "kpi__delta--pos" : "kpi__delta--neg"}\`} style={{fontSize: 14}}>
-                        {delta < 0 ? "↓" : "↑"} {Math.abs(delta).toFixed(1)}% vs prev
-                      </div>
-                    )}
                     <span className="chip" style={{fontSize: 11}}>USD</span>
                   </div>
                   <p className="t-small muted" style={{margin: "8px 0 0", maxWidth: 540}}>
@@ -1032,7 +1025,6 @@ body {
                 <div className="kpi__label">Total cost</div>
                 <div className="kpi__value tnum">\${d.totalCost.toFixed(2)}</div>
                 <Sparkline data={d.daily} color="var(--text-ink)" height={28}/>
-                {delta !== 0 && <div className={\`kpi__delta \${delta < 0 ? "kpi__delta--pos" : "kpi__delta--neg"}\`} style={{fontSize: 11}}>{delta < 0 ? "↓" : "↑"} {Math.abs(delta).toFixed(1)}% MoM</div>}
               </div>
               <div className="kpi" style={{padding: 18}}>
                 <div className="kpi__label">Events</div>
