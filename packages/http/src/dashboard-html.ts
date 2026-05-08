@@ -1248,8 +1248,8 @@ body {
                 timestamp). Cards are clickable; the most-recent prompt sits
                 underneath each task name as the obvious "what was this
                 about" cue. Avoids the word "active" because that's now
-                overloaded (lifecycle status='active', $TTOKSEM_TASK,
-                deprecated CLI `task active`). */}
+                overloaded (lifecycle status, shell-scoped task env var,
+                and the deprecated CLI subcommand of the same name). */}
             {d.recentTasks && d.recentTasks.length > 0 && (
               <section id="recent-tasks" className="card" style={{padding: 24, marginBottom: 16}}>
                 <div className="flex justify-between items-center mb-4">
