@@ -18,6 +18,25 @@ Current scope:
 - Hono HTTP package and local server entrypoint for the dashboard and write API
 - Database access-key guard for local dashboard/API data
 
+## Quick Start
+
+Install the CLI (requires Node 22.5 or newer):
+
+    npm install -g ttoksem
+
+In a project where you use Claude Code, set it up:
+
+    ttoksem init
+
+`ttoksem init` creates a local ledger at `.ttoksem/ttoksem.db` and, with your
+consent, installs a Claude Code Stop hook that captures token usage
+automatically after every turn.
+
+See your usage:
+
+    ttoksem dashboard serve     # local web dashboard
+    ttoksem report today        # today's cost in the terminal
+
 ## MVP Checkpoint
 
 The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, prompt snapshot retention/redaction modes, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, write-capable HTTP API routes, and a D1-backed Worker entrypoint.
