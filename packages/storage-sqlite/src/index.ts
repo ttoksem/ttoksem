@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import {
   AccessKeyRecordSchema,
   PricingRuleRecordSchema,
@@ -40,12 +40,40 @@ import type {
 } from "@ttoksem/storage";
 
 export class SqliteLedgerStore implements LedgerStore {
-  private readonly db: Database.Database;
+  private readonly db: DatabaseSync;
 
   constructor(path: string) {
-    this.db = new Database(path);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
+    this.db = new DatabaseSync(path);
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA foreign_keys = ON");
+  }
+
+  /**
+   * Prepare a statement with bare named-parameter support enabled (node:sqlite compat).
+   * Returns a loosely-typed wrapper so callers can pass typed objects and receive
+   * typed rows without explicit casts at every call site.
+   */
+  private prepare(sql: string) {
+    type SQLIn = import("node:sqlite").SQLInputValue;
+    const stmt = this.db.prepare(sql);
+    stmt.setAllowBareNamedParameters(true);
+    // Return a wrapper with relaxed types to match the better-sqlite3 calling convention:
+    // - accepts any object as named-parameter binding (or positional scalars)
+    // - returns unknown for get() and unknown[] for all()
+    return {
+      run: (...args: unknown[]) =>
+        args.length === 0
+          ? stmt.run()
+          : stmt.run(args[0] as Record<string, SQLIn>, ...args.slice(1) as SQLIn[]),
+      get: (...args: unknown[]) =>
+        (args.length === 0
+          ? stmt.get()
+          : stmt.get(args[0] as Record<string, SQLIn>, ...args.slice(1) as SQLIn[])) as unknown,
+      all: (...args: unknown[]) =>
+        (args.length === 0
+          ? stmt.all()
+          : stmt.all(args[0] as Record<string, SQLIn>, ...args.slice(1) as SQLIn[])) as unknown[],
+    };
   }
 
   async migrate(): Promise<void> {
@@ -221,8 +249,7 @@ export class SqliteLedgerStore implements LedgerStore {
         ON usage_events(workspace_id, assignment_status, occurred_at);
     `);
 
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0001_initial", new Date().toISOString());
     addColumnIfMissing(this.db, "usage_events", "observed_currency", "TEXT");
     addColumnIfMissing(this.db, "usage_events", "estimated_currency", "TEXT");
@@ -238,8 +265,7 @@ export class SqliteLedgerStore implements LedgerStore {
         ON pricing_rules(source_snapshot_id);
     `);
     if (hasColumn(this.db, "usage_events", "currency")) {
-      this.db
-        .prepare(
+      this.prepare(
           `UPDATE usage_events
            SET observed_currency = COALESCE(observed_currency, currency),
                estimated_currency = COALESCE(estimated_currency, currency)
@@ -247,29 +273,22 @@ export class SqliteLedgerStore implements LedgerStore {
         )
         .run();
     }
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0002_split_usage_event_currency", new Date().toISOString());
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0003_create_runs", new Date().toISOString());
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0004_pricing_rules", new Date().toISOString());
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0005_pricing_source_snapshots", new Date().toISOString());
     this.dropRunSessionIdIfPresent();
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0006_remove_run_session_id", new Date().toISOString());
     this.migrateAccessKeysToDbScopeIfNeeded();
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0007_db_access_keys", new Date().toISOString());
     this.dropWorkspaceActiveTaskIdIfPresent();
-    this.db
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+    this.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run("0008_drop_active_task_id", new Date().toISOString());
   }
 
@@ -279,9 +298,10 @@ export class SqliteLedgerStore implements LedgerStore {
     // Other tables hold FKs into workspaces(id), so we disable foreign_keys
     // for the duration of the rebuild (same approach as
     // dropRunSessionIdIfPresent above).
-    this.db.pragma("foreign_keys = OFF");
+    this.db.exec("PRAGMA foreign_keys = OFF");
     try {
-      this.db.transaction(() => {
+      this.db.exec("BEGIN");
+      try {
         this.db.exec(`
           DROP INDEX IF EXISTS workspaces_active_root_path_idx;
 
@@ -316,15 +336,19 @@ export class SqliteLedgerStore implements LedgerStore {
             ON workspaces(root_path)
             WHERE root_path IS NOT NULL AND status = 'active';
         `);
-      })();
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
     } finally {
-      this.db.pragma("foreign_keys = ON");
+      this.db.exec("PRAGMA foreign_keys = ON");
     }
   }
 
   private dropRunSessionIdIfPresent(): void {
     if (!hasColumn(this.db, "runs", "session_id")) return;
-    this.db.pragma("foreign_keys = OFF");
+    this.db.exec("PRAGMA foreign_keys = OFF");
     try {
       this.db.exec(`
         DROP INDEX IF EXISTS runs_workspace_status_idx;
@@ -360,20 +384,20 @@ export class SqliteLedgerStore implements LedgerStore {
         CREATE INDEX IF NOT EXISTS runs_workspace_task_idx ON runs(workspace_id, task_id);
       `);
     } finally {
-      this.db.pragma("foreign_keys = ON");
+      this.db.exec("PRAGMA foreign_keys = ON");
     }
   }
 
   private migrateAccessKeysToDbScopeIfNeeded(): void {
     const columns = columnNames(this.db, "access_keys");
     if (!columns.includes("workspace_id") && columns.includes("workspace_keys_json")) return;
-    const rows = this.db.prepare("SELECT * FROM access_keys").all() as DbRow[];
+    const rows = this.prepare("SELECT * FROM access_keys").all() as DbRow[];
     const workspaces = new Map(
-      (this.db.prepare("SELECT id, key FROM workspaces").all() as Array<{ id: string; key: string }>).map(
+      (this.prepare("SELECT id, key FROM workspaces").all() as Array<{ id: string; key: string }>).map(
         (workspace) => [workspace.id, workspace.key],
       ),
     );
-    this.db.pragma("foreign_keys = OFF");
+    this.db.exec("PRAGMA foreign_keys = OFF");
     try {
       this.db.exec(`
         DROP INDEX IF EXISTS access_keys_workspace_idx;
@@ -399,7 +423,7 @@ export class SqliteLedgerStore implements LedgerStore {
         CREATE INDEX IF NOT EXISTS access_keys_active_idx
           ON access_keys(revoked_at, expires_at);
       `);
-      const insert = this.db.prepare(
+      const insert = this.prepare(
         `INSERT OR IGNORE INTO access_keys (
           id, name, token_prefix, token_hash, scopes_json, workspace_keys_json,
           expires_at, revoked_at, last_used_at, created_at, updated_at
@@ -429,7 +453,7 @@ export class SqliteLedgerStore implements LedgerStore {
       }
       this.db.exec("DROP TABLE access_keys_old;");
     } finally {
-      this.db.pragma("foreign_keys = ON");
+      this.db.exec("PRAGMA foreign_keys = ON");
     }
   }
 
@@ -438,8 +462,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO workspaces (
           id, key, name, description, status, root_path, source,
           external_ref_json, metadata_json, created_at, archived_at, updated_at
@@ -455,27 +478,25 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async getWorkspaceById(id: string): Promise<WorkspaceRecord | null> {
-    return parseWorkspace(this.db.prepare("SELECT * FROM workspaces WHERE id = ?").get(id));
+    return parseWorkspace(this.prepare("SELECT * FROM workspaces WHERE id = ?").get(id));
   }
 
   async getWorkspaceByKey(key: string): Promise<WorkspaceRecord | null> {
-    return parseWorkspace(this.db.prepare("SELECT * FROM workspaces WHERE key = ?").get(key));
+    return parseWorkspace(this.prepare("SELECT * FROM workspaces WHERE key = ?").get(key));
   }
 
   async getWorkspaceByRootPath(rootPath: string): Promise<WorkspaceRecord | null> {
-    return parseWorkspace(this.db.prepare("SELECT * FROM workspaces WHERE root_path = ?").get(rootPath));
+    return parseWorkspace(this.prepare("SELECT * FROM workspaces WHERE root_path = ?").get(rootPath));
   }
 
   async listWorkspaces(): Promise<WorkspaceRecord[]> {
-    return this.db
-      .prepare("SELECT * FROM workspaces ORDER BY created_at ASC")
+    return this.prepare("SELECT * FROM workspaces ORDER BY created_at ASC")
       .all()
       .map((row) => WorkspaceRecordSchema.parse(fromDbJson(row as DbRow)));
   }
 
   async createTask(input: CreateTaskInput): Promise<TaskRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO tasks (
           id, workspace_id, key, name, description, type, status, definition_mode, source,
           external_ref_json, labels_json, metadata_json, created_at, started_at, closed_at, updated_at
@@ -499,8 +520,7 @@ export class SqliteLedgerStore implements LedgerStore {
     description?: string | null;
     now: string;
   }): Promise<TaskRecord> {
-    const result = this.db
-      .prepare(
+    const result = this.prepare(
         `UPDATE tasks
          SET name = COALESCE(@name, name),
              description = CASE
@@ -517,32 +537,30 @@ export class SqliteLedgerStore implements LedgerStore {
         descriptionProvided: Object.hasOwn(input, "description") ? 1 : 0,
         now: input.now,
       });
-    if (result.changes === 0) throw new Error("Task not found.");
+    if (Number(result.changes) === 0) throw new Error("Task not found.");
     const task = await this.getTaskById(input.taskId);
     if (!task) throw new Error("Task not found.");
     return task;
   }
 
   async getTaskById(id: string): Promise<TaskRecord | null> {
-    return parseTask(this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id));
+    return parseTask(this.prepare("SELECT * FROM tasks WHERE id = ?").get(id));
   }
 
   async getTaskByKey(workspaceId: string, key: string): Promise<TaskRecord | null> {
     return parseTask(
-      this.db.prepare("SELECT * FROM tasks WHERE workspace_id = ? AND key = ?").get(workspaceId, key),
+      this.prepare("SELECT * FROM tasks WHERE workspace_id = ? AND key = ?").get(workspaceId, key),
     );
   }
 
   async listTasks(workspaceId: string): Promise<TaskRecord[]> {
-    return this.db
-      .prepare("SELECT * FROM tasks WHERE workspace_id = ? ORDER BY created_at ASC")
+    return this.prepare("SELECT * FROM tasks WHERE workspace_id = ? ORDER BY created_at ASC")
       .all(workspaceId)
       .map((row) => TaskRecordSchema.parse(fromDbJson(row as DbRow)));
   }
 
   async startTask(taskId: string, now: string): Promise<TaskRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         `UPDATE tasks
          SET status = 'active', started_at = COALESCE(started_at, @now), closed_at = NULL, updated_at = @now
          WHERE id = @taskId`,
@@ -554,8 +572,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async closeTask(taskId: string, now: string): Promise<TaskRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         "UPDATE tasks SET status = 'closed', closed_at = @now, updated_at = @now WHERE id = @taskId",
       )
       .run({ taskId, now });
@@ -569,8 +586,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async createRun(input: CreateRunInput): Promise<RunRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO runs (
           id, workspace_id, task_id, status, source,
           external_ref_json, metadata_json, started_at, ended_at, created_at, updated_at
@@ -592,7 +608,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async getRunById(id: string): Promise<RunRecord | null> {
-    return parseRun(this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id));
+    return parseRun(this.prepare("SELECT * FROM runs WHERE id = ?").get(id));
   }
 
   async updateRunTiming(input: {
@@ -602,8 +618,7 @@ export class SqliteLedgerStore implements LedgerStore {
     endedAt?: string | null;
     now: string;
   }): Promise<RunRecord> {
-    const result = this.db
-      .prepare(
+    const result = this.prepare(
         `UPDATE runs
          SET started_at = CASE
                WHEN @startedAt IS NULL THEN started_at
@@ -625,15 +640,14 @@ export class SqliteLedgerStore implements LedgerStore {
         endedAt: input.endedAt ?? null,
         now: input.now,
       });
-    if (result.changes === 0) throw new Error(`Run not found: ${input.runId}`);
+    if (Number(result.changes) === 0) throw new Error(`Run not found: ${input.runId}`);
     const run = await this.getRunById(input.runId);
     if (!run) throw new Error(`Run not found: ${input.runId}`);
     return run;
   }
 
   async createAccessKey(input: CreateAccessKeyInput): Promise<AccessKeyRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO access_keys (
           id, name, token_prefix, token_hash, scopes_json, workspace_keys_json,
           expires_at, revoked_at, last_used_at, created_at, updated_at
@@ -654,8 +668,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listAccessKeys(): Promise<AccessKeyRecord[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM access_keys
          ORDER BY created_at ASC`,
@@ -666,41 +679,37 @@ export class SqliteLedgerStore implements LedgerStore {
 
   async getAccessKeyById(id: string): Promise<AccessKeyRecord | null> {
     return parseAccessKey(
-      this.db.prepare("SELECT * FROM access_keys WHERE id = ?").get(id),
+      this.prepare("SELECT * FROM access_keys WHERE id = ?").get(id),
     );
   }
 
   async getAccessKeyByTokenHash(tokenHash: string): Promise<AccessKeyRecord | null> {
     return parseAccessKey(
-      this.db
-        .prepare("SELECT * FROM access_keys WHERE token_hash = ?")
+      this.prepare("SELECT * FROM access_keys WHERE token_hash = ?")
         .get(tokenHash),
     );
   }
 
   async revokeAccessKey(id: string, now: string): Promise<AccessKeyRecord> {
-    const result = this.db
-      .prepare(
+    const result = this.prepare(
         `UPDATE access_keys
          SET revoked_at = COALESCE(revoked_at, @now), updated_at = @now
          WHERE id = @id`,
       )
       .run({ id, now });
-    if (result.changes === 0) throw new Error(`Access key not found: ${id}`);
+    if (Number(result.changes) === 0) throw new Error(`Access key not found: ${id}`);
     const key = await this.getAccessKeyById(id);
     if (!key) throw new Error(`Access key not found: ${id}`);
     return key;
   }
 
   async touchAccessKey(id: string, now: string): Promise<void> {
-    this.db
-      .prepare("UPDATE access_keys SET last_used_at = @now, updated_at = @now WHERE id = @id")
+    this.prepare("UPDATE access_keys SET last_used_at = @now, updated_at = @now WHERE id = @id")
       .run({ id, now });
   }
 
   async countActiveAccessKeys(now: string): Promise<number> {
-    const row = this.db
-      .prepare(
+    const row = this.prepare(
         `SELECT COUNT(*) AS count
          FROM access_keys
          WHERE revoked_at IS NULL
@@ -724,21 +733,23 @@ export class SqliteLedgerStore implements LedgerStore {
       raw_storage_ref: input.raw_storage_ref ?? null,
       metadata_json: JSON.stringify(input.metadata_json ?? null),
     };
-    const existing = this.db
-      .prepare(
+    const existing = this.prepare(
         `SELECT *
          FROM pricing_source_snapshots
          WHERE source_name = @source_name
            AND COALESCE(source_commit, '') = COALESCE(@source_commit, '')
            AND raw_sha256 = @raw_sha256`,
       )
-      .get(normalized);
+      .get({
+        source_name: normalized.source_name,
+        source_commit: normalized.source_commit,
+        raw_sha256: normalized.raw_sha256,
+      });
     if (existing) {
       return PricingSourceSnapshotRecordSchema.parse(fromDbJson(existing as DbRow));
     }
 
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO pricing_source_snapshots (
           id, source_name, source_url, source_version, source_commit,
           source_retrieved_at, bundled_at, valid_from, raw_sha256,
@@ -756,21 +767,19 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listPricingSourceSnapshots(): Promise<PricingSourceSnapshotRecord[]> {
-    return this.db
-      .prepare("SELECT * FROM pricing_source_snapshots ORDER BY created_at DESC, source_name ASC")
+    return this.prepare("SELECT * FROM pricing_source_snapshots ORDER BY created_at DESC, source_name ASC")
       .all()
       .map((row) => PricingSourceSnapshotRecordSchema.parse(fromDbJson(row as DbRow)));
   }
 
   async getPricingSourceSnapshotById(id: string): Promise<PricingSourceSnapshotRecord | null> {
-    const row = this.db.prepare("SELECT * FROM pricing_source_snapshots WHERE id = ?").get(id);
+    const row = this.prepare("SELECT * FROM pricing_source_snapshots WHERE id = ?").get(id);
     if (!row) return null;
     return PricingSourceSnapshotRecordSchema.parse(fromDbJson(row as DbRow));
   }
 
   async upsertPricingRule(input: UpsertPricingRuleInput): Promise<PricingRuleRecord> {
-    const existing = this.db
-      .prepare(
+    const existing = this.prepare(
         `SELECT *
          FROM pricing_rules
          WHERE workspace_id = @workspace_id
@@ -780,11 +789,16 @@ export class SqliteLedgerStore implements LedgerStore {
            AND unit_type = @unit_type
            AND effective_to IS NULL`,
       )
-      .get(input);
+      .get({
+        workspace_id: input.workspace_id,
+        provider: input.provider,
+        model: input.model,
+        usage_kind: input.usage_kind,
+        unit_type: input.unit_type,
+      });
     if (existing) {
       const existingId = (existing as { id: string }).id;
-      this.db
-        .prepare(
+      this.prepare(
           `UPDATE pricing_rules
            SET price_nanos_per_unit = @price_nanos_per_unit,
                currency = @currency,
@@ -796,18 +810,21 @@ export class SqliteLedgerStore implements LedgerStore {
            WHERE id = @existingId`,
         )
         .run({
-          ...input,
+          price_nanos_per_unit: input.price_nanos_per_unit,
+          currency: input.currency,
+          effective_from: input.effective_from,
           source_snapshot_id: input.source_snapshot_id ?? null,
-          existingId,
+          source: input.source,
           metadata_json: JSON.stringify(input.metadata_json ?? null),
+          now: input.now,
+          existingId,
         });
       const rule = await this.getPricingRuleById(existingId);
       if (!rule) throw new Error("Failed to update pricing rule.");
       return rule;
     }
 
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO pricing_rules (
           id, workspace_id, source_snapshot_id, provider, model, usage_kind, unit_type,
           price_nanos_per_unit, currency, effective_from, effective_to, source,
@@ -829,8 +846,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listPricingRules(workspaceId: string): Promise<PricingRuleRecord[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM pricing_rules
          WHERE workspace_id = ?
@@ -841,14 +857,13 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async getPricingRuleById(id: string): Promise<PricingRuleRecord | null> {
-    const row = this.db.prepare("SELECT * FROM pricing_rules WHERE id = ?").get(id);
+    const row = this.prepare("SELECT * FROM pricing_rules WHERE id = ?").get(id);
     if (!row) return null;
     return PricingRuleRecordSchema.parse(fromDbJson(row as DbRow));
   }
 
   async listPricingRulesForUsage(input: PricingRuleLookupInput): Promise<PricingRuleRecord[]> {
-    const rows = this.db
-      .prepare(
+    const rows = this.prepare(
         `SELECT *
          FROM pricing_rules
          WHERE workspace_id = @workspaceId
@@ -869,8 +884,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async createUsageEvent(input: CreateUsageEventInput): Promise<UsageEventRecord> {
-    this.db
-      .prepare(
+    this.prepare(
         `INSERT INTO usage_events (
           id, workspace_id, task_id, run_id, message_id, source, idempotency_key, occurred_at,
           started_at, ended_at, duration_ms,
@@ -899,7 +913,7 @@ export class SqliteLedgerStore implements LedgerStore {
         cost_calculated_at: input.cost_calculated_at ?? null,
         payload_json: JSON.stringify(input.payload_json),
       });
-    const event = this.db.prepare("SELECT * FROM usage_events WHERE id = ?").get(input.id);
+    const event = this.prepare("SELECT * FROM usage_events WHERE id = ?").get(input.id);
     return UsageEventRecordSchema.parse(fromDbJson(event as DbRow));
   }
 
@@ -908,8 +922,7 @@ export class SqliteLedgerStore implements LedgerStore {
     source: string,
     idempotencyKey: string,
   ): Promise<UsageEventRecord | null> {
-    const row = this.db
-      .prepare(
+    const row = this.prepare(
         "SELECT * FROM usage_events WHERE workspace_id = ? AND source = ? AND idempotency_key = ?",
       )
       .get(workspaceId, source, idempotencyKey);
@@ -922,8 +935,7 @@ export class SqliteLedgerStore implements LedgerStore {
     assignmentStatus: UsageAssignmentStatus,
     limit: number,
   ): Promise<UsageEventRecord[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM usage_events
          WHERE workspace_id = ? AND assignment_status = ?
@@ -935,8 +947,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listUsageEventsByRun(workspaceId: string, runId: string): Promise<UsageEventRecord[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM usage_events
          WHERE workspace_id = ? AND run_id = ?
@@ -951,23 +962,20 @@ export class SqliteLedgerStore implements LedgerStore {
     usageEventId: string,
     taskId: string,
   ): Promise<UsageEventRecord> {
-    const result = this.db
-      .prepare(
+    const result = this.prepare(
         `UPDATE usage_events
          SET task_id = @taskId, assignment_status = 'assigned'
          WHERE workspace_id = @workspaceId AND id = @usageEventId`,
       )
       .run({ workspaceId, usageEventId, taskId });
-    if (result.changes === 0) throw new Error(`Usage event not found: ${usageEventId}`);
-    const row = this.db
-      .prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
+    if (Number(result.changes) === 0) throw new Error(`Usage event not found: ${usageEventId}`);
+    const row = this.prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
       .get(workspaceId, usageEventId);
     return UsageEventRecordSchema.parse(fromDbJson(row as DbRow));
   }
 
   async listUnpricedUsageEvents(workspaceId: string, limit: number): Promise<UsageEventRecord[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM usage_events
          WHERE workspace_id = ? AND pricing_mode = 'unpriced'
@@ -987,8 +995,7 @@ export class SqliteLedgerStore implements LedgerStore {
       mode === "unpriced"
         ? "pricing_mode = 'unpriced'"
         : "(pricing_mode IS NULL OR pricing_mode IN ('unpriced', 'rule_calculated'))";
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM usage_events
          WHERE workspace_id = ?
@@ -1006,8 +1013,7 @@ export class SqliteLedgerStore implements LedgerStore {
     usageEventId: string,
     input: UsagePricingUpdateInput,
   ): Promise<UsageEventRecord> {
-    const result = this.db
-      .prepare(
+    const result = this.prepare(
         `UPDATE usage_events
          SET estimated_cost_nanos = @estimated_cost_nanos,
              estimated_currency = @estimated_currency,
@@ -1026,16 +1032,14 @@ export class SqliteLedgerStore implements LedgerStore {
         workspaceId,
         usageEventId,
       });
-    if (result.changes === 0) throw new Error(`Usage event not found: ${usageEventId}`);
-    const row = this.db
-      .prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
+    if (Number(result.changes) === 0) throw new Error(`Usage event not found: ${usageEventId}`);
+    const row = this.prepare("SELECT * FROM usage_events WHERE workspace_id = ? AND id = ?")
       .get(workspaceId, usageEventId);
     return UsageEventRecordSchema.parse(fromDbJson(row as DbRow));
   }
 
   async reportUsageByDay(workspaceId: string, date: string): Promise<LedgerReportRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT estimated_cost_nanos, observed_cost_nanos, observed_currency, estimated_currency, pricing_mode
          FROM usage_events
          WHERE workspace_id = ? AND occurred_at >= ? AND occurred_at < ?`,
@@ -1044,8 +1048,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async reportUsageByTask(workspaceId: string, taskId: string): Promise<LedgerReportRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT estimated_cost_nanos, observed_cost_nanos, observed_currency, estimated_currency, pricing_mode
          FROM usage_events
          WHERE workspace_id = ? AND task_id = ?`,
@@ -1054,8 +1057,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async getDashboardSummary(workspaceId: string): Promise<DashboardSummaryRow> {
-    const row = this.db
-      .prepare(
+    const row = this.prepare(
         `SELECT
            COUNT(*) AS event_count,
            COALESCE(SUM(COALESCE(estimated_cost_nanos, 0)), 0) AS estimated_cost_nanos,
@@ -1069,8 +1071,7 @@ export class SqliteLedgerStore implements LedgerStore {
          WHERE workspace_id = ?`,
       )
       .get(workspaceId) as Omit<DashboardSummaryRow, "currency">;
-    const currencies = this.db
-      .prepare(
+    const currencies = this.prepare(
         `SELECT DISTINCT COALESCE(estimated_currency, observed_currency) AS currency
          FROM usage_events
          WHERE workspace_id = ?
@@ -1084,8 +1085,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listDashboardTaskCosts(workspaceId: string, limit: number): Promise<DashboardTaskCostRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            u.task_id AS task_id,
            t.key AS task_key,
@@ -1108,8 +1108,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     taskId: string,
   ): Promise<DashboardTaskInsightRow | null> {
-    const row = this.db
-      .prepare(
+    const row = this.prepare(
         `WITH task_usage AS (
            SELECT
              u.task_id AS task_id,
@@ -1159,8 +1158,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     limit: number,
   ): Promise<DashboardTaskInsightRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `WITH task_usage AS (
            SELECT
              u.task_id AS task_id,
@@ -1218,8 +1216,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listRecentUsageEvents(workspaceId: string, limit: number): Promise<DashboardRecentUsageRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            u.id,
            u.occurred_at,
@@ -1256,8 +1253,7 @@ export class SqliteLedgerStore implements LedgerStore {
     taskId: string,
     limit: number,
   ): Promise<DashboardRecentUsageRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            u.id,
            u.occurred_at,
@@ -1290,8 +1286,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listDashboardPricingModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            COALESCE(pricing_mode, 'unknown') AS key,
            COUNT(*) AS event_count,
@@ -1308,8 +1303,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     limit: number,
   ): Promise<UnpricedProviderModelGroupRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT provider, model, usage_kind, COUNT(*) AS event_count
          FROM usage_events
          WHERE workspace_id = ? AND pricing_mode = 'unpriced'
@@ -1324,8 +1318,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     taskId: string,
   ): Promise<DashboardBreakdownRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            COALESCE(pricing_mode, 'unknown') AS key,
            COUNT(*) AS event_count,
@@ -1339,8 +1332,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   async listDashboardAccuracyModeBreakdown(workspaceId: string): Promise<DashboardBreakdownRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            accuracy_mode AS key,
            COUNT(*) AS event_count,
@@ -1357,8 +1349,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     taskId: string,
   ): Promise<DashboardBreakdownRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            accuracy_mode AS key,
            COUNT(*) AS event_count,
@@ -1375,8 +1366,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     limit: number,
   ): Promise<DashboardBreakdownRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            provider || '/' || model AS key,
            COUNT(*) AS event_count,
@@ -1394,8 +1384,7 @@ export class SqliteLedgerStore implements LedgerStore {
     workspaceId: string,
     taskId: string,
   ): Promise<DashboardBreakdownRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT
            provider || '/' || model AS key,
            COUNT(*) AS event_count,
@@ -1414,8 +1403,7 @@ export class SqliteLedgerStore implements LedgerStore {
     timeZoneOffsetMinutes?: number,
   ): Promise<DashboardDailyCostRow[]> {
     const dayExpression = dashboardDayExpression(timeZoneOffsetMinutes);
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM (
            SELECT
@@ -1440,8 +1428,7 @@ export class SqliteLedgerStore implements LedgerStore {
     timeZoneOffsetMinutes?: number,
   ): Promise<DashboardDailyCostRow[]> {
     const dayExpression = dashboardDayExpression(timeZoneOffsetMinutes);
-    return this.db
-      .prepare(
+    return this.prepare(
         `SELECT *
          FROM (
            SELECT
@@ -1464,8 +1451,7 @@ export class SqliteLedgerStore implements LedgerStore {
     taskId: string,
     limit: number,
   ): Promise<DashboardTaskRunRow[]> {
-    return this.db
-      .prepare(
+    return this.prepare(
         `WITH grouped_runs AS (
            SELECT
              u.run_id AS run_id,
@@ -1516,8 +1502,7 @@ export class SqliteLedgerStore implements LedgerStore {
   }
 
   getLastImportedAt(workspaceId: string, source: string): Promise<string | null> {
-    const row = this.db
-      .prepare(
+    const row = this.prepare(
         `SELECT MAX(occurred_at) AS last_at FROM usage_events WHERE workspace_id = ? AND source = ?`,
       )
       .get(workspaceId, source) as { last_at: string | null } | undefined;
@@ -1568,7 +1553,7 @@ function fromDbJson(row: DbRow): DbRow {
 }
 
 function addColumnIfMissing(
-  db: Database.Database,
+  db: DatabaseSync,
   tableName: string,
   columnName: string,
   columnDefinition: string,
@@ -1577,11 +1562,11 @@ function addColumnIfMissing(
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`).run();
 }
 
-function hasColumn(db: Database.Database, tableName: string, columnName: string): boolean {
+function hasColumn(db: DatabaseSync, tableName: string, columnName: string): boolean {
   return columnNames(db, tableName).includes(columnName);
 }
 
-function columnNames(db: Database.Database, tableName: string): string[] {
+function columnNames(db: DatabaseSync, tableName: string): string[] {
   return db
     .prepare(`PRAGMA table_info(${tableName})`)
     .all()

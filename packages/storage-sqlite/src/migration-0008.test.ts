@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { SqliteLedgerStore } from "./index.js";
 
@@ -14,9 +14,9 @@ describe("migration 0008_drop_active_task_id", () => {
     // Pre-seed a database that looks like one created by an older version
     // of migrate(): the workspaces table still has active_task_id, and
     // schema_migrations has the markers that were inserted prior to 0008.
-    const setup = new Database(dbPath);
-    setup.pragma("journal_mode = WAL");
-    setup.pragma("foreign_keys = ON");
+    const setup = new DatabaseSync(dbPath);
+    setup.exec("PRAGMA journal_mode = WAL");
+    setup.exec("PRAGMA foreign_keys = ON");
     setup.exec(`
       CREATE TABLE schema_migrations (
         version TEXT PRIMARY KEY,
@@ -95,7 +95,7 @@ describe("migration 0008_drop_active_task_id", () => {
     }
 
     // Verify post-migration schema and data using a fresh connection.
-    const verify = new Database(dbPath);
+    const verify = new DatabaseSync(dbPath);
     try {
       const cols = verify
         .prepare("PRAGMA table_info(workspaces)")
