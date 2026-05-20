@@ -9,6 +9,7 @@ import {
   type DashboardData,
   type InboxAssignmentResult,
   type InboxGroup,
+  type Ledger,
   type LocalLedger,
 } from "@ttoksem/core";
 import {
@@ -472,7 +473,7 @@ usage
   .action(async (options: CodexSessionImportOptions) => {
     const handle = await makeLedgerLocal();
     try {
-      const service = requireLocalLedger(handle);
+      const service = handle.ledger;
       const result = await importCodexSessions(service, options);
       console.log(
         `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
@@ -532,7 +533,7 @@ usage
   .action(async (options: ClaudeSessionImportOptions) => {
     const handle = await makeLedgerLocal();
     try {
-      const service = requireLocalLedger(handle);
+      const service = handle.ledger;
       const result = await importClaudeSessions(service, options);
       console.log(
         `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
@@ -1088,7 +1089,7 @@ hook
     }
     const handle = await makeLedgerLocal();
     try {
-      const service = requireLocalLedger(handle);
+      const service = handle.ledger;
       const lastImportedAt = await service.getLastImportedAt({
         workspace: { key: options.workspace },
         source: "claude-session",
@@ -1560,7 +1561,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
 }
 
 async function importCodexSessions(
-  service: LocalLedger,
+  service: Ledger,
   options: CodexSessionImportOptions,
 ): Promise<{ scannedFiles: number; tokenEvents: number; imported: number; skipped: number; errors: number }> {
   const files = codexSessionFiles(options);
@@ -2041,7 +2042,7 @@ function buildClaudeTurnMessage(options: ClaudeTurnOptions): AiUsageObserved {
 }
 
 async function importClaudeSessions(
-  service: LocalLedger,
+  service: Ledger,
   options: ClaudeSessionImportOptions,
 ): Promise<{ scannedFiles: number; assistantEvents: number; imported: number; skipped: number; errors: number }> {
   const files = claudeSessionFiles(options);
