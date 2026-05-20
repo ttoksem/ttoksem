@@ -32,6 +32,7 @@ import {
   registerAuthCommands,
 } from "./auth.js";
 import { registerInitCommand } from "./init.js";
+import { registerWorkerCommands } from "./worker.js";
 import { makeLedger, requireLocalLedger } from "./ledger-factory.js";
 import { HttpLedgerError } from "@ttoksem/ledger-http";
 
@@ -808,6 +809,7 @@ dashboard
 
 registerAuthCommands(program, makeService, makeLedgerLocal, requireLocalLedger);
 registerInitCommand(program);
+registerWorkerCommands(program);
 
 const pricing = program.command("pricing").description("Pricing commands");
 const pricingSnapshot = pricing.command("snapshot").description("Pricing source snapshot commands");
