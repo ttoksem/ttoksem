@@ -43,9 +43,9 @@ export function buildInsertAccessKeySql(row: AccessKeyRow): string {
     sqlString(row.tokenPrefix),
     sqlString(row.tokenHash),
     sqlString(JSON.stringify(row.scopes)),
-    row.workspaceKeys && row.workspaceKeys.length > 0
-      ? sqlString(JSON.stringify(row.workspaceKeys))
-      : "NULL",
+    row.workspaceKeys === null
+      ? "NULL"
+      : sqlString(JSON.stringify(row.workspaceKeys)),
     sqlStringOrNull(row.expiresAt),
     sqlString(row.createdAt),
     sqlString(row.updatedAt),

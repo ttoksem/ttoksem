@@ -46,4 +46,12 @@ describe("worker-key-sql", () => {
     expect(sql).toContain("revoked_at");
     expect(sql).toContain("'key_abc'");
   });
+  it("renders an explicit empty workspace list as '[]', not NULL", () => {
+    const sql = buildInsertAccessKeySql({ ...row, workspaceKeys: [] });
+    expect(sql).toContain("'[]'");
+  });
+  it("buildRevokeAccessKeySql escapes a single-quote-injected id", () => {
+    const sql = buildRevokeAccessKeySql("key_x' OR '1'='1", "2026-05-20T00:00:00.000Z");
+    expect(sql).toContain("'key_x'' OR ''1''=''1'");
+  });
 });
