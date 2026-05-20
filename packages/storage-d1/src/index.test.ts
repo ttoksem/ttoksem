@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { D1LedgerStore, type D1Database, type D1PreparedStatement, type D1Result, type D1RunResult } from "./index.js";
 
@@ -130,7 +130,7 @@ describe("D1LedgerStore", () => {
 });
 
 class FakeD1Database implements D1Database {
-  private readonly db = new Database(":memory:");
+  private readonly db = new DatabaseSync(":memory:");
 
   prepare(query: string): D1PreparedStatement {
     return new FakeD1PreparedStatement(this.db.prepare(query), []);
@@ -144,7 +144,7 @@ class FakeD1Database implements D1Database {
 
 class FakeD1PreparedStatement implements D1PreparedStatement {
   constructor(
-    private readonly statement: Database.Statement,
+    private readonly statement: ReturnType<DatabaseSync["prepare"]>,
     private readonly values: unknown[],
   ) {}
 
@@ -153,20 +153,21 @@ class FakeD1PreparedStatement implements D1PreparedStatement {
   }
 
   async first<T = Record<string, unknown>>(): Promise<T | null> {
-    return (this.statement.get(...this.values) as T | undefined) ?? null;
+    return (this.statement.get(...(this.values as SQLInputValue[])) as T | undefined) ?? null;
   }
 
   async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
-    return { results: this.statement.all(...this.values) as T[] };
+    return { results: this.statement.all(...(this.values as SQLInputValue[])) as T[] };
   }
 
   async run(): Promise<D1RunResult> {
-    const result = this.statement.run(...this.values);
+    const result = this.statement.run(...(this.values as SQLInputValue[]));
+    const changes = Number(result.changes);
     return {
       success: true,
       meta: {
-        changes: result.changes,
-        changed_db: result.changes > 0,
+        changes,
+        changed_db: changes > 0,
       },
     };
   }
