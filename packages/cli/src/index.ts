@@ -1079,15 +1079,22 @@ hook
       console.error(
         "ttoksem hook run: no project dir (no --projects-dir and no hook stdin payload)",
       );
+      process.exitCode = 1;
       return;
     }
     const handle = await makeLedgerLocal();
     try {
       const service = requireLocalLedger(handle);
-      const since = await service.getLastImportedAt({
+      const lastImportedAt = await service.getLastImportedAt({
         workspace: { key: options.workspace },
         source: "claude-session",
       });
+      // Advance one millisecond past the last imported event so the `< since`
+      // filter in parseClaudeSessionUsage excludes it on re-run (incremental import).
+      // getLastImportedAt returns string|null; the option field is string|undefined.
+      const since = lastImportedAt
+        ? new Date(Date.parse(lastImportedAt) + 1).toISOString()
+        : undefined;
       const importOptions: ClaudeSessionImportOptions = {
         workspace: options.workspace,
         task: process.env.TTOKSEM_TASK || undefined,
@@ -1096,7 +1103,7 @@ hook
         model: "claude-app",
         promptMode: "full",
         subagents: true,
-        since: since ?? undefined,
+        since,
       };
       const result = await importClaudeSessions(service, importOptions);
       console.log(

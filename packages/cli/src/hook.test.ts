@@ -70,23 +70,21 @@ describe("ttoksem hook run", () => {
       );
 
       // 3. Run `hook run`
-      const output = runCli(
-        [
-          "hook",
-          "run",
-          "--workspace",
-          "ttoksem-dev",
-          "--projects-dir",
-          fakeProjectDir,
-        ],
-        env,
-      );
+      const hookArgs = [
+        "hook",
+        "run",
+        "--workspace",
+        "ttoksem-dev",
+        "--projects-dir",
+        fakeProjectDir,
+      ];
+      const output = runCli(hookArgs, env);
       expect(output).toContain("imported=1");
 
       // 4. Verify: at least one claude-session usage event imported
       const store = new SqliteLedgerStore(dbPath);
       try {
-        await store.migrate();
+        // Tables were already created by the CLI subprocess; no migrate() needed
         const workspace = await store.getWorkspaceByKey("ttoksem-dev");
         expect(workspace).not.toBeNull();
         const events = await store.listRecentUsageEvents(workspace?.id ?? "", 50);
@@ -96,6 +94,10 @@ describe("ttoksem hook run", () => {
       } finally {
         await store.close();
       }
+
+      // 5. Second run must be a no-op — idempotency key dedup prevents re-import
+      const output2 = runCli(hookArgs, env);
+      expect(output2).toContain("imported=0");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
