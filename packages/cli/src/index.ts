@@ -95,6 +95,25 @@ function makeLedgerAllowCreate() {
   return makeLedger({ makeLocalService: makeLocalServiceAllowCreate });
 }
 
+/**
+ * Read the Claude Code Stop hook stdin payload and extract the transcript dir.
+ * Returns undefined when stdin is a TTY (manual invocation) or when the payload
+ * does not contain a transcript_path.
+ */
+async function projectsDirFromStdin(): Promise<string | undefined> {
+  if (process.stdin.isTTY) return undefined;
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) return undefined;
+  try {
+    const payload = JSON.parse(raw) as { transcript_path?: string };
+    return payload.transcript_path ? dirname(payload.transcript_path) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const program = new Command();
 
 program.name("ttoksem").description("Local-first AI task costbook").version("0.0.0");
@@ -1043,6 +1062,46 @@ report
     const handle = await makeLedger({ makeLocalService });
     try {
       printReport(await handle.ledger.reportTask({ workspace: workspaceResolver(options), taskKey: slug(key) }));
+    } finally {
+      await handle.close();
+    }
+  });
+
+const hook = program.command("hook").description("Claude Code hook integration");
+hook
+  .command("run")
+  .description("Autocapture: import this project's Claude Code session usage")
+  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--projects-dir <path>", "Claude Code project dir (overrides stdin; for manual runs)")
+  .action(async (options: { workspace: string; projectsDir?: string }) => {
+    const projectsDir = options.projectsDir ?? (await projectsDirFromStdin());
+    if (!projectsDir) {
+      console.error(
+        "ttoksem hook run: no project dir (no --projects-dir and no hook stdin payload)",
+      );
+      return;
+    }
+    const handle = await makeLedgerLocal();
+    try {
+      const service = requireLocalLedger(handle);
+      const since = await service.getLastImportedAt({
+        workspace: { key: options.workspace },
+        source: "claude-session",
+      });
+      const importOptions: ClaudeSessionImportOptions = {
+        workspace: options.workspace,
+        task: process.env.TTOKSEM_TASK || undefined,
+        projectsDir,
+        claudeHome: process.env.CLAUDE_HOME ?? "~/.claude",
+        model: "claude-app",
+        promptMode: "full",
+        subagents: true,
+        since: since ?? undefined,
+      };
+      const result = await importClaudeSessions(service, importOptions);
+      console.log(
+        `ttoksem hook run imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
+      );
     } finally {
       await handle.close();
     }
