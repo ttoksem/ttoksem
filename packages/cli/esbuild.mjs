@@ -29,5 +29,5 @@ if (text.startsWith("#!")) {
   text = shebang + "\n" + text;
 }
 
-writeFileSync("dist/cli.mjs", text);
+writeFileSync("dist/cli.mjs", text, { mode: 0o755 });
 console.log("bundled -> dist/cli.mjs");
