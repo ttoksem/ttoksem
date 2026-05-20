@@ -1,6 +1,6 @@
-import { createHash, randomBytes } from "node:crypto";
 import type { Command } from "commander";
 import type { LocalLedger } from "@ttoksem/core";
+import { generateAccessToken, hashAccessToken, tokenPrefix } from "./access-token.js";
 import type { AccessKeyRecord } from "@ttoksem/schema";
 import type { LedgerHandle } from "./ledger-factory.js";
 
@@ -193,18 +193,6 @@ async function createAccessKeyWithToken(
     expiresAt: input.expiresAt,
   });
   return { key, token };
-}
-
-function generateAccessToken(): string {
-  return `ttok_${randomBytes(32).toString("base64url")}`;
-}
-
-function hashAccessToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
-function tokenPrefix(token: string): string {
-  return token.slice(0, 16);
 }
 
 function printAccessKeyLine(key: AccessKeyRecord): void {
