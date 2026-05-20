@@ -132,10 +132,14 @@ interface D1Row {
 
 /** `wrangler d1 execute --json` prints an array of result objects; pull out the rows. */
 function parseD1Rows(stdout: string): D1Row[] {
+  let parsed: Array<{ results?: D1Row[] }>;
   try {
-    const parsed = JSON.parse(stdout) as Array<{ results?: D1Row[] }>;
-    return parsed[0]?.results ?? [];
-  } catch {
-    return [];
+    parsed = JSON.parse(stdout) as Array<{ results?: D1Row[] }>;
+  } catch (err) {
+    throw new Error(
+      `Could not parse wrangler d1 output as JSON: ${String(err)}\n` +
+        `Raw output (first 500 chars): ${stdout.slice(0, 500)}`,
+    );
   }
+  return parsed[0]?.results ?? [];
 }

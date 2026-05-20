@@ -69,4 +69,18 @@ describe("ttoksem worker key", () => {
       program.parseAsync(["worker", "key", "create", "--d1", "ttoksem"], { from: "user" }),
     ).rejects.toThrow(/wrangler/);
   });
+
+  it("list prints (no access keys) when the D1 returns an empty result set", async () => {
+    const json = JSON.stringify([{ results: [], success: true }]);
+    const { program } = harness(json);
+    const logs = await run(program, ["worker", "key", "list", "--d1", "ttoksem"]);
+    expect(logs.join("\n")).toContain("(no access keys)");
+  });
+
+  it("list fails loudly when wrangler output is not valid JSON", async () => {
+    const { program } = harness("not json — some wrangler error text");
+    await expect(
+      program.parseAsync(["worker", "key", "list", "--d1", "ttoksem"], { from: "user" }),
+    ).rejects.toThrow(/parse wrangler/i);
+  });
 });
