@@ -68,36 +68,45 @@ async function startRemoteServer(dbPath: string, workspaceKey: string): Promise<
     proc.on("exit", () => resolve());
   });
 
-  const baseUrl = await new Promise<string>((resolve, reject) => {
-    let buf = "";
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      buf += chunk.toString();
-      const match = buf.match(/READY:(\d+)/);
-      if (match) {
-        const port = parseInt(match[1], 10);
-        resolve(`http://127.0.0.1:${port}`);
-      }
-    });
-    proc.on("error", reject);
-    proc.on("exit", (code) => {
-      if (code !== 0 && code !== null) {
-        reject(new Error(`Server fixture exited prematurely with code ${code}`));
-      }
-    });
-    setTimeout(() => reject(new Error("Timed out waiting for server fixture READY signal")), 15_000);
-  });
-
   let stopped = false;
-  return {
-    baseUrl,
-    stop: async () => {
-      if (!stopped) {
-        stopped = true;
-        try { proc.kill("SIGTERM"); } catch { /* already dead */ }
-      }
-      await exitPromise;
-    },
+  const stopProc = async (): Promise<void> => {
+    if (!stopped) {
+      stopped = true;
+      try { proc.kill("SIGTERM"); } catch { /* already dead */ }
+    }
+    await exitPromise;
   };
+
+  try {
+    const baseUrl = await new Promise<string>((resolve, reject) => {
+      let buf = "";
+      // Fix 2: save the timer handle so we can clear it on success.
+      const timer = setTimeout(
+        () => reject(new Error("Timed out waiting for server fixture READY signal")),
+        15_000,
+      );
+      proc.stdout?.on("data", (chunk: Buffer) => {
+        buf += chunk.toString();
+        const match = buf.match(/READY:(\d+)/);
+        if (match) {
+          clearTimeout(timer);
+          resolve(`http://127.0.0.1:${parseInt(match[1], 10)}`);
+        }
+      });
+      proc.on("error", (err) => { clearTimeout(timer); reject(err); });
+      proc.on("exit", (code) => {
+        if (code !== 0 && code !== null) {
+          clearTimeout(timer);
+          reject(new Error(`Server fixture exited prematurely with code ${code}`));
+        }
+      });
+    });
+    return { baseUrl, stop: stopProc };
+  } catch (e) {
+    // Fix 3: kill the spawned process if READY-signal promise rejects.
+    await stopProc();
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +165,8 @@ describe("importers in remote mode", () => {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         TTOKSEM_HTTP_URL: baseUrl,
+        // Fix 4: setting a key to `undefined` makes execFileSync omit it from the
+        // child environment, preventing the CLI from falling back to a local DB.
         TTOKSEM_DB: undefined as unknown as string,
         INIT_CWD: tempDir,
       };
@@ -176,12 +187,17 @@ describe("importers in remote mode", () => {
       // Stop the server first so SQLite releases its locks before we read.
       await stop();
 
+      // Fix 5: wrap verifyStore usage in try/finally so close() runs even on assertion failure.
       const verifyStore = new SqliteLedgerStore(dbPath);
-      const workspace = await verifyStore.getWorkspaceByKey(workspaceKey);
-      expect(workspace).not.toBeNull();
-      const events = await verifyStore.listRecentUsageEvents(workspace?.id ?? "", 50);
-      expect(events.some((e) => e.provider === "anthropic" || e.model.includes("claude"))).toBe(true);
-      await verifyStore.close();
+      try {
+        // Fix 1: hard throw instead of expect+?? so a null workspace surfaces immediately.
+        const workspace = await verifyStore.getWorkspaceByKey(workspaceKey);
+        if (!workspace) throw new Error(`workspace '${workspaceKey}' not found in verify store`);
+        const events = await verifyStore.listRecentUsageEvents(workspace.id, 50);
+        expect(events.some((e) => e.provider === "anthropic" || e.model.includes("claude"))).toBe(true);
+      } finally {
+        await verifyStore.close();
+      }
     } finally {
       await stop();
       rmSync(tempDir, { recursive: true, force: true });
@@ -245,6 +261,8 @@ describe("importers in remote mode", () => {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         TTOKSEM_HTTP_URL: baseUrl,
+        // Fix 4: setting a key to `undefined` makes execFileSync omit it from the
+        // child environment, preventing the CLI from falling back to a local DB.
         TTOKSEM_DB: undefined as unknown as string,
         INIT_CWD: tempDir,
       };
@@ -266,12 +284,17 @@ describe("importers in remote mode", () => {
       // Verify: the event landed in the server-side store.
       await stop();
 
+      // Fix 5: wrap verifyStore usage in try/finally so close() runs even on assertion failure.
       const verifyStore = new SqliteLedgerStore(dbPath);
-      const workspace = await verifyStore.getWorkspaceByKey(workspaceKey);
-      expect(workspace).not.toBeNull();
-      const events = await verifyStore.listRecentUsageEvents(workspace?.id ?? "", 50);
-      expect(events.length).toBeGreaterThan(0);
-      await verifyStore.close();
+      try {
+        // Fix 1: hard throw instead of expect+?? so a null workspace surfaces immediately.
+        const workspace = await verifyStore.getWorkspaceByKey(workspaceKey);
+        if (!workspace) throw new Error(`workspace '${workspaceKey}' not found in verify store`);
+        const events = await verifyStore.listRecentUsageEvents(workspace.id, 50);
+        expect(events.length).toBeGreaterThan(0);
+      } finally {
+        await verifyStore.close();
+      }
     } finally {
       await stop();
       rmSync(tempDir, { recursive: true, force: true });
@@ -328,6 +351,8 @@ describe("importers in remote mode", () => {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         TTOKSEM_HTTP_URL: baseUrl,
+        // Fix 4: setting a key to `undefined` makes execFileSync omit it from the
+        // child environment, preventing the CLI from falling back to a local DB.
         TTOKSEM_DB: undefined as unknown as string,
         INIT_CWD: tempDir,
       };
@@ -347,12 +372,17 @@ describe("importers in remote mode", () => {
       // Verify: the event landed in the server-side store.
       await stop();
 
+      // Fix 5: wrap verifyStore usage in try/finally so close() runs even on assertion failure.
       const verifyStore = new SqliteLedgerStore(dbPath);
-      const workspace = await verifyStore.getWorkspaceByKey(workspaceKey);
-      expect(workspace).not.toBeNull();
-      const events = await verifyStore.listRecentUsageEvents(workspace?.id ?? "", 50);
-      expect(events.some((e) => e.provider === "anthropic" || e.model.includes("claude"))).toBe(true);
-      await verifyStore.close();
+      try {
+        // Fix 1: hard throw instead of expect+?? so a null workspace surfaces immediately.
+        const workspace = await verifyStore.getWorkspaceByKey(workspaceKey);
+        if (!workspace) throw new Error(`workspace '${workspaceKey}' not found in verify store`);
+        const events = await verifyStore.listRecentUsageEvents(workspace.id, 50);
+        expect(events.some((e) => e.provider === "anthropic" || e.model.includes("claude"))).toBe(true);
+      } finally {
+        await verifyStore.close();
+      }
     } finally {
       await stop();
       rmSync(tempDir, { recursive: true, force: true });
