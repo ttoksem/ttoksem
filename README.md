@@ -37,6 +37,14 @@ See your usage:
     ttoksem dashboard serve     # local web dashboard
     ttoksem report today        # today's cost in the terminal
 
+## Self-hosting (multi-environment)
+
+To share one ledger across machines, self-host the Worker on Cloudflare (D1-backed):
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ttoksem/ttoksem)
+
+Or deploy from the CLI — see [docs/WORKER-D1.md](docs/WORKER-D1.md).
+
 ## MVP Checkpoint
 
 The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, prompt snapshot retention/redaction modes, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, write-capable HTTP API routes, and a D1-backed Worker entrypoint.

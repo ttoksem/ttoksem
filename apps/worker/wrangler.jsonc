@@ -6,7 +6,7 @@
   "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "TTOKSEM_WORKSPACE_KEY": "ttoksem-dev",
+    "TTOKSEM_WORKSPACE_KEY": "ttoksem-dev", // change to your workspace key
     "TTOKSEM_AUTH_MODE": "access-key"
   },
   "d1_databases": [

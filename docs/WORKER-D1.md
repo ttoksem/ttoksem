@@ -12,102 +12,39 @@ TTOKSEM_AUTH_MODE      access-key or none, optional, defaults to access-key
 
 The D1 adapter creates the current schema on startup through `LedgerService.init()`. For production deployment, run migrations deliberately in the deploy pipeline rather than relying only on request-time initialization.
 
-Example `wrangler.toml` shape:
+The deploy config is committed at [`apps/worker/wrangler.jsonc`](../apps/worker/wrangler.jsonc). To deploy:
 
-```toml
-name = "ttoksem"
-main = "apps/worker/dist/index.js"
-compatibility_date = "2026-04-28"
+1. `wrangler d1 create ttoksem` — creates the D1 database and prints its id.
+2. Paste that id into `apps/worker/wrangler.jsonc` (`d1_databases[0].database_id`).
+3. `pnpm --filter @ttoksem/worker deploy` — builds and uploads the Worker.
 
-[vars]
-TTOKSEM_WORKSPACE_KEY = "ttoksem-dev"
-TTOKSEM_AUTH_MODE = "access-key"
-
-[[d1_databases]]
-binding = "TTOKSEM_DB"
-database_name = "ttoksem"
-database_id = "<cloudflare-d1-database-id>"
-```
+Or use the one-click **Deploy to Cloudflare** button in the README, which provisions the Worker and D1 in a guided browser flow.
 
 Local development still defaults to SQLite through the CLI and `apps/server`. The Worker path is for deployments that need an HTTP surface backed by D1, not a replacement for the local-first workflow.
 
-## Issuing access keys against D1
+## Access keys on the deployed D1
 
-The `pnpm cli auth key create` command writes to local SQLite only — it does not know about D1. There is also no token-issuance HTTP route in the Worker on purpose (a write endpoint that mints credentials would be an obvious attack target). For the moment that means **D1 access keys are inserted directly via SQL**.
+The `ttoksem worker key` commands manage `access_keys` on a deployed D1 by
+running SQL through `wrangler d1 execute --remote`. They need `wrangler`
+installed and authenticated (`wrangler login`).
 
-The shape mirrors the `access_keys` table managed by `LedgerService.init()`. The Worker validates a presented token by computing `sha256(token)` and looking the row up by `token_hash`, so the row needs:
+Create a key (the token is printed once — save it):
 
-- `id`         — any unique string (the local CLI uses `key_<random>`)
-- `name`       — human-readable label
-- `token_prefix` — first 16 chars of the token; used for display, not for auth
-- `token_hash` — `sha256(token)` in lowercase hex
-- `scopes_json` — JSON array, e.g. `["dashboard:read","api:write"]`
-- `workspace_keys_json` — JSON array of workspace keys, or `NULL` for any
-- `created_at` / `updated_at` — UTC ISO timestamps ending in `Z`
-- `expires_at` / `revoked_at` / `last_used_at` — leave `NULL` initially
+    ttoksem worker key create --d1 ttoksem --name dashboard \
+      --scope dashboard:read --scope api:write
 
-### One-shot helper
+List keys (no token secrets are shown):
 
-Run this from the repo root to mint a token and print the matching `INSERT` statement. The token itself is shown once; copy it before closing the terminal:
+    ttoksem worker key list --d1 ttoksem
 
-```bash
-node -e '
-const crypto = require("crypto");
-const tok    = "ttok_" + crypto.randomBytes(32).toString("base64url");
-const hash   = crypto.createHash("sha256").update(tok).digest("hex");
-const id     = "key_" + crypto.randomBytes(12).toString("hex");
-const now    = new Date().toISOString();
-const name   = "dashboard";
-const scopes = ["dashboard:read", "api:write"];
-const wsKeys = ["ttoksem-dev"];
-console.log("TOKEN (save this — it cannot be recovered):");
-console.log("  " + tok);
-console.log();
-console.log("SQL:");
-console.log("INSERT INTO access_keys (id, name, token_prefix, token_hash, scopes_json, workspace_keys_json, created_at, updated_at)");
-console.log("VALUES (");
-console.log("  " + JSON.stringify(id) + ",");
-console.log("  " + JSON.stringify(name) + ",");
-console.log("  " + JSON.stringify(tok.slice(0, 16)) + ",");
-console.log("  " + JSON.stringify(hash) + ",");
-console.log("  " + JSON.stringify(JSON.stringify(scopes)) + ",");
-console.log("  " + JSON.stringify(JSON.stringify(wsKeys)) + ",");
-console.log("  " + JSON.stringify(now) + ",");
-console.log("  " + JSON.stringify(now));
-console.log(");");'
-```
+Revoke a key:
 
-Then apply the printed SQL with `wrangler`:
+    ttoksem worker key revoke --d1 ttoksem --id key_xxxxxxxxxxxx
 
-```bash
-wrangler d1 execute ttoksem --command "INSERT INTO access_keys (...) VALUES (...);"
-```
-
-Or pipe via a file: `wrangler d1 execute ttoksem --file ./issue-key.sql`.
-
-### Listing keys
-
-```bash
-wrangler d1 execute ttoksem --command "
-  SELECT id, name, token_prefix, scopes_json, revoked_at
-  FROM access_keys
-  ORDER BY created_at DESC;
-"
-```
-
-The token itself is never stored, so you can only see prefix + hash. If a token is lost, revoke and reissue.
-
-### Revoking a key
-
-```bash
-wrangler d1 execute ttoksem --command "
-  UPDATE access_keys
-  SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-  WHERE id = 'key_xxxxxxxxxxxxxxxxxxxxxxxx';
-"
-```
-
-The Worker treats any row with a non-null `revoked_at` as forbidden, so the next request from that token returns 401 without further action.
+`--d1 <database>` is the D1 `database_name` from `wrangler.jsonc`. There is no
+token-issuance HTTP route on the Worker on purpose — a credential-minting
+endpoint would be an attack target — so keys are issued operator-side via
+`wrangler`.
 
 ### Scopes worth knowing
 
