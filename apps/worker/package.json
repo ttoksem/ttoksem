@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "deploy": "pnpm --filter @ttoksem/worker... build && wrangler deploy"
   },
   "dependencies": {
     "@ttoksem/core": "workspace:*",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.93.0"
   }
 }

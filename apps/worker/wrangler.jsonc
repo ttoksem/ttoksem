@@ -1,0 +1,20 @@
+{
+  // ttoksem Cloudflare Worker deploy config. See docs/WORKER-D1.md.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ttoksem",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "TTOKSEM_WORKSPACE_KEY": "ttoksem-dev",
+    "TTOKSEM_AUTH_MODE": "access-key"
+  },
+  "d1_databases": [
+    {
+      "binding": "TTOKSEM_DB",
+      "database_name": "ttoksem",
+      // Run `wrangler d1 create ttoksem` and paste the returned database id here.
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ]
+}
