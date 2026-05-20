@@ -43,7 +43,7 @@ To share one ledger across machines, self-host the Worker on Cloudflare (D1-back
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ttoksem/ttoksem)
 
-Or deploy from the CLI — see [docs/WORKER-D1.md](docs/WORKER-D1.md).
+The button's guided flow may not auto-resolve the `apps/worker` subdirectory in this monorepo; deploying from the CLI (see [docs/WORKER-D1.md](docs/WORKER-D1.md)) is the reliable path.
 
 ## MVP Checkpoint
 
