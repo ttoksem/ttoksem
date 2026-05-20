@@ -10,15 +10,17 @@ TTOKSEM_WORKSPACE_KEY  default workspace key, optional, defaults to ttoksem-dev
 TTOKSEM_AUTH_MODE      access-key or none, optional, defaults to access-key
 ```
 
-The D1 adapter creates the current schema on startup through `LedgerService.init()`. For production deployment, run migrations deliberately in the deploy pipeline rather than relying only on request-time initialization.
+> **Note:** The D1 adapter creates the current schema on startup through `LedgerService.init()`. For production deployment, run migrations deliberately in the deploy pipeline rather than relying only on request-time initialization.
 
 The deploy config is committed at [`apps/worker/wrangler.jsonc`](../apps/worker/wrangler.jsonc). To deploy:
+
+Prerequisite: install and authenticate wrangler — `npm i -g wrangler && wrangler login`.
 
 1. `wrangler d1 create ttoksem` — creates the D1 database and prints its id.
 2. Paste that id into `apps/worker/wrangler.jsonc` (`d1_databases[0].database_id`).
 3. `pnpm --filter @ttoksem/worker deploy` — builds and uploads the Worker.
 
-Or use the one-click **Deploy to Cloudflare** button in the README, which provisions the Worker and D1 in a guided browser flow.
+Or try the **Deploy to Cloudflare** button in the README. Note: this is a monorepo — the guided flow may not automatically resolve the `apps/worker` subdirectory, so the CLI steps above are the reliable path.
 
 Local development still defaults to SQLite through the CLI and `apps/server`. The Worker path is for deployments that need an HTTP surface backed by D1, not a replacement for the local-first workflow.
 
