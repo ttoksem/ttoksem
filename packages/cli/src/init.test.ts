@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,14 +103,23 @@ describe("ttoksem init", () => {
       expect(existsSync(join(tmp, ".ttoksem", "ttoksem.db"))).toBe(true);
       // No hook written
       const settingsPath = join(tmp, ".claude", "settings.json");
-      if (existsSync(settingsPath)) {
-        const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Parameters<
-          typeof hasTtoksemStopHook
-        >[0];
-        expect(hasTtoksemStopHook(settings)).toBe(false);
-      }
+      expect(existsSync(settingsPath)).toBe(false);
       // Output says hook skipped
       expect(output).toContain("Skipped");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("skips hook install and leaves settings.json untouched when it contains invalid JSON", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "ttoksem-init-badjson-"));
+    mkdirSync(join(tmp, ".claude"), { recursive: true });
+    writeFileSync(join(tmp, ".claude", "settings.json"), "{ not valid json", "utf8");
+    const env = { ...process.env, INIT_CWD: tmp };
+    try {
+      runCli(["init", "--key", "ws-bad", "--yes"], env);
+      expect(existsSync(join(tmp, ".ttoksem", "ttoksem.db"))).toBe(true);
+      expect(readFileSync(join(tmp, ".claude", "settings.json"), "utf8")).toBe("{ not valid json");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

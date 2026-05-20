@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { LedgerService } from "@ttoksem/core";
@@ -44,21 +44,14 @@ export function registerInitCommand(program: Command): void {
     .action(async (options: { key?: string; name?: string; yes?: boolean }) => {
       const cwd = startDir();
       const dbPath = join(cwd, ".ttoksem", "ttoksem.db");
-      const key =
-        options.key ??
-        slugify(
-          cwd
-            .split("/")
-            .filter(Boolean)
-            .at(-1) ?? "workspace",
-        );
+      const key = slugify(options.key ?? (basename(cwd) || "workspace"));
 
       // 1. Workspace + DB (reuse if present).
       mkdirSync(dirname(dbPath), { recursive: true });
       const store = new SqliteLedgerStore(dbPath);
       const service = new LedgerService({ store });
-      await service.init();
       try {
+        await service.init();
         const existing = await store.getWorkspaceByKey(key);
         if (existing) {
           console.log(`Reusing workspace "${key}".`);
