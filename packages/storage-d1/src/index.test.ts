@@ -1,4 +1,4 @@
-import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { D1LedgerStore, type D1Database, type D1PreparedStatement, type D1Result, type D1RunResult } from "./index.js";
 
@@ -144,7 +144,7 @@ class FakeD1Database implements D1Database {
 
 class FakeD1PreparedStatement implements D1PreparedStatement {
   constructor(
-    private readonly statement: ReturnType<DatabaseSync["prepare"]>,
+    private readonly statement: StatementSync,
     private readonly values: unknown[],
   ) {}
 
