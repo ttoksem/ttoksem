@@ -9,7 +9,7 @@
     "check": "pnpm -r check",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "cli": "pnpm --filter @ttoksem/cli dev"
+    "cli": "pnpm --filter ttoksem dev"
   },
   "devDependencies": {
     "@types/node": "^22.15.2",
