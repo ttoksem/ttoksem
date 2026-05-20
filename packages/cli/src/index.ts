@@ -1092,6 +1092,12 @@ hook
       // Advance one millisecond past the last imported event so the `< since`
       // filter in parseClaudeSessionUsage excludes it on re-run (incremental import).
       // getLastImportedAt returns string|null; the option field is string|undefined.
+      //
+      // Known limitation: `since` is workspace-scoped (MAX occurred_at across the whole
+      // workspace), not project-scoped. This is fine for the single-project onboarding
+      // case; if multiple Claude Code projects share one workspace, a project whose most
+      // recent event predates another project's high-water-mark could have events missed
+      // by the since-filter. The DB-layer idempotency key still prevents true duplicates.
       const since = lastImportedAt
         ? new Date(Date.parse(lastImportedAt) + 1).toISOString()
         : undefined;

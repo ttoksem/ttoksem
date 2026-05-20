@@ -95,7 +95,7 @@ describe("ttoksem hook run", () => {
         await store.close();
       }
 
-      // 5. Second run must be a no-op — idempotency key dedup prevents re-import
+      // 5. Second run must be a no-op — the +1ms since-filter excludes the already-imported boundary event. hook run uses the high-water-mark pattern (not idempotency) to achieve imported=0.
       const output2 = runCli(hookArgs, env);
       expect(output2).toContain("imported=0");
     } finally {
