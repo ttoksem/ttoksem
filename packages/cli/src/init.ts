@@ -48,9 +48,10 @@ export function registerInitCommand(program: Command): void {
 
       // 1. Workspace + DB (reuse if present).
       mkdirSync(dirname(dbPath), { recursive: true });
-      const store = new SqliteLedgerStore(dbPath);
-      const service = new LedgerService({ store });
+      let store: SqliteLedgerStore | undefined;
       try {
+        store = new SqliteLedgerStore(dbPath);
+        const service = new LedgerService({ store });
         await service.init();
         const existing = await store.getWorkspaceByKey(key);
         if (existing) {
@@ -104,7 +105,7 @@ export function registerInitCommand(program: Command): void {
         console.log(`Installed autocapture hook into ${settingsPath}.`);
         console.log(`Hook command: ttoksem hook run --workspace ${key}`);
       } finally {
-        await store.close();
+        await store?.close();
       }
     });
 }
