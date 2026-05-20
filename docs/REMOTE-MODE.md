@@ -24,12 +24,18 @@ Every Ledger-tier subcommand (full list verified against
 - **Workspaces:** `workspace list`
 - **Tasks:** `task start`, `task archive`, `task close` (deprecated alias),
   `task list`, `task active` (deprecated), `task stats`, `task update`
-- **Usage:** `usage add`, `usage move`, `usage last-import`
+- **Usage:** `usage add`, `usage move`, `usage last-import`,
+  `usage import-claude-sessions`, `usage import-codex-sessions`
 - **Inbox:** `inbox list`, `inbox show`, `inbox assign`,
   `inbox accept`, `inbox assign-event`
 - **Dashboard:** `dashboard overview`
 - **Reports:** `report today`, `report task`
 - **Pricing reads:** `pricing list`, `pricing snapshot list`
+
+The session importers parse local JSONL on the machine they run on and write
+the resulting usage events to the remote ledger — so `ttoksem hook run`
+(the Claude Code Stop-hook autocapture command) also works in remote mode,
+letting several machines feed one self-hosted Worker.
 
 ## What doesn't (and why)
 
@@ -48,7 +54,6 @@ hard-error in remote mode with the message:
 | `pricing snapshot upsert`, `pricing import-litellm`, `pricing upsert` | Admin tier (writes pricing policy) |
 | `pricing reprice`, `pricing migrate-events` | Admin tier (recomputes pricing) |
 | `usage codex-turn`, `usage claude-turn` | Read local files |
-| `usage import-codex-sessions`, `usage import-claude-sessions` | Read local JSONL session logs |
 | `usage openai-response`, `usage anthropic-response` | Read local response JSON |
 | `dashboard serve` | Serves the dashboard from the local DB |
 
