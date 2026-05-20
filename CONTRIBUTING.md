@@ -95,6 +95,15 @@ same number). Releases are cut manually:
 2. Add a section to `CHANGELOG.md` summarizing the release by area.
 3. Tag `vX.Y.Z` and push the tag.
 
+### Releasing the CLI
+
+The `ttoksem` CLI package (`packages/cli`) must be published with
+`pnpm publish` (run from `packages/cli`), **not** `npm publish`. `pnpm`
+rewrites `workspace:*` specifiers in `devDependencies` to real version
+numbers before generating the tarball; `npm publish` does not, which
+would ship a broken manifest. The `prepublishOnly` script builds the
+bundle automatically, so no manual build step is needed before publishing.
+
 Until further notice, breaking changes are allowed in minor bumps —
 the project is pre-1.0.
 

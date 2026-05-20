@@ -1,30 +1,31 @@
 {
-  "name": "@ttoksem/cli",
+  "name": "ttoksem",
   "version": "0.1.0",
   "type": "module",
-  "bin": {
-    "ttoksem": "./dist/index.js"
-  },
+  "bin": { "ttoksem": "./dist/cli.mjs" },
+  "files": ["dist/cli.mjs"],
+  "engines": { "node": ">=22.5.0" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:bundle": "pnpm --filter ttoksem... build && node esbuild.mjs",
+    "prepublishOnly": "pnpm build:bundle",
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/index.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": {
+  "devDependencies": {
     "@ttoksem/core": "workspace:*",
+    "@ttoksem/http": "workspace:*",
     "@ttoksem/ledger-http": "workspace:*",
     "@ttoksem/providers": "workspace:*",
     "@ttoksem/schema": "workspace:*",
     "@ttoksem/server": "workspace:*",
     "@ttoksem/storage-sqlite": "workspace:*",
-    "commander": "^14.0.2",
-    "tsx": "^4.20.6"
-  },
-  "devDependencies": {
-    "@ttoksem/http": "workspace:*",
     "@types/node": "^22.15.2",
+    "commander": "^14.0.2",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
