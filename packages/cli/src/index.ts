@@ -1101,6 +1101,11 @@ hook
       return;
     }
     const workspace = resolveWorkspaceKeyFromOptions(options);
+    if (!workspace) {
+      throw new Error(
+        "hook run could not determine a workspace. Pass --workspace <key>, set TTOKSEM_WORKSPACE_KEY, or add ttoksem.config.json with {\"workspace\": \"<key>\"}.",
+      );
+    }
     const handle = await makeLedgerLocal();
     try {
       const service = handle.ledger;

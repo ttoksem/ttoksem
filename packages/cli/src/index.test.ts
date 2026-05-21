@@ -1368,6 +1368,41 @@ describe("ttoksem CLI workflows", () => {
     }
   }, 30_000);
 
+  it("hook run exits non-zero with a clear error when no workspace can be resolved", async () => {
+    // Verifies the guard added to `hook run`: when no --workspace flag, no
+    // TTOKSEM_WORKSPACE_KEY, and no ttoksem.config.json are present, the command
+    // must fail with a message mentioning ttoksem.config.json.
+    const repoDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const runDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-run-"));
+    const projectsDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-projects-"));
+    const dbPath = join(repoDir, "ttoksem.db");
+    try {
+      // Register a workspace so the DB exists; the hook must still fail because
+      // neither --workspace nor config is passed.
+      runCli(
+        ["workspace", "init", "--key", "no-config-proj", "--root", repoDir],
+        { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: repoDir },
+      );
+      // runDir has NO ttoksem.config.json; env has no TTOKSEM_WORKSPACE_KEY.
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        TTOKSEM_DB: dbPath,
+        INIT_CWD: runDir,
+        TTOKSEM_WORKSPACE_KEY: undefined,
+      };
+      const result = runCliCaptureBoth(
+        ["hook", "run", "--projects-dir", projectsDir],
+        env,
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("ttoksem.config.json");
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(runDir, { recursive: true, force: true });
+      rmSync(projectsDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("hook run resolves workspace from ttoksem.config.json without --workspace", async () => {
     // Verifies the critical path for the installed Claude Code Stop hook which runs
     // `ttoksem hook run` with NO --workspace flag. The workspace must come from config.
