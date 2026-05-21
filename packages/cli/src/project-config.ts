@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 /**
  * Walk up from startDir to find ttoksem.config.json.
  * Mirrors findExistingDbUpwards() in index.ts: same termination on filesystem root.
+ * @returns Absolute path to ttoksem.config.json, or null if not found.
  */
 export function findProjectConfig(startDir: string): string | null {
   let dir = resolve(startDir);

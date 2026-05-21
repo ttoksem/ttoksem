@@ -20,7 +20,9 @@ describe("findProjectConfig", () => {
   it("returns null when no config file exists in any ancestor", () => {
     const root = mkdtempSync(join(tmpdir(), "ttoksem-cfg-"));
     try {
-      expect(findProjectConfig(root)).toBeNull();
+      const nested = join(root, "a", "b");
+      mkdirSync(nested, { recursive: true });
+      expect(findProjectConfig(nested)).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
