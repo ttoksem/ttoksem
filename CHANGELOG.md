@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The repository is a single-version pnpm workspace — every package under
 `packages/*` and `apps/*` ships at the same version.
 
+## [0.2.0] — 2026-05-21
+
+Project-level configuration for the CLI, plus packaging and CLI polish.
+
+### CLI (`@ttoksem/cli`)
+
+- Project config file `ttoksem.config.json`: the CLI resolves the
+  workspace from a committed config file, so commands and agents no
+  longer need `--workspace` on every invocation. Resolution precedence
+  is `--workspace` flag > `ttoksem.config.json` > `TTOKSEM_WORKSPACE_KEY`
+  env var; discovery walks up from the working directory. The schema
+  also accepts `promptMode`, `model`, and `remote` for forward
+  compatibility (resolution of those is not yet wired).
+- `ttoksem init` writes `ttoksem.config.json` for the project,
+  idempotently — an existing config is never overwritten.
+- `ttoksem init` installs the Claude Code autocapture hook as
+  `ttoksem hook run`, which reads the workspace from the config file,
+  instead of baking `--workspace <key>` into the hook command.
+- Removed the hardcoded `ttoksem-dev` default from `--workspace`;
+  commands resolve the workspace through the precedence chain above.
+- `ttoksem worker key list` now shows `expires` and `last_used` for
+  each access key, matching `auth key list`.
+
+### Packaging
+
+- The `ttoksem` CLI package gained npm publish metadata, a
+  package-level README, and an MIT LICENSE; the repository README is
+  refocused on the CLI as the published product.
+
 ## [0.1.0] — 2026-04-30
 
 Initial public release. The local-first AI cost ledger reaches a usable
@@ -84,4 +113,5 @@ provider importers.
   auth; documented in `docs/WORKER-D1.md` including a one-shot helper to
   mint an access key and emit the matching SQL `INSERT`
 
+[0.2.0]: https://github.com/ttoksem/ttoksem/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ttoksem/ttoksem/releases/tag/v0.1.0
