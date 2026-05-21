@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1431,6 +1431,26 @@ describe("ttoksem CLI workflows", () => {
       rmSync(repoDir, { recursive: true, force: true });
       rmSync(runDir, { recursive: true, force: true });
       rmSync(projectsDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("ttoksem init writes ttoksem.config.json and is idempotent", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      runCli(["init", "--key", "cfg-proj", "--yes"], env);
+      const cfgPath = join(tempDir, "ttoksem.config.json");
+      const written = JSON.parse(readFileSync(cfgPath, "utf8"));
+      expect(written.workspace).toBe("cfg-proj");
+
+      // Idempotent: a hand-edited config is preserved on re-run.
+      writeFileSync(cfgPath, JSON.stringify({ workspace: "cfg-proj", promptMode: "hash" }));
+      runCli(["init", "--key", "cfg-proj", "--yes"], env);
+      const after = JSON.parse(readFileSync(cfgPath, "utf8"));
+      expect(after.promptMode).toBe("hash");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
     }
   }, 30_000);
 });

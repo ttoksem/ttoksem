@@ -61,6 +61,15 @@ export function registerInitCommand(program: Command): void {
           console.log(`Created workspace "${key}" at ${dbPath}.`);
         }
 
+        // Write the project config file (idempotent — never clobber a hand-edited one).
+        const configPath = join(cwd, "ttoksem.config.json");
+        if (existsSync(configPath)) {
+          console.log("Reusing existing ttoksem.config.json.");
+        } else {
+          writeFileSync(configPath, `${JSON.stringify({ workspace: key }, null, 2)}\n`, "utf8");
+          console.log(`Wrote ttoksem.config.json (workspace "${key}").`);
+        }
+
         // 2. Claude Code project detection.
         const claudeDir = join(cwd, ".claude");
         if (!existsSync(claudeDir)) {
