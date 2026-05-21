@@ -1448,6 +1448,7 @@ describe("ttoksem CLI workflows", () => {
       writeFileSync(cfgPath, JSON.stringify({ workspace: "cfg-proj", promptMode: "hash" }));
       runCli(["init", "--key", "cfg-proj", "--yes"], env);
       const after = JSON.parse(readFileSync(cfgPath, "utf8"));
+      expect(after.workspace).toBe("cfg-proj");
       expect(after.promptMode).toBe("hash");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });

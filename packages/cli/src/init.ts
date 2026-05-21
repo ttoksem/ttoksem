@@ -64,7 +64,7 @@ export function registerInitCommand(program: Command): void {
         // Write the project config file (idempotent — never clobber a hand-edited one).
         const configPath = join(cwd, "ttoksem.config.json");
         if (existsSync(configPath)) {
-          console.log("Reusing existing ttoksem.config.json.");
+          console.log(`Reusing existing ${configPath}.`);
         } else {
           writeFileSync(configPath, `${JSON.stringify({ workspace: key }, null, 2)}\n`, "utf8");
           console.log(`Wrote ttoksem.config.json (workspace "${key}").`);
