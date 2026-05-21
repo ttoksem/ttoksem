@@ -1331,6 +1331,42 @@ describe("ttoksem CLI workflows", () => {
       rmSync(runDir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("a previously hardcoded-default command honors ttoksem.config.json", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      runCli(["workspace", "init", "--key", "cfg-proj", "--root", tempDir], env);
+      writeFileSync(join(tempDir, "ttoksem.config.json"), JSON.stringify({ workspace: "cfg-proj" }));
+      // `usage codex-turn` previously had a hardcoded --workspace default of "ttoksem-dev".
+      // Pre-change: it resolves "ttoksem-dev", a workspace that does not exist -> errors.
+      // Post-change: with the default removed it resolves "cfg-proj" from ttoksem.config.json.
+      runCli(
+        [
+          "usage",
+          "codex-turn",
+          "--started-at",
+          "2026-05-21T00:00:00.000Z",
+          "--ended-at",
+          "2026-05-21T00:00:01.000Z",
+          "--input-tokens",
+          "10",
+          "--output-tokens",
+          "5",
+        ],
+        env,
+      );
+      // The codex-turn must be recorded under cfg-proj (the config's workspace).
+      // `runCli` throwing on the codex-turn line above is the RED mechanism (non-zero exit).
+      // The positive assertion below is FALSE for an empty workspace (Events: 0) and TRUE
+      // only when the codex-turn was actually recorded in cfg-proj.
+      const report = runCli(["report", "today", "--workspace", "cfg-proj"], env);
+      expect(report).toContain("Events: 1");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {

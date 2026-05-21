@@ -428,7 +428,7 @@ usage
   .command("codex-turn")
   .alias("chat-turn")
   .description("Record an estimated chat conversation turn")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--run-id <id>", "existing or explicit run id")
   .option("--model <model>", "model label", "codex-chat")
@@ -449,7 +449,12 @@ usage
     const handle = await makeLedgerLocal();
     try {
       const service = requireLocalLedger(handle);
-      const message = buildCodexTurnMessage(options);
+      const resolvedWorkspace = resolveWorkspaceKey({
+        flag: options.workspace,
+        config: getProjectConfig()?.config,
+        env: process.env.TTOKSEM_WORKSPACE_KEY,
+      });
+      const message = buildCodexTurnMessage({ ...options, workspace: resolvedWorkspace ?? options.workspace });
       const event = await service.recordUsage(message);
       console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
     } finally {
@@ -460,7 +465,7 @@ usage
 usage
   .command("import-codex-sessions")
   .description("Import Codex App/CLI session token_count events")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key to attach imported usage")
   .option("--file <path>", "single Codex session JSONL file")
   .option("--sessions-dir <path>", "Codex sessions directory; defaults to $CODEX_HOME/sessions")
@@ -487,7 +492,7 @@ usage
 usage
   .command("claude-turn")
   .description("Record an estimated Claude (Claude Code/Claude.app) chat turn")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--run-id <id>", "existing or explicit run id")
   .option("--model <model>", "model label", "claude-chat")
@@ -519,7 +524,7 @@ usage
 usage
   .command("import-claude-sessions")
   .description("Import Claude Code session JSONL events from ~/.claude/projects")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key to attach imported usage")
   .option("--file <path>", "single Claude Code session JSONL file")
   .option("--projects-dir <path>", "Claude Code projects directory; defaults to $CLAUDE_HOME/projects")
@@ -746,7 +751,7 @@ const dashboard = program.command("dashboard").description("Dashboard commands")
 
 dashboard
   .command("overview")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--root <path>", "workspace root path")
   .option("--task-limit <count>", "maximum task rows", "8")
   .option("--recent-limit <count>", "maximum recent usage rows", "8")
@@ -769,7 +774,7 @@ dashboard
 
 dashboard
   .command("serve")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--host <host>", "host to bind", "127.0.0.1")
   .option("--port <port>", "port to bind", "4317")
   .option("--auth <mode>", "auth mode: access-key or none", "access-key")
@@ -1077,7 +1082,7 @@ const hook = program.command("hook").description("Claude Code hook integration")
 hook
   .command("run")
   .description("Autocapture: import this project's Claude Code session usage")
-  .option("--workspace <key>", "workspace key", "ttoksem-dev")
+  .option("--workspace <key>", "workspace key")
   .option("--projects-dir <path>", "Claude Code project dir (overrides stdin; for manual runs)")
   .action(async (options: { workspace: string; projectsDir?: string }) => {
     const projectsDir = options.projectsDir ?? (await projectsDirFromStdin());
@@ -1158,7 +1163,7 @@ interface UsageMoveOptions {
 type PromptMode = "none" | "hash" | "redacted" | "full";
 
 interface CodexTurnOptions {
-  workspace: string;
+  workspace?: string;
   task?: string;
   runId?: string;
   model: string;
