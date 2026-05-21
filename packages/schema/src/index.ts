@@ -281,7 +281,7 @@ export const TtoksemConfigSchema = z
     workspace: z.string().min(1).optional(),
     promptMode: z.enum(["full", "redacted", "hash", "none"]).optional(),
     model: z.record(z.string(), z.string()).optional(),
-    remote: z.object({ url: z.string().url() }).optional(),
+    remote: z.object({ url: z.string().url().startsWith("http") }).optional(),
   })
   .passthrough();
 

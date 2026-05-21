@@ -33,9 +33,14 @@ describe("loadProjectConfig", () => {
   it("loads and validates a config found upward from startDir", () => {
     const root = mkdtempSync(join(tmpdir(), "ttoksem-cfg-"));
     try {
-      writeFileSync(join(root, "ttoksem.config.json"), JSON.stringify({ workspace: "my-proj" }));
+      writeFileSync(
+        join(root, "ttoksem.config.json"),
+        JSON.stringify({ workspace: "my-proj", promptMode: "hash", _futureKey: 99 }),
+      );
       const loaded = loadProjectConfig(root);
       expect(loaded?.config.workspace).toBe("my-proj");
+      expect(loaded?.config.promptMode).toBe("hash");
+      expect((loaded?.config as Record<string, unknown>)._futureKey).toBe(99);
       expect(loaded?.path).toBe(join(root, "ttoksem.config.json"));
     } finally {
       rmSync(root, { recursive: true, force: true });
