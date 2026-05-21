@@ -58,6 +58,9 @@ docs/              design notes, examples, worker deployment guide
 Each package has its own `dev`, `build`, `lint`, `test` scripts. The
 root scripts iterate with `pnpm -r`.
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning
+behind the package boundaries and the execution model.
+
 ## Conventions
 
 - TypeScript strict; no implicit `any`. Prefer narrow types over

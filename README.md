@@ -187,25 +187,6 @@ Dashboard/API data is protected by database access keys. Tokens are shown once, 
 
 See [docs/ACCESS-AUTH.md](docs/ACCESS-AUTH.md) for the current policy and commands.
 
-## Project Shape
-
-This repo is intentionally a pnpm workspace, not a single `src/` package.
-
-The split is not mainly for public npm publishing. It exists to keep runtime boundaries visible while the implementation grows:
-
-- `@ttoksem/schema`: shared validation and TypeScript types
-- `@ttoksem/core`: runtime-neutral ledger behavior
-- `@ttoksem/providers`: provider SDK response mappers
-- `@ttoksem/storage`: storage interfaces
-- `@ttoksem/storage-sqlite`: local SQLite adapter
-- `@ttoksem/storage-d1`: Cloudflare D1 adapter for Worker deployments
-- `@ttoksem/http`: Hono routes for local dashboard/API surfaces
-- `@ttoksem/cli`: Node.js CLI entrypoint
-- `@ttoksem/server`: local Node server entrypoint under `apps/server`
-- `@ttoksem/worker`: Cloudflare Worker entrypoint under `apps/worker`
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution model.
-
 ## Examples
 
 - [Conversation Task Assignment](docs/examples/conversation-task-assignment.md): how a chat assistant should map a long conversation to task, run, and usage events without forcing the user to remember commands.
@@ -216,17 +197,6 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the reasoning and execution
 - [Worker D1 Deployment](docs/WORKER-D1.md): how the D1-backed Worker entrypoint is wired.
 - [Token Estimation Examples](docs/examples/token-estimation.md): how an assistant should fill token counts and provenance when provider usage is missing.
 - [Usage Event Taxonomy](docs/examples/usage-event-taxonomy.md): how to record RAG, API calls, tools, media, storage, and other measurable operations.
-
-## Development
-
-```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm cli doctor
-```
-
-Use `TTOKSEM_DB=/path/to/ttoksem.db` to select a local SQLite file. Without it, the CLI uses `.ttoksem/ttoksem.db` in the current directory.
 
 ## Current CLI Slice
 
@@ -319,3 +289,7 @@ pnpm cli task list --workspace ttoksem-dev
 Subcommands needing admin or filesystem capabilities (`workspace init`/`current`, `auth key *`, `pricing snapshot/rule upsert`, `pricing import-litellm`, `pricing reprice`, `pricing migrate-events`, `usage codex-turn`/`claude-turn`/`import-*-sessions`/`openai-response`/`anthropic-response`, `dashboard serve`, `doctor`) hard-error in remote mode with a clear "requires local DB" message.
 
 See [docs/REMOTE-MODE.md](docs/REMOTE-MODE.md) for the env vars, supported subcommand list, error mapping, and limitations.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workspace layout, development setup, and conventions.
