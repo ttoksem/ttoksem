@@ -1367,6 +1367,37 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("hook run resolves workspace from ttoksem.config.json without --workspace", async () => {
+    // Verifies the critical path for the installed Claude Code Stop hook which runs
+    // `ttoksem hook run` with NO --workspace flag. The workspace must come from config.
+    const repoDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const runDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-run-"));
+    const projectsDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-projects-"));
+    const dbPath = join(repoDir, "ttoksem.db");
+    try {
+      // Register workspace "hook-proj" rooted at repoDir.
+      runCli(
+        ["workspace", "init", "--key", "hook-proj", "--root", repoDir],
+        { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: repoDir },
+      );
+      // Place the config in runDir (simulates the project directory the hook runs from).
+      writeFileSync(join(runDir, "ttoksem.config.json"), JSON.stringify({ workspace: "hook-proj" }));
+      // Run `hook run` from runDir with NO --workspace. projectsDir is empty (no JSONL files)
+      // so import completes with 0 events. The test would throw on non-zero exit if the
+      // workspace cannot be resolved (e.g. "unknown workspace" ledger error).
+      const out = runCli(
+        ["hook", "run", "--projects-dir", projectsDir],
+        { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: runDir },
+      );
+      // Verify it ran in the hook-proj workspace (imported=0 just means no JSONL files present).
+      expect(out).toContain("imported=0");
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(runDir, { recursive: true, force: true });
+      rmSync(projectsDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {

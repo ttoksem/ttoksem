@@ -449,12 +449,7 @@ usage
     const handle = await makeLedgerLocal();
     try {
       const service = requireLocalLedger(handle);
-      const resolvedWorkspace = resolveWorkspaceKey({
-        flag: options.workspace,
-        config: getProjectConfig()?.config,
-        env: process.env.TTOKSEM_WORKSPACE_KEY,
-      });
-      const message = buildCodexTurnMessage({ ...options, workspace: resolvedWorkspace ?? options.workspace });
+      const message = buildCodexTurnMessage({ ...options, workspace: resolveWorkspaceKeyFromOptions(options) });
       const event = await service.recordUsage(message);
       console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
     } finally {
@@ -480,7 +475,10 @@ usage
     const handle = await makeLedgerLocal();
     try {
       const service = handle.ledger;
-      const result = await importCodexSessions(service, options);
+      const result = await importCodexSessions(service, {
+        ...options,
+        workspace: resolveWorkspaceKeyFromOptions(options),
+      });
       console.log(
         `codex import scanned_files=${result.scannedFiles} token_events=${result.tokenEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
       );
@@ -513,7 +511,7 @@ usage
     const handle = await makeLedgerLocal();
     try {
       const service = requireLocalLedger(handle);
-      const message = buildClaudeTurnMessage(options);
+      const message = buildClaudeTurnMessage({ ...options, workspace: resolveWorkspaceKeyFromOptions(options) });
       const event = await service.recordUsage(message);
       console.log(`usage ${event.id} ${event.provider}/${event.model} ${event.assignment_status}`);
     } finally {
@@ -540,7 +538,10 @@ usage
     const handle = await makeLedgerLocal();
     try {
       const service = handle.ledger;
-      const result = await importClaudeSessions(service, options);
+      const result = await importClaudeSessions(service, {
+        ...options,
+        workspace: resolveWorkspaceKeyFromOptions(options),
+      });
       console.log(
         `claude import scanned_files=${result.scannedFiles} assistant_events=${result.assistantEvents} imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`,
       );
@@ -794,14 +795,20 @@ dashboard
     } finally {
       await handle.close();
     }
+    const workspaceKey = resolveWorkspaceKeyFromOptions(options);
+    if (!workspaceKey) {
+      throw new Error(
+        "dashboard serve requires a workspace key. Pass --workspace <key>, set TTOKSEM_WORKSPACE_KEY, or add a ttoksem.config.json with {\"workspace\": \"<key>\"}.",
+      );
+    }
     const initialToken =
       authMode === "access-key"
-        ? await ensureDashboardAccessKey(makeLedgerLocal, requireLocalLedger, options.workspace, options.createKeyName)
+        ? await ensureDashboardAccessKey(makeLedgerLocal, requireLocalLedger, workspaceKey, options.createKeyName)
         : null;
     const dbPath = resolveDbPath(false);
     const server = await serveDashboard({
       dbPath,
-      workspaceKey: options.workspace,
+      workspaceKey,
       hostname: options.host,
       port: parsePositiveInteger(options.port),
       authMode,
@@ -1084,7 +1091,7 @@ hook
   .description("Autocapture: import this project's Claude Code session usage")
   .option("--workspace <key>", "workspace key")
   .option("--projects-dir <path>", "Claude Code project dir (overrides stdin; for manual runs)")
-  .action(async (options: { workspace: string; projectsDir?: string }) => {
+  .action(async (options: { workspace?: string; projectsDir?: string }) => {
     const projectsDir = options.projectsDir ?? (await projectsDirFromStdin());
     if (!projectsDir) {
       console.error(
@@ -1093,11 +1100,12 @@ hook
       process.exitCode = 1;
       return;
     }
+    const workspace = resolveWorkspaceKeyFromOptions(options);
     const handle = await makeLedgerLocal();
     try {
       const service = handle.ledger;
       const lastImportedAt = await service.getLastImportedAt({
-        workspace: { key: options.workspace },
+        workspace: { key: workspace },
         source: "claude-session",
       });
       // Advance one millisecond past the last imported event so the `< since`
@@ -1113,7 +1121,7 @@ hook
         ? new Date(Date.parse(lastImportedAt) + 1).toISOString()
         : undefined;
       const importOptions: ClaudeSessionImportOptions = {
-        workspace: options.workspace,
+        workspace,
         task: process.env.TTOKSEM_TASK || undefined,
         projectsDir,
         claudeHome: process.env.CLAUDE_HOME ?? "~/.claude",
@@ -1183,7 +1191,7 @@ interface CodexTurnOptions {
 }
 
 interface CodexSessionImportOptions {
-  workspace: string;
+  workspace?: string;
   task?: string;
   file?: string;
   sessionsDir?: string;
@@ -1197,7 +1205,7 @@ interface CodexSessionImportOptions {
 }
 
 interface ClaudeTurnOptions {
-  workspace: string;
+  workspace?: string;
   task?: string;
   runId?: string;
   model: string;
@@ -1217,7 +1225,7 @@ interface ClaudeTurnOptions {
 }
 
 interface ClaudeSessionImportOptions {
-  workspace: string;
+  workspace?: string;
   task?: string;
   file?: string;
   projectsDir?: string;
@@ -1290,7 +1298,7 @@ interface InboxAssignEventOptions {
 }
 
 interface DashboardServeOptions {
-  workspace: string;
+  workspace?: string;
   host: string;
   port: string;
   auth: string;
@@ -1434,13 +1442,18 @@ async function waitForShutdown(close: () => Promise<void>): Promise<void> {
 
 function workspaceResolver(options: { workspace?: string; root?: string }) {
   return {
-    key: resolveWorkspaceKey({
-      flag: options.workspace,
-      config: getProjectConfig()?.config,
-      env: process.env.TTOKSEM_WORKSPACE_KEY,
-    }),
+    key: resolveWorkspaceKeyFromOptions(options),
     rootPath: resolveFromCommandCwd(options.root ?? "."),
   };
+}
+
+/** Flag > ttoksem.config.json > TTOKSEM_WORKSPACE_KEY env var. */
+function resolveWorkspaceKeyFromOptions(options: { workspace?: string }): string | undefined {
+  return resolveWorkspaceKey({
+    flag: options.workspace,
+    config: getProjectConfig()?.config,
+    env: process.env.TTOKSEM_WORKSPACE_KEY,
+  });
 }
 
 function resolveFromCommandCwd(path: string): string {
