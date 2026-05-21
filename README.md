@@ -7,16 +7,13 @@ surfaces it through a CLI and a local Hono dashboard.
 
 The product records AI usage and cost. It does not execute LLM calls.
 
-Current scope:
+## What it does
 
-- TypeScript pnpm workspace
-- Zod v4 schemas for initial ledger inputs and records
-- Worker-compatible core service boundary
-- SQLite-first local adapter with explicit SQL
-- Cloudflare D1 adapter and Worker entrypoint
-- CLI entrypoint for workspace, task, usage, report, dashboard, and doctor workflows
-- Hono HTTP package and local server entrypoint for the dashboard and write API
-- Database access-key guard for local dashboard/API data
+- Imports token usage from Claude Code and Codex session logs, and from OpenAI SDK responses
+- Attributes spend to a workspace, task, run, and event
+- Prices usage against versioned pricing-rule snapshots
+- Surfaces cost through CLI reports and a local dashboard
+- Optional Cloudflare D1-backed Worker to share one ledger across machines
 
 ## Quick Start
 
@@ -37,19 +34,9 @@ See your usage:
     ttoksem dashboard serve     # local web dashboard
     ttoksem report today        # today's cost in the terminal
 
-## Self-hosting (multi-environment)
+## Self-hosting
 
-To share one ledger across machines, self-host the Worker on Cloudflare (D1-backed):
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ttoksem/ttoksem)
-
-The button's guided flow may not auto-resolve the `apps/worker` subdirectory in this monorepo; deploying from the CLI (see [docs/WORKER-D1.md](docs/WORKER-D1.md)) is the reliable path.
-
-## MVP Checkpoint
-
-The current MVP is a local cost ledger for AI usage. It supports workspace and task setup, usage ingest, chat turn logging, Codex App/CLI session import, prompt snapshot retention/redaction modes, OpenAI SDK response usage capture, inbox reassignment, run grouping, pricing source snapshots, LiteLLM pricing import, event-time repricing, task/day cost reports, CLI dashboard summaries, persistent database access keys, a local Hono dashboard, write-capable HTTP API routes, and a D1-backed Worker entrypoint.
-
-Post-MVP scope includes optional deferred MCP-facing assignment workflows.
+To share one ledger across machines, self-host the D1-backed Worker on Cloudflare — see [docs/WORKER-D1.md](docs/WORKER-D1.md).
 
 ## Dashboard
 
