@@ -106,13 +106,10 @@ export function registerInitCommand(program: Command): void {
           console.log("Skipped. Re-run `ttoksem init` to install it later.");
           return;
         }
-        const merged = mergeTtoksemStopHook(
-          settings,
-          `ttoksem hook run --workspace ${key}`,
-        );
+        const merged = mergeTtoksemStopHook(settings, "ttoksem hook run");
         writeFileSync(settingsPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
         console.log(`Installed autocapture hook into ${settingsPath}.`);
-        console.log(`Hook command: ttoksem hook run --workspace ${key}`);
+        console.log("Hook command: ttoksem hook run (workspace read from ttoksem.config.json)");
       } finally {
         await store?.close();
       }

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1450,6 +1450,22 @@ describe("ttoksem CLI workflows", () => {
       const after = JSON.parse(readFileSync(cfgPath, "utf8"));
       expect(after.workspace).toBe("cfg-proj");
       expect(after.promptMode).toBe("hash");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("init installs a hook command without a baked-in --workspace", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      mkdirSync(join(tempDir, ".claude"), { recursive: true });
+      runCli(["init", "--key", "cfg-proj", "--yes"], env);
+      const settings = JSON.parse(readFileSync(join(tempDir, ".claude", "settings.json"), "utf8"));
+      const cmd = settings.hooks.Stop[0].hooks[0].command;
+      expect(cmd).toContain("ttoksem hook run");
+      expect(cmd).not.toContain("--workspace");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
