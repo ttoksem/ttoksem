@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { findProjectConfig, loadProjectConfig } from "./project-config.js";
+import { findProjectConfig, loadProjectConfig, resolveWorkspaceKey } from "./project-config.js";
 
 describe("findProjectConfig", () => {
   it("finds ttoksem.config.json by walking up from a nested directory", () => {
@@ -74,5 +74,27 @@ describe("loadProjectConfig", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("resolveWorkspaceKey", () => {
+  it("prefers the CLI flag over config and env", () => {
+    expect(
+      resolveWorkspaceKey({ flag: "from-flag", config: { workspace: "from-config" }, env: "from-env" }),
+    ).toBe("from-flag");
+  });
+
+  it("prefers the config file over env when no flag", () => {
+    expect(resolveWorkspaceKey({ config: { workspace: "from-config" }, env: "from-env" })).toBe(
+      "from-config",
+    );
+  });
+
+  it("falls back to env when neither flag nor config supply a key", () => {
+    expect(resolveWorkspaceKey({ env: "from-env" })).toBe("from-env");
+  });
+
+  it("returns undefined when nothing supplies a key", () => {
+    expect(resolveWorkspaceKey({})).toBeUndefined();
   });
 });

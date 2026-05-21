@@ -33,6 +33,21 @@ export function loadProjectConfig(startDir: string): LoadedProjectConfig | null 
   return { config: result.data, path };
 }
 
+/**
+ * Resolve the workspace key by precedence: CLI flag > config file > env var.
+ * Returns undefined when none supply a key — the ledger then resolves by
+ * cwd/root_path (see workspace-spec.md), and errors if that also fails.
+ * Note: there is intentionally no "ttoksem-dev" built-in default — that
+ * hardcoded value is removed in Task 5.
+ */
+export function resolveWorkspaceKey(input: {
+  flag?: string;
+  config?: TtoksemConfig;
+  env?: string;
+}): string | undefined {
+  return input.flag ?? input.config?.workspace ?? input.env;
+}
+
 export function findProjectConfig(startDir: string): string | null {
   let dir = resolve(startDir);
   while (true) {
