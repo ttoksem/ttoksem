@@ -90,6 +90,10 @@ describe("resolveWorkspaceKey", () => {
     );
   });
 
+  it("falls through to env when config exists but has no workspace", () => {
+    expect(resolveWorkspaceKey({ config: {}, env: "from-env" })).toBe("from-env");
+  });
+
   it("falls back to env when neither flag nor config supply a key", () => {
     expect(resolveWorkspaceKey({ env: "from-env" })).toBe("from-env");
   });
