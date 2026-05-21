@@ -1,6 +1,29 @@
 {
   "name": "ttoksem",
   "version": "0.1.0",
+  "description": "Local-first cost ledger for AI usage — track Claude Code, Codex, and OpenAI token spend per task.",
+  "keywords": [
+    "ai",
+    "llm",
+    "tokens",
+    "usage",
+    "cost",
+    "ledger",
+    "claude",
+    "claude-code",
+    "codex",
+    "openai",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "johwanghee",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ttoksem/ttoksem.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/ttoksem/ttoksem#readme",
+  "bugs": "https://github.com/ttoksem/ttoksem/issues",
   "type": "module",
   "bin": { "ttoksem": "./dist/cli.mjs" },
   "files": ["dist/cli.mjs"],
