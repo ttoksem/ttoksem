@@ -393,7 +393,9 @@ usage
   .option("--currency <code>", "ISO currency code", "USD")
   .option("--idempotency-key <key>", "idempotency key")
   .action(async (options: UsageAddOptions) => {
-    const message = options.file ? readMessage(options.file) : buildUsageMessage(options);
+    const message = options.file
+      ? readMessage(options.file)
+      : buildUsageMessage({ ...options, workspace: resolveWorkspaceKeyFromOptions(options) });
     const handle = await makeLedger({ makeLocalService });
     try {
       const event = await handle.ledger.recordUsage(message);

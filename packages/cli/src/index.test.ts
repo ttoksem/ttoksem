@@ -1470,6 +1470,38 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("usage add resolves workspace from ttoksem.config.json without --workspace", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const dbPath = join(tempDir, "ttoksem.db");
+    const env = { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: tempDir };
+    try {
+      // Register workspace "cfg-proj" and write config so --workspace is not needed.
+      runCli(["workspace", "init", "--key", "cfg-proj", "--root", tempDir], env);
+      writeFileSync(join(tempDir, "ttoksem.config.json"), JSON.stringify({ workspace: "cfg-proj" }));
+      // Run `usage add` with NO --workspace; workspace must be resolved from config.
+      const out = runCli(
+        [
+          "usage",
+          "add",
+          "--provider",
+          "openai",
+          "--model",
+          "gpt-4o",
+          "--input-tokens",
+          "10",
+          "--output-tokens",
+          "5",
+          "--idempotency-key",
+          "usage-add-config-test-001",
+        ],
+        env,
+      );
+      expect(out).toMatch(/usage usage_[a-z0-9]+ openai\/gpt-4o/);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {
