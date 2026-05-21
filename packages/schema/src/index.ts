@@ -275,3 +275,14 @@ export const DailyReportSchema = z.object({
 });
 
 export type DailyReport = z.infer<typeof DailyReportSchema>;
+
+export const TtoksemConfigSchema = z
+  .object({
+    workspace: z.string().min(1).optional(),
+    promptMode: z.enum(["full", "redacted", "hash", "none"]).optional(),
+    model: z.record(z.string(), z.string()).optional(),
+    remote: z.object({ url: z.string().url() }).optional(),
+  })
+  .passthrough();
+
+export type TtoksemConfig = z.infer<typeof TtoksemConfigSchema>;
