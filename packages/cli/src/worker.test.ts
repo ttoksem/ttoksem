@@ -48,6 +48,31 @@ describe("ttoksem worker key", () => {
     const logs = await run(program, ["worker", "key", "list", "--d1", "ttoksem"]);
     expect(calls[0]).toEqual(expect.arrayContaining(["d1", "execute", "ttoksem", "--remote", "--json"]));
     expect(logs.join("\n")).toContain("key_a");
+    expect(logs.join("\n")).not.toContain("expires=");
+    expect(logs.join("\n")).not.toContain("last_used=");
+  });
+
+  it("list renders expires and last_used when the D1 row includes them", async () => {
+    const json = JSON.stringify([
+      {
+        results: [
+          {
+            id: "key_a",
+            name: "ci",
+            token_prefix: "ttok_x",
+            scopes_json: '["dashboard:read"]',
+            revoked_at: null,
+            expires_at: "2026-12-31T00:00:00.000Z",
+            last_used_at: "2026-05-20T09:30:00.000Z",
+          },
+        ],
+        success: true,
+      },
+    ]);
+    const { program } = harness(json);
+    const logs = await run(program, ["worker", "key", "list", "--d1", "ttoksem"]);
+    expect(logs.join("\n")).toContain("expires=2026-12-31T00:00:00.000Z");
+    expect(logs.join("\n")).toContain("last_used=2026-05-20T09:30:00.000Z");
   });
 
   it("revoke runs an UPDATE for the given key id", async () => {

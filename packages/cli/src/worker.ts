@@ -105,7 +105,11 @@ export function registerWorkerCommands(
             `prefix=${row.token_prefix ?? ""}`,
             `scopes=${row.scopes_json ?? ""}`,
             `status=${row.revoked_at ? "revoked" : "active"}`,
-          ].join("\t"),
+            row.expires_at ? `expires=${row.expires_at}` : "",
+            row.last_used_at ? `last_used=${row.last_used_at}` : "",
+          ]
+            .filter(Boolean)
+            .join("\t"),
         );
       }
     });
@@ -128,6 +132,8 @@ interface D1Row {
   token_prefix?: string;
   scopes_json?: string;
   revoked_at?: string | null;
+  expires_at?: string | null;
+  last_used_at?: string | null;
 }
 
 /** `wrangler d1 execute --json` prints an array of result objects; pull out the rows. */
