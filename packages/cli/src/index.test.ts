@@ -1306,6 +1306,31 @@ describe("ttoksem CLI workflows", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("resolves the workspace from ttoksem.config.json without --workspace", async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-test-"));
+    const runDir = mkdtempSync(join(tmpdir(), "ttoksem-cli-run-"));
+    const dbPath = join(repoDir, "ttoksem.db");
+    try {
+      // Register workspace "cfg-proj" rooted at repoDir.
+      runCli(
+        ["workspace", "init", "--key", "cfg-proj", "--root", repoDir],
+        { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: repoDir },
+      );
+      // The config file lives in runDir — a directory that is NOT a workspace root.
+      writeFileSync(join(runDir, "ttoksem.config.json"), JSON.stringify({ workspace: "cfg-proj" }));
+      // Run `task start` from runDir with NO --workspace. runDir is not a workspace
+      // root, so the workspace can only be resolved via ttoksem.config.json.
+      const out = runCli(
+        ["task", "start", "cfg-task"],
+        { ...process.env, TTOKSEM_DB: dbPath, INIT_CWD: runDir },
+      );
+      expect(out).toContain("cfg-task");
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(runDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 function runCli(args: string[], env: NodeJS.ProcessEnv): string {

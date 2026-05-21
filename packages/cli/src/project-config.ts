@@ -48,6 +48,16 @@ export function resolveWorkspaceKey(input: {
   return input.flag ?? input.config?.workspace ?? input.env;
 }
 
+let cached: LoadedProjectConfig | null | undefined;
+
+/** Memoized project-config load from the CLI's effective cwd (INIT_CWD ?? cwd). */
+export function getProjectConfig(): LoadedProjectConfig | null {
+  if (cached === undefined) {
+    cached = loadProjectConfig(process.env.INIT_CWD ?? process.cwd());
+  }
+  return cached;
+}
+
 export function findProjectConfig(startDir: string): string | null {
   let dir = resolve(startDir);
   while (true) {

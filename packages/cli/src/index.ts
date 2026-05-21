@@ -35,6 +35,7 @@ import {
 import { registerInitCommand } from "./init.js";
 import { registerWorkerCommands } from "./worker.js";
 import { makeLedger, requireLocalLedger } from "./ledger-factory.js";
+import { getProjectConfig, resolveWorkspaceKey } from "./project-config.js";
 import { HttpLedgerError } from "@ttoksem/ledger-http";
 
 /**
@@ -1428,7 +1429,11 @@ async function waitForShutdown(close: () => Promise<void>): Promise<void> {
 
 function workspaceResolver(options: { workspace?: string; root?: string }) {
   return {
-    key: options.workspace,
+    key: resolveWorkspaceKey({
+      flag: options.workspace,
+      config: getProjectConfig()?.config,
+      env: process.env.TTOKSEM_WORKSPACE_KEY,
+    }),
     rootPath: resolveFromCommandCwd(options.root ?? "."),
   };
 }
