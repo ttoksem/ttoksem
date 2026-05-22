@@ -1,6 +1,6 @@
 {
   "name": "ttoksem",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local-first cost ledger for AI usage — track Claude Code, Codex, and OpenAI token spend per task.",
   "keywords": [
     "ai",

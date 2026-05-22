@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The repository is a single-version pnpm workspace — every package under
 `packages/*` and `apps/*` ships at the same version.
 
+## [0.2.1] — 2026-05-22
+
+Worker deployment workflow fix.
+
+### Worker (`@ttoksem/worker`)
+
+- `apps/worker/wrangler.jsonc` is no longer tracked; a `.example` template
+  (`apps/worker/wrangler.jsonc.example`) is committed instead, and the real
+  `wrangler.jsonc` (which carries the deployment-specific D1 id and workspace
+  key) is gitignored. Deployers copy the template and fill in their values
+  without risking git conflicts on a tracked config file.
+- `docs/WORKER-D1.md` deploy steps updated to reflect the copy-from-template
+  workflow.
+
 ## [0.2.0] — 2026-05-21
 
 Project-level configuration for the CLI, plus packaging and CLI polish.
@@ -113,5 +127,6 @@ provider importers.
   auth; documented in `docs/WORKER-D1.md` including a one-shot helper to
   mint an access key and emit the matching SQL `INSERT`
 
+[0.2.1]: https://github.com/ttoksem/ttoksem/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ttoksem/ttoksem/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ttoksem/ttoksem/releases/tag/v0.1.0
