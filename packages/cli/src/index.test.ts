@@ -1135,14 +1135,14 @@ describe("ttoksem CLI workflows", () => {
         "claude import scanned_files=1 assistant_events=2 imported=2 skipped=0 errors=0",
       );
       // Preview is always printed
-      expect(result.stderr).toContain("claude import preview:");
+      expect(result.stderr).toContain("[ttoksem info] import_preview");
       expect(result.stderr).toContain("prompt_groups=2");
       expect(result.stderr).toContain("first goal prompt");
       expect(result.stderr).toContain("second unrelated prompt");
       // Warning content
-      expect(result.stderr).toContain("claude import warning:");
-      expect(result.stderr).toContain("2 distinct prompt groups");
-      expect(result.stderr).toContain("usage move");
+      expect(result.stderr).toContain("[ttoksem warn] multi_goal");
+      expect(result.stderr).toContain("prompt_groups=2");
+      expect(result.stderr).toContain("assign-event");
 
       // No --task means inbox flow, multi-group is fine and emits no warning
       const inboxFlow = runCliCaptureBoth(

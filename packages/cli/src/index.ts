@@ -43,6 +43,36 @@ import { HttpLedgerError } from "@ttoksem/ledger-http";
  * messages. Most errors are local Error objects whose `.message` is
  * already user-readable; HttpLedgerError needs status-aware framing.
  */
+// ── Structured stderr helpers ─────────────────────────────────────────────────
+// Every stderr line starts with [ttoksem TYPE] so LLM callers can reliably
+// classify output: grep for "[ttoksem warn]" / "[ttoksem error]" / "[ttoksem info]".
+// Fields use key=value (unquoted when no spaces; quoted otherwise).
+// fix= always holds the exact command or flag the caller should add.
+function fmtField(v: unknown): string {
+  const s = String(v);
+  return /[\s"=]/.test(s) ? JSON.stringify(s) : s;
+}
+function cliWarn(code: string, fields: Record<string, unknown>, fix?: string): void {
+  const kv = Object.entries(fields)
+    .map(([k, v]) => `${k}=${fmtField(v)}`)
+    .join(" ");
+  const fixPart = fix ? ` fix=${fmtField(fix)}` : "";
+  console.error(`[ttoksem warn] ${code} ${kv}${fixPart}`);
+}
+function cliError(code: string, fields: Record<string, unknown>): void {
+  const kv = Object.entries(fields)
+    .map(([k, v]) => `${k}=${fmtField(v)}`)
+    .join(" ");
+  console.error(`[ttoksem error] ${code} ${kv}`);
+}
+function cliInfo(code: string, fields: Record<string, unknown>): void {
+  const kv = Object.entries(fields)
+    .map(([k, v]) => `${k}=${fmtField(v)}`)
+    .join(" ");
+  console.error(`[ttoksem info] ${code} ${kv}`);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function formatCliError(error: unknown): string {
   if (error instanceof HttpLedgerError) {
     const detail = error.body?.detail ?? error.body?.error;
@@ -1099,16 +1129,20 @@ hook
   .action(async (options: { workspace?: string; projectsDir?: string }) => {
     const projectsDir = options.projectsDir ?? (await projectsDirFromStdin());
     if (!projectsDir) {
-      console.error(
-        "ttoksem hook run: no project dir (no --projects-dir and no hook stdin payload)",
-      );
+      cliError("hook_run_failed", {
+        reason: "no_project_dir",
+        detail: "no --projects-dir flag and no hook stdin payload",
+        fix: "--projects-dir <path>",
+      });
       process.exitCode = 1;
       return;
     }
     const workspace = resolveWorkspaceKeyFromOptions(options);
     if (!workspace) {
       throw new Error(
-        "hook run could not determine a workspace. Pass --workspace <key>, set TTOKSEM_WORKSPACE_KEY, or add ttoksem.config.json with {\"workspace\": \"<key>\"}.",
+        "hook run could not determine a workspace. " +
+          "Pass --workspace <key>, set TTOKSEM_WORKSPACE_KEY, " +
+          'or add ttoksem.config.json with {"workspace": "<key>"}.',
       );
     }
     const handle = await makeLedgerLocal();
@@ -1150,7 +1184,7 @@ hook
   });
 
 program.parseAsync().catch((error: unknown) => {
-  console.error(formatCliError(error));
+  console.error(`[ttoksem error] command_failed error=${fmtField(formatCliError(error))}`);
   process.exitCode = 1;
 });
 
@@ -1631,9 +1665,11 @@ async function importCodexSessions(
       imported += 1;
     } catch (error) {
       errors += 1;
-      console.error(
-        `codex import error idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`,
-      );
+      cliError("import_event_failed", {
+        source: "codex-session",
+        idempotency: message.idempotency_key ?? "",
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return { scannedFiles: files.length, tokenEvents: limited.length, imported, skipped, errors };
@@ -1680,8 +1716,10 @@ function parseCodexSessionUsage(
     if (item.type === "session_meta" && payload) {
       session = codexSessionMeta(payload, file);
       if (!session.model) {
-        console.warn(
-          `warn: codex session ${session.id} missing model in session metadata; events will be attributed to "${options.model}" — use --model to set an explicit fallback`,
+        cliWarn(
+          "model_fallback",
+          { source: "codex-session", session: session.id, attributed: options.model, reason: "missing_session_metadata" },
+          `--model ${options.model}`,
         );
       }
       continue;
@@ -1743,8 +1781,10 @@ function buildCodexSessionUsageMessage(input: {
         provider: (() => {
           const p = input.session.modelProvider ?? input.options.provider;
           if (!p) {
-            console.warn(
-              `warn: codex session ${input.session.id} prompt-group ${input.promptGroup.index} missing modelProvider, attributing to "openai" — use --provider to set an explicit fallback`,
+            cliWarn(
+              "provider_fallback",
+              { source: "codex-session", session: input.session.id, prompt_group: input.promptGroup.index, attributed: "openai", reason: "missing_session_metadata" },
+              "--provider <actual-provider>",
             );
             return "openai";
           }
@@ -1966,16 +2006,18 @@ function printImportPreview(preview: ImportPreview, label: string): void {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([m, c]) => `${m}:${c}`)
     .join(",");
-  console.error(`${label} preview:`);
-  console.error(`  scanned_files=${preview.scannedFiles}`);
-  console.error(`  events=${preview.totalEvents}`);
-  console.error(`  prompt_groups=${preview.promptGroups}`);
-  console.error(`  distinct_prompt_hashes=${preview.distinctPromptHashes}`);
-  console.error(`  models=${models || "none"}`);
-  console.error(`  time_range=${preview.timeRange.start ?? "?"}..${preview.timeRange.end ?? "?"}`);
-  console.error(`  tokens_total=${preview.tokensTotal}`);
+  cliInfo("import_preview", {
+    source: label,
+    scanned_files: preview.scannedFiles,
+    events: preview.totalEvents,
+    prompt_groups: preview.promptGroups,
+    distinct_prompt_hashes: preview.distinctPromptHashes,
+    models: models || "none",
+    time_range: `${preview.timeRange.start ?? "?"}..${preview.timeRange.end ?? "?"}`,
+    tokens_total: preview.tokensTotal,
+  });
   if (preview.groups.length === 0) return;
-  console.error(`prompt groups:`);
+  console.error(`[ttoksem info] prompt_groups source=${fmtField(label)}`);
   for (const group of preview.groups) {
     const idxStr = String(group.index).padStart(4, "0");
     const promptSnippet = group.promptText
@@ -1994,25 +2036,31 @@ function warnMultiPromptGroup(
   label: string,
 ): void {
   if (!taskKey || preview.promptGroups <= 1) return;
-  const samples = preview.groups
-    .slice(0, 3)
-    .map((group) => {
-      const idxStr = String(group.index).padStart(4, "0");
-      const promptSnippet = group.promptText
-        ? truncatePromptText(group.promptText.replace(/\s+/g, " "), 60)
-        : "(no prompt)";
-      return `  [${idxStr}] ${promptSnippet}`;
-    })
-    .join("\n");
-  const moreNote =
-    preview.groups.length > 3 ? `\n  ... ${preview.groups.length - 3} more group(s)` : "";
-  console.error(
-    `${label} warning: --task ${taskKey} was passed with ${preview.promptGroups} distinct prompt groups. ` +
-      `All events will be assigned to ${taskKey}; if this import covers multiple goals, ` +
-      `move the wrong ones with \`pnpm cli usage move <usage_id> --task <key>\` or ` +
-      `\`pnpm cli inbox assign-event <usage_id> --task <key>\` after the fact.\n` +
-      `Sample groups:\n${samples}${moreNote}`,
+  cliWarn(
+    "multi_goal",
+    {
+      source: label,
+      task: taskKey,
+      prompt_groups: preview.promptGroups,
+      effect: "all events assigned to task",
+    },
+    `ttoksem inbox assign-event <usage_id> --task <key>`,
   );
+  if (preview.groups.length > 0) {
+    const samples = preview.groups
+      .slice(0, 3)
+      .map((group) => {
+        const idxStr = String(group.index).padStart(4, "0");
+        const promptSnippet = group.promptText
+          ? truncatePromptText(group.promptText.replace(/\s+/g, " "), 60)
+          : "(no prompt)";
+        return `  [${idxStr}] ${promptSnippet}`;
+      })
+      .join("\n");
+    const moreNote =
+      preview.groups.length > 3 ? `\n  ... ${preview.groups.length - 3} more group(s)` : "";
+    console.error(`  sample_groups:\n${samples}${moreNote}`);
+  }
 }
 
 function truncatePromptText(text: string, max: number): string {
@@ -2126,9 +2174,11 @@ async function importClaudeSessions(
       imported += 1;
     } catch (error) {
       errors += 1;
-      console.error(
-        `claude import error idempotency=${message.idempotency_key ?? ""} ${error instanceof Error ? error.message : String(error)}`,
-      );
+      cliError("import_event_failed", {
+        source: "claude-session",
+        idempotency: message.idempotency_key ?? "",
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return { scannedFiles: files.length, assistantEvents: limited.length, imported, skipped, errors };
@@ -2192,8 +2242,10 @@ function parseClaudeSessionUsage(
       const fromEvent = stringField(message?.model);
       if (fromEvent) return fromEvent;
       if (session.model) return session.model;
-      console.warn(
-        `warn: claude session ${session.id} event ${eventUuid} missing model in session metadata; attributing to "${options.model}" — use --model to set an explicit fallback`,
+      cliWarn(
+        "model_fallback",
+        { source: "claude-session", session: session.id, event: eventUuid, attributed: options.model, reason: "missing_event_and_session_metadata" },
+        `--model ${options.model}`,
       );
       return options.model;
     })();
