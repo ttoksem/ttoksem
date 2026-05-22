@@ -4,7 +4,7 @@ import { D1LedgerStore, type D1Database } from "@ttoksem/storage-d1";
 
 export interface WorkerEnv {
   TTOKSEM_DB: D1Database;
-  TTOKSEM_WORKSPACE_KEY?: string;
+  TTOKSEM_WORKSPACE_KEY: string;
   TTOKSEM_AUTH_MODE?: "access-key" | "none";
   TTOKSEM_SERVER_URL?: string;
 }
@@ -17,7 +17,7 @@ export default {
     const authMode = env.TTOKSEM_AUTH_MODE ?? "access-key";
     const app = createHttpApp({
       service,
-      defaultWorkspaceKey: env.TTOKSEM_WORKSPACE_KEY ?? "ttoksem-dev",
+      defaultWorkspaceKey: env.TTOKSEM_WORKSPACE_KEY,
       serverUrl: env.TTOKSEM_SERVER_URL,
       auth:
         authMode === "none"

@@ -6,7 +6,7 @@ The Worker expects these bindings or variables:
 
 ```text
 TTOKSEM_DB             D1 database binding
-TTOKSEM_WORKSPACE_KEY  default workspace key, optional, defaults to ttoksem-dev
+TTOKSEM_WORKSPACE_KEY  workspace key for this deployment (required)
 TTOKSEM_AUTH_MODE      access-key or none, optional, defaults to access-key
 ```
 
@@ -18,7 +18,7 @@ Prerequisite: install and authenticate wrangler — `npm i -g wrangler && wrangl
 
 1. `wrangler d1 create ttoksem` — creates the D1 database and prints its id.
 2. `cp apps/worker/wrangler.jsonc.example apps/worker/wrangler.jsonc` — create your local deploy config from the template.
-3. In `apps/worker/wrangler.jsonc`, paste the id into `d1_databases[0].database_id` and set `vars.TTOKSEM_WORKSPACE_KEY` to your workspace key.
+3. In `apps/worker/wrangler.jsonc`, replace both `REPLACE_WITH_YOUR_D1_DATABASE_ID` (in `d1_databases[0].database_id`) and `REPLACE_WITH_YOUR_WORKSPACE_KEY` (in `vars.TTOKSEM_WORKSPACE_KEY`) with your actual values.
 4. `pnpm --filter @ttoksem/worker deploy` — builds and uploads the Worker.
 
 Local development still defaults to SQLite through the CLI and `apps/server`. The Worker path is for deployments that need an HTTP surface backed by D1, not a replacement for the local-first workflow.

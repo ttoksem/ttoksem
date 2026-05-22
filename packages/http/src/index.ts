@@ -16,7 +16,7 @@ import {
 
 export interface CreateHttpAppOptions {
   service: LedgerService;
-  defaultWorkspaceKey?: string;
+  defaultWorkspaceKey: string;
   auth?: HttpAuthOptions;
   serverUrl?: string;
   /** Enable Hono's request logger (METHOD path → status time). Default true. */
@@ -463,7 +463,7 @@ const routeReportTask = createRoute({
 
 export function createHttpApp(options: CreateHttpAppOptions): OpenAPIHono {
   const app = new OpenAPIHono();
-  const defaultWorkspaceKey = options.defaultWorkspaceKey ?? "ttoksem-dev";
+  const defaultWorkspaceKey = options.defaultWorkspaceKey;
 
   // ── Middleware ─────────────────────────────────────────────────────────────
 
