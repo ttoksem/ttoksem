@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .wrangler/
+# apps/worker/wrangler.jsonc is per-deployment (D1 id, workspace key) — copy from wrangler.jsonc.example
+apps/worker/wrangler.jsonc
 coverage/
 .DS_Store
 *.tsbuildinfo
