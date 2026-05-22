@@ -470,6 +470,7 @@ usage
   .option("--thread-id <id>", "only import one Codex thread id")
   .option("--since <iso>", "only import token_count events at or after this UTC timestamp")
   .option("--model <model>", "model label when session metadata does not include one", "codex-app")
+  .option("--provider <provider>", "provider label when session metadata does not include one")
   .option("--prompt-mode <mode>", "prompt snapshot mode: full, redacted, hash, or none", "full")
   .option("--limit <count>", "maximum token_count events to import")
   .option("--dry-run", "scan and print counts without writing usage events")
@@ -903,6 +904,7 @@ pricing
   .option("--model <model>", "only import one model key")
   .option("--effective-from <iso>", "UTC ISO timestamp when imported rules take effect")
   .option("--limit <count>", "maximum normalized rules to import")
+  .option("--currency <code>", "currency code for imported rules", "USD")
   .description("Import normalized pricing rules from a LiteLLM pricing snapshot")
   .action(async (options: PricingImportLiteLlmOptions) => {
     const handle = await makeLedgerLocal();
@@ -928,7 +930,7 @@ pricing
           usageKind: rule.usageKind,
           unitType: rule.unitType,
           priceNanosPerUnit: rule.priceNanosPerUnit,
-          currency: "USD",
+          currency: options.currency,
           effectiveFrom: rule.effectiveFrom,
           source: "litellm",
         });
@@ -1206,6 +1208,8 @@ interface CodexSessionImportOptions {
   threadId?: string;
   since?: string;
   model: string;
+  /** Fallback provider label when session metadata does not include one. */
+  provider?: string;
   promptMode: PromptMode;
   limit?: string;
   dryRun?: boolean;
@@ -1353,6 +1357,7 @@ interface PricingImportLiteLlmOptions {
   model?: string;
   effectiveFrom?: string;
   limit?: string;
+  currency: string;
 }
 
 interface PricingSnapshotUpsertOptions {
@@ -1728,7 +1733,16 @@ function buildCodexSessionUsageMessage(input: {
         },
       },
       usage: {
-        provider: input.session.modelProvider ?? "openai",
+        provider: (() => {
+          const p = input.session.modelProvider ?? input.options.provider;
+          if (!p) {
+            console.warn(
+              `warn: codex session ${input.session.id} prompt-group ${input.promptGroup.index} missing modelProvider, attributing to "openai" — use --provider to set an explicit fallback`,
+            );
+            return "openai";
+          }
+          return p;
+        })(),
         model,
         usage_kind: "conversation_turn",
         started_at: input.promptGroup.startedAt ?? input.timestamp,
