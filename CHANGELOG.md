@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The repository is a single-version pnpm workspace — every package under
 `packages/*` and `apps/*` ships at the same version.
 
+## [0.2.2] — 2026-05-22
+
+LLM-friendly CLI hardening: explicit required values and structured stderr.
+
+### CLI (`@ttoksem/cli`)
+
+- `usage codex-turn` and `usage claude-turn` now require `--model` explicitly
+  (no silent fallback to `"codex-chat"` / `"claude-chat"` that would mismatch
+  pricing rules); `codex-turn` gains `--provider` (default `"openai"`,
+  overridable for Azure etc.)
+- `pricing import-litellm` gains `--currency` (default `"USD"`, overridable)
+  instead of a hardcoded value
+- `import-codex-sessions` / `import-claude-sessions` now emit a structured
+  stderr warning when model or provider metadata is absent in the session file
+  and the `--model` / `--provider` fallback fires
+- All stderr output follows a consistent machine-readable format:
+  `[ttoksem TYPE] CODE key=value … fix=<exact-command>`
+  where TYPE is `warn`, `error`, or `info`; LLM callers can grep for the
+  prefix to classify output and read `fix=` for the next action
+
+### Worker (`@ttoksem/worker`)
+
+- `TTOKSEM_WORKSPACE_KEY` is now required (no silent `"ttoksem-dev"` fallback);
+  `wrangler.jsonc.example` uses a `REPLACE_WITH_YOUR_WORKSPACE_KEY` placeholder
+- `defaultWorkspaceKey` in `createHttpApp` (`@ttoksem/http`) is now a required
+  field — callers must supply an explicit value
+
 ## [0.2.1] — 2026-05-22
 
 Worker deployment workflow fix.
@@ -127,6 +154,7 @@ provider importers.
   auth; documented in `docs/WORKER-D1.md` including a one-shot helper to
   mint an access key and emit the matching SQL `INSERT`
 
+[0.2.2]: https://github.com/ttoksem/ttoksem/releases/tag/v0.2.2
 [0.2.1]: https://github.com/ttoksem/ttoksem/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ttoksem/ttoksem/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ttoksem/ttoksem/releases/tag/v0.1.0
