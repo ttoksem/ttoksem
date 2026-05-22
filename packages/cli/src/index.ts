@@ -433,7 +433,8 @@ usage
   .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--run-id <id>", "existing or explicit run id")
-  .option("--model <model>", "model label", "codex-chat")
+  .requiredOption("--model <model>", "model label for pricing rule matching (e.g. o3, o4-mini, gpt-4o)")
+  .option("--provider <provider>", "provider name for pricing rule matching", "openai")
   .option("--started-at <iso>", "turn start timestamp")
   .option("--ended-at <iso>", "turn end timestamp")
   .option("--duration-ms <ms>", "turn duration in milliseconds")
@@ -496,7 +497,7 @@ usage
   .option("--workspace <key>", "workspace key")
   .option("--task <key>", "task key; omit when the goal is not clear")
   .option("--run-id <id>", "existing or explicit run id")
-  .option("--model <model>", "model label", "claude-chat")
+  .requiredOption("--model <model>", "model label for pricing rule matching (e.g. claude-sonnet-4-6, claude-opus-4-5)")
   .option("--started-at <iso>", "turn start timestamp")
   .option("--ended-at <iso>", "turn end timestamp")
   .option("--duration-ms <ms>", "turn duration in milliseconds")
@@ -1184,6 +1185,7 @@ interface CodexTurnOptions {
   task?: string;
   runId?: string;
   model: string;
+  provider: string;
   startedAt?: string;
   endedAt?: string;
   durationMs?: string;
@@ -1568,7 +1570,7 @@ function buildCodexTurnMessage(options: CodexTurnOptions): AiUsageObserved {
       task: options.task ? { key: slug(options.task) } : null,
       run: runRef(options),
       usage: {
-        provider: "openai",
+        provider: options.provider,
         model: options.model,
         usage_kind: "conversation_turn",
         started_at: options.startedAt ?? null,
@@ -1677,6 +1679,11 @@ function parseCodexSessionUsage(
     const payload = isRecord(item.payload) ? item.payload : null;
     if (item.type === "session_meta" && payload) {
       session = codexSessionMeta(payload, file);
+      if (!session.model) {
+        console.warn(
+          `warn: codex session ${session.id} missing model in session metadata; events will be attributed to "${options.model}" — use --model to set an explicit fallback`,
+        );
+      }
       continue;
     }
     if (item.type === "event_msg" && payload?.type === "user_message") {
@@ -2181,7 +2188,15 @@ function parseClaudeSessionUsage(
     const eventUuid = stringField(item.uuid) ?? `${session.id}:${timestamp}`;
     const messageId = stringField(message?.id);
     const requestId = stringField(item.requestId);
-    const model = stringField(message?.model) ?? session.model ?? options.model;
+    const model = (() => {
+      const fromEvent = stringField(message?.model);
+      if (fromEvent) return fromEvent;
+      if (session.model) return session.model;
+      console.warn(
+        `warn: claude session ${session.id} event ${eventUuid} missing model in session metadata; attributing to "${options.model}" — use --model to set an explicit fallback`,
+      );
+      return options.model;
+    })();
     // Summarize the assistant content blocks (text/tool_use/thinking) so the
     // ledger captures *what was done*, not just how many tokens it cost.
     // Stored in source_context.assistant_summary; the dashboard reads it
